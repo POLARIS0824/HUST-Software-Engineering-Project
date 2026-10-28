@@ -1,0 +1,10 @@
+{
+  "engine": "Kotlin Compose",
+  "dark": false,
+  "dynamic": true,
+  "primary": "#FF4C5E8B",
+  "surface": "#FFFAF8FE",
+  "onSurface": "#FF30323A",
+  "secondaryContainer": "#FFDCE2F9",
+  "systemAccent1_500": "#FF6476A5"
+}

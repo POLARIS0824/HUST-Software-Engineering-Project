@@ -1,0 +1,7 @@
+.cache/
+node_modules/
+android/.gradle/
+android/.kotlin/
+android/app/build/
+android/local.properties
+android/hs_err_*.log

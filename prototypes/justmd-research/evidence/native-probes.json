@@ -1,0 +1,437 @@
+{
+  "android": {
+    "sdk": 37,
+    "release": "17",
+    "manufacturer": "Google",
+    "model": "sdk_gphone16k_x86_64",
+    "fingerprint": "google\/sdk_gphone16k_x86_64\/emu64xa16k:17\/CP41.260831.007\/16416850:user\/dev-keys"
+  },
+  "dependencies": {
+    "room3": "3.0.3",
+    "sqliteBundled": "2.7.1"
+  },
+  "search": {
+    "status": "observed",
+    "evidence": {
+      "sqliteVersion": "3.50.1",
+      "schema": "CREATE VIRTUAL TABLE `probe_fts` USING FTS5(`body`, tokenize=`trigram`)",
+      "matchSql": "SELECT rowid FROM probe_fts WHERE probe_fts MATCH ? ORDER BY rowid",
+      "likeSql": "SELECT rowid FROM probe_fts WHERE body LIKE ? ESCAPE '\\' ORDER BY rowid",
+      "fixtures": [
+        {
+          "id": 1,
+          "body": "今天学习数据库和中文搜索"
+        },
+        {
+          "id": 2,
+          "body": "数据库索引 SQLite FTS5 mixed中文 AlphaBeta"
+        },
+        {
+          "id": 3,
+          "body": "literal 100% done and file_name"
+        },
+        {
+          "id": 4,
+          "body": "literal 100X done and fileXname"
+        },
+        {
+          "id": 5,
+          "body": "escape back\\slash and a\"b token"
+        }
+      ],
+      "cases": [
+        {
+          "query": "数据库",
+          "codePointCount": 3,
+          "matchParameter": "\"数据库\"",
+          "likeParameter": "%数据库%",
+          "expectedLiteralScanIds": [
+            1,
+            2
+          ],
+          "like": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                1,
+                2
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "rawMatch": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                1,
+                2
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "applicationRoute": "trigram MATCH eligible",
+          "scanRule": "Kotlin contains(ignoreCase=true); fixtures restrict case comparison to ASCII",
+          "optimizationClaim": "None. LIKE ESCAPE is a literal-semantics probe, not trigram optimization evidence."
+        },
+        {
+          "query": "中文",
+          "codePointCount": 2,
+          "matchParameter": "\"中文\"",
+          "likeParameter": "%中文%",
+          "expectedLiteralScanIds": [
+            1,
+            2
+          ],
+          "like": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                1,
+                2
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "rawMatch": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [],
+              "equalsFixtureScan": false
+            }
+          },
+          "applicationRoute": "literal LIKE; raw MATCH observed only",
+          "scanRule": "Kotlin contains(ignoreCase=true); fixtures restrict case comparison to ASCII",
+          "optimizationClaim": "None. LIKE ESCAPE is a literal-semantics probe, not trigram optimization evidence."
+        },
+        {
+          "query": "中",
+          "codePointCount": 1,
+          "matchParameter": "\"中\"",
+          "likeParameter": "%中%",
+          "expectedLiteralScanIds": [
+            1,
+            2
+          ],
+          "like": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                1,
+                2
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "rawMatch": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [],
+              "equalsFixtureScan": false
+            }
+          },
+          "applicationRoute": "literal LIKE; raw MATCH observed only",
+          "scanRule": "Kotlin contains(ignoreCase=true); fixtures restrict case comparison to ASCII",
+          "optimizationClaim": "None. LIKE ESCAPE is a literal-semantics probe, not trigram optimization evidence."
+        },
+        {
+          "query": "SQLite",
+          "codePointCount": 6,
+          "matchParameter": "\"SQLite\"",
+          "likeParameter": "%SQLite%",
+          "expectedLiteralScanIds": [
+            2
+          ],
+          "like": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                2
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "rawMatch": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                2
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "applicationRoute": "trigram MATCH eligible",
+          "scanRule": "Kotlin contains(ignoreCase=true); fixtures restrict case comparison to ASCII",
+          "optimizationClaim": "None. LIKE ESCAPE is a literal-semantics probe, not trigram optimization evidence."
+        },
+        {
+          "query": "alphaBETA",
+          "codePointCount": 9,
+          "matchParameter": "\"alphaBETA\"",
+          "likeParameter": "%alphaBETA%",
+          "expectedLiteralScanIds": [
+            2
+          ],
+          "like": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                2
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "rawMatch": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                2
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "applicationRoute": "trigram MATCH eligible",
+          "scanRule": "Kotlin contains(ignoreCase=true); fixtures restrict case comparison to ASCII",
+          "optimizationClaim": "None. LIKE ESCAPE is a literal-semantics probe, not trigram optimization evidence."
+        },
+        {
+          "query": "mixed中",
+          "codePointCount": 6,
+          "matchParameter": "\"mixed中\"",
+          "likeParameter": "%mixed中%",
+          "expectedLiteralScanIds": [
+            2
+          ],
+          "like": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                2
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "rawMatch": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                2
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "applicationRoute": "trigram MATCH eligible",
+          "scanRule": "Kotlin contains(ignoreCase=true); fixtures restrict case comparison to ASCII",
+          "optimizationClaim": "None. LIKE ESCAPE is a literal-semantics probe, not trigram optimization evidence."
+        },
+        {
+          "query": "100%",
+          "codePointCount": 4,
+          "matchParameter": "\"100%\"",
+          "likeParameter": "%100\\%%",
+          "expectedLiteralScanIds": [
+            3
+          ],
+          "like": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                3
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "rawMatch": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                3
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "applicationRoute": "trigram MATCH eligible",
+          "scanRule": "Kotlin contains(ignoreCase=true); fixtures restrict case comparison to ASCII",
+          "optimizationClaim": "None. LIKE ESCAPE is a literal-semantics probe, not trigram optimization evidence."
+        },
+        {
+          "query": "file_",
+          "codePointCount": 5,
+          "matchParameter": "\"file_\"",
+          "likeParameter": "%file\\_%",
+          "expectedLiteralScanIds": [
+            3
+          ],
+          "like": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                3
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "rawMatch": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                3
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "applicationRoute": "trigram MATCH eligible",
+          "scanRule": "Kotlin contains(ignoreCase=true); fixtures restrict case comparison to ASCII",
+          "optimizationClaim": "None. LIKE ESCAPE is a literal-semantics probe, not trigram optimization evidence."
+        },
+        {
+          "query": "%",
+          "codePointCount": 1,
+          "matchParameter": "\"%\"",
+          "likeParameter": "%\\%%",
+          "expectedLiteralScanIds": [
+            3
+          ],
+          "like": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                3
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "rawMatch": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [],
+              "equalsFixtureScan": false
+            }
+          },
+          "applicationRoute": "literal LIKE; raw MATCH observed only",
+          "scanRule": "Kotlin contains(ignoreCase=true); fixtures restrict case comparison to ASCII",
+          "optimizationClaim": "None. LIKE ESCAPE is a literal-semantics probe, not trigram optimization evidence."
+        },
+        {
+          "query": "_",
+          "codePointCount": 1,
+          "matchParameter": "\"_\"",
+          "likeParameter": "%\\_%",
+          "expectedLiteralScanIds": [
+            3
+          ],
+          "like": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                3
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "rawMatch": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [],
+              "equalsFixtureScan": false
+            }
+          },
+          "applicationRoute": "literal LIKE; raw MATCH observed only",
+          "scanRule": "Kotlin contains(ignoreCase=true); fixtures restrict case comparison to ASCII",
+          "optimizationClaim": "None. LIKE ESCAPE is a literal-semantics probe, not trigram optimization evidence."
+        },
+        {
+          "query": "back\\",
+          "codePointCount": 5,
+          "matchParameter": "\"back\\\"",
+          "likeParameter": "%back\\\\%",
+          "expectedLiteralScanIds": [
+            5
+          ],
+          "like": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                5
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "rawMatch": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                5
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "applicationRoute": "trigram MATCH eligible",
+          "scanRule": "Kotlin contains(ignoreCase=true); fixtures restrict case comparison to ASCII",
+          "optimizationClaim": "None. LIKE ESCAPE is a literal-semantics probe, not trigram optimization evidence."
+        },
+        {
+          "query": "a\"b",
+          "codePointCount": 3,
+          "matchParameter": "\"a\"\"b\"",
+          "likeParameter": "%a\"b%",
+          "expectedLiteralScanIds": [
+            5
+          ],
+          "like": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                5
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "rawMatch": {
+            "status": "observed",
+            "evidence": {
+              "returnedIds": [
+                5
+              ],
+              "equalsFixtureScan": true
+            }
+          },
+          "applicationRoute": "trigram MATCH eligible",
+          "scanRule": "Kotlin contains(ignoreCase=true); fixtures restrict case comparison to ASCII",
+          "optimizationClaim": "None. LIKE ESCAPE is a literal-semantics probe, not trigram optimization evidence."
+        }
+      ]
+    }
+  },
+  "storage": {
+    "status": "observed",
+    "evidence": {
+      "directory": "\/storage\/emulated\/0\/Android\/data\/edu.hust.justmd.prototype\/files\/disposable-native-probe-7380b0b7-f8f5-4ffe-8533-49a279f5d888",
+      "target": "\/storage\/emulated\/0\/Android\/data\/edu.hust.justmd.prototype\/files\/disposable-native-probe-7380b0b7-f8f5-4ffe-8533-49a279f5d888\/existing.md",
+      "before": "old existing fixture\n",
+      "after": "replacement 中文 fixture\n",
+      "expectedAfter": "replacement 中文 fixture\n",
+      "existingFileVerified": true,
+      "replacementReadbackMatches": true,
+      "temporaryExistsAfterRename": false,
+      "inodeBefore": 229471,
+      "inodeAfter": 229472,
+      "parentSync": {
+        "status": "observed",
+        "evidence": {
+          "openFlags": "O_RDONLY on verified directory",
+          "fsyncReturned": true
+        }
+      },
+      "nioAtomicReplace": {
+        "status": "observed",
+        "evidence": {
+          "readback": "NIO replacement 中文 fixture\n",
+          "replacementReadbackMatches": true
+        }
+      },
+      "filesRetainedForInspection": true,
+      "claim": "Observed same-directory rename over existing file and readback; no concurrent-reader or crash durability verification"
+    }
+  },
+  "scope": "Disposable fixed fixtures. No timings, process-kill, power-loss, or production durability claim."
+}

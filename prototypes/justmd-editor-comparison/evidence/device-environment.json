@@ -1,0 +1,11 @@
+{
+  "device": "emulator-5554",
+  "sdk": "37",
+  "fingerprint": "google/sdk_gphone16k_x86_64/emu64xa16k:17/CP41.260831.007/16416850:user/dev-keys",
+  "webView": [
+    "Current WebView package (name, version): (com.google.android.webview, 156.0.8078.47)",
+    "Valid package com.google.android.webview (versionName: 156.0.8078.47, versionCode: 807804708, targetSdkVersion: 36) is  installed/enabled for all users"
+  ],
+  "ime": "com.google.android.inputmethod.latin/com.android.inputmethod.latin.LatinIME",
+  "limits": "One headless emulator, no physical device or Chinese candidate IME validation."
+}

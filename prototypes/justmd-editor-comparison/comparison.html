@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>JustMD 编辑器选型</title>
+<style>
+body{margin:0;background:#f5f4f1;color:#282922;font:16px/1.6 system-ui,sans-serif}main{max-width:1080px;margin:auto;padding:28px}h1{font-size:30px;margin:0 0 8px}p{margin:8px 0 20px;color:#53564e}nav{display:flex;gap:8px;flex-wrap:wrap;margin:24px 0}button{font:inherit;padding:9px 20px;border:0;border-radius:24px;background:#e1e4da;color:#30372c;cursor:pointer}button[aria-pressed=true]{background:#465c42;color:white}.pair{display:grid;grid-template-columns:1fr 1fr;gap:24px}figure{margin:0;max-width:410px}figcaption{font-weight:650;margin:0 0 12px}img{display:block;width:100%;border-radius:24px;box-shadow:0 8px 30px #20202018}.note{font-size:14px;margin-top:24px}a{color:#355b39}@media(max-width:600px){main{padding:20px}.pair{gap:12px}h1{font-size:24px}figcaption{font-size:13px}img{border-radius:14px}}
+</style>
+<main>
+<h1>JustMD · 同一方案 B，两条编辑路线</h1>
+<p>真实 Android 模拟器截图。外壳与原生阅读器相同，源码编辑器不同。源码页为蓝色系统色板，阅读与深色页为绿色系统色板。此 prototype 只保留本次会话内容。</p>
+<nav aria-label="比较页面">
+<button aria-pressed="true" data-view="source">源码编辑</button>
+<button aria-pressed="false" data-view="read">原生阅读</button>
+<button aria-pressed="false" data-view="dark">动态深色</button>
+</nav>
+<div class="pair">
+<figure><figcaption>CodeMirror View + Compose</figcaption><img id="cm" src="screenshots/cm-source.png" alt="CodeMirror 编辑器实机截图"></figure>
+<figure><figcaption>纯 Kotlin Compose</figcaption><img id="native" src="screenshots/native-source.png" alt="Compose 编辑器实机截图"></figure>
+</div>
+<p class="note">按钮切换的是截图，两个 APK 可同时安装进行实际操作。<a href="research-report.md">研究结论与验证边界</a> · <a href="evidence/ui-journeys.json">实际 UI 操作记录</a></p>
+</main>
+<script>
+document.querySelectorAll('button').forEach(button=>button.onclick=()=>{
+document.querySelectorAll('button').forEach(item=>item.setAttribute('aria-pressed',String(item===button)));
+for(const flavor of ['cm','native'])document.getElementById(flavor).src=`screenshots/${flavor}-${button.dataset.view}.png`;
+});
+</script>
+</html>

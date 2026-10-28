@@ -1,0 +1,29 @@
+{
+  "native": {
+    "file": "android\\app\\build\\outputs\\apk\\native\\debug\\app-native-debug.apk",
+    "bytes": 15404758,
+    "sha256": "b188a79abadd86f94f0d08b02ee5401e187f279c7cf13713bacbb487eb602cdf",
+    "editorAssets": [],
+    "javascriptAssets": [],
+    "containsCodeMirrorPort": false,
+    "containsNativeEditorPort": true,
+    "containsAndroidXWebKitDescriptors": false,
+    "scope": "Debug APK inspection. The OS WebView engine is not bundled into either APK."
+  },
+  "cm": {
+    "file": "android\\app\\build\\outputs\\apk\\cm\\debug\\app-cm-debug.apk",
+    "bytes": 15777129,
+    "sha256": "a85d053905cef621b742c2f0f53404dff15c92b5d196f36d80e22cfc20a82624",
+    "editorAssets": [
+      "assets/editor/cm.bundle.js",
+      "assets/editor/index.html"
+    ],
+    "javascriptAssets": [
+      "assets/editor/cm.bundle.js"
+    ],
+    "containsCodeMirrorPort": true,
+    "containsNativeEditorPort": false,
+    "containsAndroidXWebKitDescriptors": true,
+    "scope": "Debug APK inspection. The OS WebView engine is not bundled into either APK."
+  }
+}

@@ -1,0 +1,339 @@
+{
+  "scope": "Small fixed corpus on one Android emulator. No speed, reliability, full IR, or product-readiness claim.",
+  "device": {
+    "sdk": 37,
+    "release": "17",
+    "manufacturer": "Google",
+    "model": "sdk_gphone16k_x86_64",
+    "fingerprint": "google/sdk_gphone16k_x86_64/emu64xa16k:17/CP41.260831.007/16416850:user/dev-keys"
+  },
+  "room": {
+    "status": "observed",
+    "version": "3.50.1",
+    "schema": "CREATE VIRTUAL TABLE `probe_fts` USING FTS5(`body`, tokenize=`trigram`)",
+    "literalCases": [
+      {
+        "query": "数据库",
+        "expected": [
+          1,
+          2
+        ],
+        "like": [
+          1,
+          2
+        ],
+        "likeMatches": true,
+        "match": [
+          1,
+          2
+        ],
+        "route": "trigram MATCH eligible"
+      },
+      {
+        "query": "中文",
+        "expected": [
+          1,
+          2
+        ],
+        "like": [
+          1,
+          2
+        ],
+        "likeMatches": true,
+        "match": [],
+        "route": "literal LIKE; raw MATCH observed only"
+      },
+      {
+        "query": "中",
+        "expected": [
+          1,
+          2
+        ],
+        "like": [
+          1,
+          2
+        ],
+        "likeMatches": true,
+        "match": [],
+        "route": "literal LIKE; raw MATCH observed only"
+      },
+      {
+        "query": "SQLite",
+        "expected": [
+          2
+        ],
+        "like": [
+          2
+        ],
+        "likeMatches": true,
+        "match": [
+          2
+        ],
+        "route": "trigram MATCH eligible"
+      },
+      {
+        "query": "alphaBETA",
+        "expected": [
+          2
+        ],
+        "like": [
+          2
+        ],
+        "likeMatches": true,
+        "match": [
+          2
+        ],
+        "route": "trigram MATCH eligible"
+      },
+      {
+        "query": "mixed中",
+        "expected": [
+          2
+        ],
+        "like": [
+          2
+        ],
+        "likeMatches": true,
+        "match": [
+          2
+        ],
+        "route": "trigram MATCH eligible"
+      },
+      {
+        "query": "100%",
+        "expected": [
+          3
+        ],
+        "like": [
+          3
+        ],
+        "likeMatches": true,
+        "match": [
+          3
+        ],
+        "route": "trigram MATCH eligible"
+      },
+      {
+        "query": "file_",
+        "expected": [
+          3
+        ],
+        "like": [
+          3
+        ],
+        "likeMatches": true,
+        "match": [
+          3
+        ],
+        "route": "trigram MATCH eligible"
+      },
+      {
+        "query": "%",
+        "expected": [
+          3
+        ],
+        "like": [
+          3
+        ],
+        "likeMatches": true,
+        "match": [],
+        "route": "literal LIKE; raw MATCH observed only"
+      },
+      {
+        "query": "_",
+        "expected": [
+          3
+        ],
+        "like": [
+          3
+        ],
+        "likeMatches": true,
+        "match": [],
+        "route": "literal LIKE; raw MATCH observed only"
+      },
+      {
+        "query": "back\\",
+        "expected": [
+          5
+        ],
+        "like": [
+          5
+        ],
+        "likeMatches": true,
+        "match": [
+          5
+        ],
+        "route": "trigram MATCH eligible"
+      },
+      {
+        "query": "a\"b",
+        "expected": [
+          5
+        ],
+        "like": [
+          5
+        ],
+        "likeMatches": true,
+        "match": [
+          5
+        ],
+        "route": "trigram MATCH eligible"
+      }
+    ]
+  },
+  "storage": {
+    "status": "observed",
+    "evidence": {
+      "directory": "/storage/emulated/0/Android/data/edu.hust.justmd.prototype/files/disposable-native-probe-7380b0b7-f8f5-4ffe-8533-49a279f5d888",
+      "target": "/storage/emulated/0/Android/data/edu.hust.justmd.prototype/files/disposable-native-probe-7380b0b7-f8f5-4ffe-8533-49a279f5d888/existing.md",
+      "before": "old existing fixture\n",
+      "after": "replacement 中文 fixture\n",
+      "expectedAfter": "replacement 中文 fixture\n",
+      "existingFileVerified": true,
+      "replacementReadbackMatches": true,
+      "temporaryExistsAfterRename": false,
+      "inodeBefore": 229471,
+      "inodeAfter": 229472,
+      "parentSync": {
+        "status": "observed",
+        "evidence": {
+          "openFlags": "O_RDONLY on verified directory",
+          "fsyncReturned": true
+        }
+      },
+      "nioAtomicReplace": {
+        "status": "observed",
+        "evidence": {
+          "readback": "NIO replacement 中文 fixture\n",
+          "replacementReadbackMatches": true
+        }
+      },
+      "filesRetainedForInspection": true,
+      "claim": "Observed same-directory rename over existing file and readback; no concurrent-reader or crash durability verification"
+    }
+  },
+  "vditor": {
+    "version": "3.9.9",
+    "domStorageEnabled": true,
+    "cases": [
+      {
+        "id": "basic",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true
+      },
+      {
+        "id": "wikilink",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true
+      },
+      {
+        "id": "unknown",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true
+      },
+      {
+        "id": "reference",
+        "exactUntouched": false,
+        "originalStillPresentAfterEdit": false
+      },
+      {
+        "id": "html",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true
+      },
+      {
+        "id": "code-tag",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true
+      },
+      {
+        "id": "math",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true
+      },
+      {
+        "id": "hostile-html",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true
+      }
+    ],
+    "referenceTitleCase": {
+      "id": "reference",
+      "input": "# 引用\n\n[说明][ref]\n\n[ref]: https://example.com \"标题\"\n",
+      "untouched": "# 引用\n\n[说明][ref]\n\n[ref]: https://example.com\n",
+      "edited": "# 引用\n\n[说明][ref]\n\n相邻编辑。\n\n[ref]: https://example.com\n",
+      "undone": "# 引用\n\n[说明][ref]\n\n[ref]: https://example.com\n",
+      "exactUntouched": false,
+      "originalStillPresentAfterEdit": false,
+      "executedHostileScript": false
+    }
+  },
+  "codemirror": {
+    "engine": "CodeMirror 6",
+    "domStorageEnabled": false,
+    "cases": [
+      {
+        "id": "basic",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true,
+        "exactUndo": true
+      },
+      {
+        "id": "wikilink",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true,
+        "exactUndo": true
+      },
+      {
+        "id": "unknown",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true,
+        "exactUndo": true
+      },
+      {
+        "id": "reference",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true,
+        "exactUndo": true
+      },
+      {
+        "id": "html",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true,
+        "exactUndo": true
+      },
+      {
+        "id": "code-tag",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true,
+        "exactUndo": true
+      },
+      {
+        "id": "math",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true,
+        "exactUndo": true
+      },
+      {
+        "id": "hostile-html",
+        "exactUntouched": true,
+        "originalStillPresentAfterEdit": true,
+        "exactUndo": true
+      }
+    ]
+  },
+  "hashes": {
+    "android/app/src/main/assets/editor/vditor/dist/index.min.js": "87cd0a972247677e66a515461b482b0943b62b30e87de24e45dd9a52e746687d",
+    "android/app/src/main/assets/editor/codemirror.bundle.js": "88cc974db01fa996bbdd6754437e651be2a48aee68c1a527c983fc519a57bf1f",
+    "android/app/build/outputs/apk/debug/app-debug.apk": "03652ff57a0c7b09456d31c1ac257bc547da4e7420a40f4f08c74a1b1cc45ee6"
+  },
+  "screenshots": [
+    "screenshots/a-library.png",
+    "screenshots/b-library.png",
+    "screenshots/c-library.png",
+    "screenshots/a-editor.png",
+    "screenshots/b-editor.png",
+    "screenshots/c-editor.png",
+    "screenshots/c-search-empty.png"
+  ]
+}
