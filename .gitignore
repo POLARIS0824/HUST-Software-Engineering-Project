@@ -1,0 +1,17 @@
+**/node_modules/
+**/.cache/
+**/.gradle/
+**/.kotlin/
+**/build/
+**/local.properties
+**/replay_pid*.log
+**/hs_err_pid*.log
+*.apk
+*.aab
+*.hprof
+
+.audit/*
+!.audit/justmd-prototype.tsv
+!.audit/justmd-prototype.todo.md
+!.audit/justmd-editor-comparison.tsv
+!.audit/justmd-editor-comparison.todo.md
