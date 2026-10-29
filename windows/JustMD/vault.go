@@ -1,8 +1,8 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -111,12 +111,6 @@ type RebuildResult struct {
 	DurationMs       int64 `json:"durationMs"`
 }
 
-// NotesChanged 在库发生任何变更后广播，驱动前端刷新列表。
-var NotesChanged = mygo.NewEvent[WorkspaceStats]("notes-changed")
-
-// MenuAction 把原生菜单点击转发给前端（payload 为动作名）。
-var MenuAction = mygo.NewEvent[string]("menu-action")
-
 // vaultConfig 是持久化在用户数据目录的应用配置。
 type vaultConfig struct {
 	Workspace string `json:"workspace"`
@@ -161,9 +155,9 @@ func (v *Vault) GetWorkspace() WorkspaceInfo {
 
 // ChooseWorkspace 弹出系统文件夹选择框并切换知识库（桌面端适配，对应 Android SAF）。
 // 返回空字符串路径表示用户取消。
-func (v *Vault) ChooseWorkspace(ctx context.Context) (WorkspaceInfo, error) {
+func (v *Vault) ChooseWorkspace(parent *mygo.Window) (WorkspaceInfo, error) {
 	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
-		Parent:            mygo.CallerWindow(ctx),
+		Parent:            parent,
 		Title:             "选择 JustMD 知识库文件夹",
 		Directory:         true,
 		CreateDirectories: true,
@@ -211,10 +205,6 @@ func (v *Vault) workspaceInfo() WorkspaceInfo {
 
 func (v *Vault) stats() WorkspaceStats {
 	return WorkspaceStats{NoteCount: len(v.notes), TrashCount: len(v.trashed)}
-}
-
-func (v *Vault) broadcast() {
-	NotesChanged.Broadcast(v.stats())
 }
 
 // ListNotes 按排序选项返回活跃笔记列表（FR-NOTE-02）。
@@ -392,7 +382,6 @@ func (v *Vault) createNoteLocked(title string) (NoteDocument, error) {
 	}
 	v.indexNote(meta, "")
 	v.recomputeLinks()
-	v.broadcast()
 	return v.openNoteLocked(meta.NoteID)
 }
 
@@ -489,7 +478,6 @@ func (v *Vault) SaveContent(id string, markdown string) (SaveReceipt, error) {
 	v.indexNote(n.meta, content)
 	v.recomputeLinks()
 	// 广播刷新列表摘要与标签树（轻量，本地内存索引）。
-	v.broadcast()
 	return SaveReceipt{
 		Revision:      n.meta.Revision,
 		ContentSha256: sha,
@@ -560,7 +548,6 @@ func (v *Vault) RenameNote(id string, newTitle string) (NoteDocument, error) {
 	// 重建本笔记的标题索引并重算全部链接解析。
 	v.reindexOne(n, v.readBody(n.meta))
 	v.recomputeLinks()
-	v.broadcast()
 	return v.openNoteLocked(id)
 }
 
@@ -650,7 +637,6 @@ func (v *Vault) TrashNote(id string) (WorkspaceStats, error) {
 	v.trashed[id] = n.meta
 	delete(v.notes, id)
 	v.recomputeLinks()
-	v.broadcast()
 	return v.stats(), nil
 }
 
@@ -694,7 +680,6 @@ func (v *Vault) RestoreFromTrash(id string) (NoteDocument, error) {
 	delete(v.trashed, id)
 	v.indexNote(&meta, v.readBody(&meta))
 	v.recomputeLinks()
-	v.broadcast()
 	return v.openNoteLocked(id)
 }
 
@@ -709,7 +694,6 @@ func (v *Vault) DeleteForever(id string) (WorkspaceStats, error) {
 	os.Remove(filepath.Join(v.metaDir(), id+".json"))
 	delete(v.trashed, id)
 	v.recomputeLinks()
-	v.broadcast()
 	return v.stats(), nil
 }
 
@@ -726,7 +710,6 @@ func (v *Vault) EmptyTrash() (WorkspaceStats, error) {
 		os.Remove(filepath.Join(v.metaDir(), id+".json"))
 		delete(v.trashed, id)
 	}
-	v.broadcast()
 	return v.stats(), nil
 }
 
@@ -841,4 +824,95 @@ func parentDirOfRelPath(rel string) string {
 		return ""
 	}
 	return dir
+}
+
+// LookupNote 返回笔记是否存在且活跃。
+func (v *Vault) LookupNote(id string) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	_, ok := v.notes[id]
+	return ok
+}
+
+// NoteDir 返回笔记所在目录（相对 notes/，根目录为 ""）。
+func (v *Vault) NoteDir(id string) string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if n, ok := v.notes[id]; ok {
+		return n.parentDir
+	}
+	return ""
+}
+
+// NoteAssetPath 解析笔记内引用的本地资源路径（相对笔记目录或 notes/ 根），
+// 校验不越出工作区后返回绝对路径（NFR-SEC-03）。url 含协议头时拒绝。
+func (v *Vault) NoteAssetPath(id, url string) (string, error) {
+	if strings.Contains(url, "://") || strings.HasPrefix(url, "data:") {
+		return "", ErrPathOutside
+	}
+	v.mu.Lock()
+	rel := ""
+	if n, ok := v.notes[id]; ok {
+		rel = n.meta.RelativePath
+	}
+	v.mu.Unlock()
+	if rel == "" {
+		return "", ErrNoteNotFound
+	}
+	dir := parentDirOfRelPath(rel)
+	candidates := []string{url}
+	if dir != "" {
+		candidates = append(candidates, dir+"/"+url)
+	}
+	root := v.root
+	for _, cand := range candidates {
+		clean, err := safeRelPath(filepath.Join(root, dirNotes), cand)
+		if err != nil {
+			continue
+		}
+		abs := filepath.Join(v.notesDir(), filepath.FromSlash(clean))
+		if st, err := os.Stat(abs); err == nil && !st.IsDir() {
+			return abs, nil
+		}
+	}
+	return "", os.ErrNotExist
+}
+
+// readerScheme 已解析/未解析双链在阅读源中的协议前缀。
+const (
+	readerSchemeNote = "justmd-note://" // 目标为 noteID
+	readerSchemeOpen = "justmd-open://" // 目标为待创建/歧义的标题
+)
+
+// RenderReaderSource 返回阅读页用的正文：把 [[双链]] 改写为 Markdown 链接
+// （代码区内不处理），已解析链接指向目标 noteID，未解析/歧义链接指向目标标题。
+// 阅读器只读该快照，不回写正文（FR-EDIT-01、BR-06）。
+func (v *Vault) RenderReaderSource(id string) string {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	n, ok := v.notes[id]
+	if !ok {
+		return ""
+	}
+	runes := []rune(n.body)
+	for i := len(n.links) - 1; i >= 0; i-- {
+		l := n.links[i]
+		if l.Start > len(runes) || l.End > len(runes) || l.Start >= l.End {
+			continue
+		}
+		label := l.Alias
+		if label == "" {
+			label = l.Target
+		}
+		var linkURL string
+		switch n.linkStates[i] {
+		case linkResolved:
+			linkURL = readerSchemeNote + n.resolvedIDs[i]
+		default:
+			linkURL = readerSchemeOpen + url.PathEscape(l.Target)
+		}
+		rewritten := []rune("[" + label + "](" + linkURL + ")")
+		runes = append(runes[:l.Start], append(rewritten, runes[l.End:]...)...)
+	}
+	return string(runes)
 }

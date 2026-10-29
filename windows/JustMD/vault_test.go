@@ -443,7 +443,7 @@ func TestPrepareImportPlanAndApply(t *testing.T) {
 	}}
 
 	// 覆盖 LeetCode，其余默认导入。
-	results, err := v.ApplyImport(nil, plan, map[string]string{
+	results, err := v.ApplyImport(plan, map[string]string{
 		filepath.Join(external, "LeetCode.md"): "overwrite",
 	})
 	if err != nil {
@@ -481,7 +481,7 @@ func TestApplyImportRenameOnConflict(t *testing.T) {
 	src := filepath.Join(external, "既有.md")
 	os.WriteFile(src, []byte("导入版本"), 0o644)
 	plan := ImportPlan{Files: []ImportFile{{SourcePath: src, FileName: "既有.md", TargetRel: "既有.md", Status: "conflict"}}}
-	results, err := v.ApplyImport(nil, plan, map[string]string{src: "rename"})
+	results, err := v.ApplyImport(plan, map[string]string{src: "rename"})
 	if err != nil {
 		t.Fatal(err)
 	}

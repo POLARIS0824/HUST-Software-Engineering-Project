@@ -2,7 +2,6 @@ package main
 
 import (
 	"archive/zip"
-	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -239,14 +238,14 @@ func gbkDecode(data []byte) (string, error) {
 
 // PrepareImport 打开系统多选对话框并校验文件，返回导入计划。
 // 目录会被递归展开并保留层级；GBK 编码自动转码（基线 4.1）。
-func (v *Vault) PrepareImport(ctx context.Context) (ImportPlan, error) {
+func (v *Vault) PrepareImport(parent *mygo.Window) (ImportPlan, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.root == "" {
 		return ImportPlan{}, ErrNoWorkspace
 	}
 	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
-		Parent: mygo.CallerWindow(ctx),
+		Parent: parent,
 		Title:  "选择要导入的 Markdown 文件或文件夹",
 		Filters: []mygo.FileFilter{
 			{Name: "Markdown", Extensions: []string{"md", "markdown"}},
@@ -332,7 +331,7 @@ func (v *Vault) PrepareImport(ctx context.Context) (ImportPlan, error) {
 
 // ApplyImport 按用户逐项决策执行导入计划。
 // action: rename（默认，追加序号）/ overwrite（先备份 .md.bak）/ skip。
-func (v *Vault) ApplyImport(ctx context.Context, plan ImportPlan, actions map[string]string) ([]ImportResult, error) {
+func (v *Vault) ApplyImport(plan ImportPlan, actions map[string]string) ([]ImportResult, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if v.root == "" {
@@ -364,7 +363,6 @@ func (v *Vault) ApplyImport(ctx context.Context, plan ImportPlan, actions map[st
 		results = append(results, res)
 	}
 	v.recomputeLinks()
-	v.broadcast()
 	return results, nil
 }
 
@@ -476,7 +474,7 @@ func (v *Vault) noteIDByRel(rel string) string {
 }
 
 // ExportNote 导出单篇为标准 .md（FR-DATA-02）。返回写入路径，取消为空串。
-func (v *Vault) ExportNote(ctx context.Context, id string) (string, error) {
+func (v *Vault) ExportNote(parent *mygo.Window, id string) (string, error) {
 	v.mu.Lock()
 	n, ok := v.notes[id]
 	if !ok {
@@ -491,7 +489,7 @@ func (v *Vault) ExportNote(ctx context.Context, id string) (string, error) {
 		return "", ErrNoteNotFound
 	}
 	path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
-		Parent:      mygo.CallerWindow(ctx),
+		Parent:      parent,
 		Title:       "导出笔记",
 		DefaultPath: titleOfRelPath(rel) + ".md",
 		Filters:     []mygo.FileFilter{{Name: "Markdown", Extensions: []string{"md"}}},
@@ -530,7 +528,7 @@ type ManifestEntry struct {
 
 // ExportVault 打包完整知识库为 ZIP（FR-DATA-03）：notes/ + attachments/ + manifest.json。
 // 归档路径为 UTF-8 编码（NFR-PORT-03），时间戳为 ISO-8601（基线 4.4）。
-func (v *Vault) ExportVault(ctx context.Context) (string, error) {
+func (v *Vault) ExportVault(parent *mygo.Window) (string, error) {
 	v.mu.Lock()
 	if v.root == "" {
 		v.mu.Unlock()
@@ -569,7 +567,7 @@ func (v *Vault) ExportVault(ctx context.Context) (string, error) {
 	}
 
 	path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
-		Parent:      mygo.CallerWindow(ctx),
+		Parent:      parent,
 		Title:       "导出完整知识库为 ZIP",
 		DefaultPath: fmt.Sprintf("JustMD_Backup_%s.zip", time.Now().Format("20060102T150405")),
 		Filters:     []mygo.FileFilter{{Name: "ZIP 归档", Extensions: []string{"zip"}}},
@@ -647,7 +645,7 @@ func (v *Vault) ExportVault(ctx context.Context) (string, error) {
 
 // ImportDroppedFiles 处理拖放的文件：.md 导入为笔记（同名自动重命名），
 // 图片等复制进 attachments/（NFR-SEC-03 只允许工作区内引用）。
-func (v *Vault) ImportDroppedFiles(ctx context.Context, paths []string) ([]AttachmentResult, error) {
+func (v *Vault) ImportDroppedFiles(paths []string) ([]AttachmentResult, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	out := []AttachmentResult{}
@@ -685,7 +683,6 @@ func (v *Vault) ImportDroppedFiles(ctx context.Context, paths []string) ([]Attac
 		}
 		out = append(out, res)
 	}
-	v.broadcast()
 	return out, nil
 }
 
