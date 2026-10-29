@@ -1,0 +1,8 @@
+node_modules/
+/dist/
+/build/
+/.mygo/
+mygo_windows_*.syso
+justmd-app.exe
+cover.out
+justmd.exe
