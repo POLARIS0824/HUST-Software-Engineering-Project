@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- 深色模式下用深色窗口背景，冷启动时不会先闪一帧白底 -->
+    <style name="Theme.Looma" parent="android:Theme.Material.NoActionBar" />
+</resources>
