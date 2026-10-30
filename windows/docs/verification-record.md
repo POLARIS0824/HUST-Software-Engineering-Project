@@ -8,6 +8,7 @@
 
 - `go vet .`、`go tool mygo vet .`、`gofmt` 全部通过。
 - `CGO_ENABLED=0 go test ./...` 全部通过（80 个用例，无 cgo，符合 MyGo 原生测试要求）。
+- CI 工作流（`.github/workflows/windows-ci.yml`）已在 GitHub Actions 实跑通过（windows-latest：gofmt / go vet / go test / mygo vet 全绿）。
 
 ### 后端单元测试（领域层，与 UI 无关）
 
@@ -59,7 +60,6 @@
 - 外部修改冲突提示与强制覆盖的实机交互（领域层有单测）。
 - 键盘无障碍（Narrator 播报）与高对比度检查。
 - NSIS 安装包的分发验证（`go tool mygo build` 完整打包路径）。
-- CI 工作流（`.github/workflows/windows-ci.yml`）的首次实际运行结果。
 - 阅读页内检索命中滚动定位（FR-SEARCH-04 的 native 降级，见技术选型已知边界）。
 
 ## 历史
