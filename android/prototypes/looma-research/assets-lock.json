@@ -1,8 +1,0 @@
-{
-  "vditorVersion": "3.9.9",
-  "vditorTarball": "https://registry.npmjs.org/vditor/-/vditor-3.9.9.tgz",
-  "vditorIntegrity": "sha512-yeUb6E//ppiN0bX85O0sDCZ7tf/b3Lz6CcR8n77mwuZWNYOmJaqG15CfSFHg21NyNFStdN54A3P/s+eq/TkwLg==",
-  "vditorJsSha256": "87CD0A972247677E66A515461B482B0943B62B30E87DE24E45DD9A52E746687D",
-  "fontSource": "https://raw.githubusercontent.com/google/fonts/main/ofl/googlesansflex/GoogleSansFlex%5BROND%2Copsz%2Cslnt%2Cwdth%2Cwght%5D.ttf",
-  "fontSha256": "A9AC770798857D5E8AC593CED42B22E40A7C08CEC98319F92B0ECCC2783A77BA"
-}
