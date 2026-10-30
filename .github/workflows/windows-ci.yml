@@ -20,6 +20,11 @@ jobs:
         shell: bash
         working-directory: windows/JustMD
     steps:
+      # Windows runner 默认 core.autocrlf=true 会把工作区行尾转成 CRLF，
+      # 导致 gofmt 误报；固定为不做行尾转换，与仓库中的 LF 一致。
+      - name: 固定 LF 行尾
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v4
 
       - uses: actions/setup-go@v5
