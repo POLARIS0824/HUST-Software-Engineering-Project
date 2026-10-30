@@ -101,13 +101,16 @@ class VaultRepository(
             vault
         }
 
-    // 5. 检查指定 Vault 是否可访问
-    suspend fun isVaultAccessible(
+    // 5. 检查指定 Vault 是否可访问，可访问返回 null
+    suspend fun vaultAccessError(
         vault: Vault,
-    ): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
+    ): String? = withContext(Dispatchers.IO) {
+        val error = runCatching {
             requireValidDirectory(vault.rootPath)
-        }.isSuccess
+        }.exceptionOrNull() ?: return@withContext null
+
+        error.localizedMessage?.takeIf { it.isNotBlank() }
+            ?: "笔记库当前不可访问"
     }
 
     // 6. 清除当前 Vault

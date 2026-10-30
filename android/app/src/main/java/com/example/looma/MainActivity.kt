@@ -20,11 +20,13 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.looma.data.vault.VaultRepository
 import com.example.looma.data.vault.VaultStorageAccess
 import com.example.looma.feature.vault.VaultSetupScreen
@@ -65,7 +67,11 @@ private fun VaultSetupRoute(
 ) {
     val context = LocalContext.current
     val storageAccess = remember(context) { VaultStorageAccess(context) }
-    val uiState by viewModel.uiState.collectAsState()
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    LifecycleEventEffect(Lifecycle.Event.ON_START) {
+        viewModel.refreshVaultStatus()
+    }
 
     LaunchedEffect(uiState.selectionSaved) {
         if (uiState.selectionSaved) {

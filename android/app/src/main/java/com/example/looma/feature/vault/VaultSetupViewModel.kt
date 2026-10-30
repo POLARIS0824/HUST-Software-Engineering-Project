@@ -1,4 +1,3 @@
-
 package com.example.looma.feature.vault
 
 import androidx.lifecycle.ViewModel
@@ -7,12 +6,11 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.looma.data.vault.VaultRepository
+import com.example.looma.domain.model.Vault
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
@@ -20,71 +18,67 @@ class VaultSetupViewModel(
     private val vaultRepository: VaultRepository,
 ) : ViewModel() {
 
-    // 1. 页面临时状态
-    private val _formState = MutableStateFlow(
-        VaultSetupUiState()
-    )
+    private val _uiState = MutableStateFlow(VaultSetupUiState())
 
-    // 2. 合并 Repository 数据和页面状态
-    val uiState: StateFlow<VaultSetupUiState> = combine(
-        vaultRepository.currentVaultFlow,
-        _formState,
-    ) { currentVault, formState ->
-        formState.copy(
-            currentVault = currentVault,
-            isInitializing = false,
-        )
-    }.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = VaultSetupUiState(isInitializing = true),
-    )
+    val uiState: StateFlow<VaultSetupUiState> = _uiState.asStateFlow()
 
-    // 3. 选择新的文件夹
+    init {
+        viewModelScope.launch {
+            vaultRepository.currentVaultFlow.collect { vault ->
+                applyStoredVault(vault)
+            }
+        }
+    }
+
+    /** 页面回到前台时重新校验，权限或文件夹可能已经变化 */
+    fun refreshVaultStatus() {
+        viewModelScope.launch {
+            applyStoredVault(vaultRepository.getCurrentVault())
+        }
+    }
+
     fun onFolderSelected(
         path: String,
         folderName: String,
     ) {
-        if (_formState.value.isBusy) return
+        if (_uiState.value.isBusy) return
 
-        _formState.update {
+        _uiState.update {
             it.copy(
                 pendingVaultPath = path,
                 pendingVaultName = folderName,
-                errorMessage = null,
+                actionError = null,
                 selectionSaved = false,
             )
         }
     }
 
-    // 4. 确认选择或继续使用已有 Vault
     fun confirmSelection() {
-        val currentState = _formState.value
+        val currentState = _uiState.value
 
         if (currentState.isBusy) return
 
         val path = currentState.pendingVaultPath
 
-        _formState.update {
+        _uiState.update {
             it.copy(
                 isBusy = true,
-                errorMessage = null,
+                actionError = null,
                 selectionSaved = false,
             )
         }
 
         viewModelScope.launch {
             try {
-                if (path != null) {
-                    // 用户选择了新文件夹
+                val vault = if (path != null) {
                     vaultRepository.setCurrentVault(path)
                 } else {
-                    // 用户继续使用原来的 Vault
                     vaultRepository.requireCurrentVault()
                 }
 
-                _formState.update {
+                _uiState.update {
                     it.copy(
+                        vaultState = VaultState.Ready(vault),
                         pendingVaultPath = null,
                         pendingVaultName = null,
                         isBusy = false,
@@ -92,52 +86,76 @@ class VaultSetupViewModel(
                     )
                 }
             } catch (e: CancellationException) {
-                _formState.update {
+                _uiState.update {
                     it.copy(isBusy = false)
                 }
                 throw e
             } catch (e: Exception) {
-                _formState.update {
+                _uiState.update {
                     it.copy(
                         isBusy = false,
-                        errorMessage = e.localizedMessage
-                            ?.takeIf { it.isNotBlank() }
+                        actionError = e.localizedMessage
+                            ?.takeIf { message -> message.isNotBlank() }
                             ?: "连接笔记库失败，请重试",
                     )
                 }
+
+                // 失败可能来自已保存的笔记库本身，例如权限被撤销，重新校验后让界面与存储保持一致
+                applyStoredVault(vaultRepository.getCurrentVault())
             }
         }
     }
 
-    // 5. 外部错误，例如文件选择器不支持的 URI
+    /** 文件选择器返回了无法识别的目录 */
     fun showError(message: String) {
-        _formState.update {
+        _uiState.update {
             it.copy(
-                errorMessage = message,
+                actionError = message,
                 selectionSaved = false,
             )
         }
     }
 
-    // 6. 清除错误
     fun clearError() {
-        _formState.update {
-            it.copy(
-                errorMessage = null,
-            )
+        _uiState.update {
+            it.copy(actionError = null)
         }
     }
 
-    // 7. 页面已处理连接成功事件
     fun onNavigationHandled() {
-        _formState.update {
-            it.copy(
-                selectionSaved = false,
+        _uiState.update {
+            it.copy(selectionSaved = false)
+        }
+    }
+
+    private suspend fun applyStoredVault(vault: Vault?) {
+        val nextState = if (vault == null) {
+            VaultState.None
+        } else {
+            val reason = vaultRepository.vaultAccessError(vault)
+
+            if (reason == null) {
+                VaultState.Ready(vault)
+            } else {
+                VaultState.Unavailable(vault, reason)
+            }
+        }
+
+        _uiState.update { state ->
+            state.copy(
+                vaultState = nextState,
+                // 笔记库从不可用恢复到可用后，之前那条错误就不成立了
+                actionError = if (nextState is VaultState.Ready &&
+                    state.vaultState is VaultState.Unavailable
+                ) {
+                    null
+                } else {
+                    state.actionError
+                },
             )
         }
     }
 
-    // 8. ViewModel Factory
     companion object {
         fun factory(
             vaultRepository: VaultRepository,
