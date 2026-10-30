@@ -173,3 +173,42 @@ func TestEditorStatePreservedAcrossNotes(t *testing.T) {
 		t.Fatalf("切回后草稿应保留，得到 %q", got)
 	}
 }
+
+// TestDeleteFromListSavesDraftFirst 验证删除当前笔记前先保存草稿
+// （评审 #2：此前先 TrashNote 再 flushSave，保存会因文件已移走而失败丢稿）。
+func TestDeleteFromListSavesDraftFirst(t *testing.T) {
+	a := newTestApp(t)
+	doc := mustCreateForApp(t, a, "待删除")
+	a.openNote(doc.ID)
+	a.currentEditor().state.Buffer.Set("未保存的草稿")
+
+	a.deleteFromList(doc.ID)
+
+	data, err := os.ReadFile(filepath.Join(a.vault.trashDir(), doc.ID+".md"))
+	if err != nil {
+		t.Fatalf("回收站文件应存在: %v", err)
+	}
+	if string(data) != "未保存的草稿" {
+		t.Fatalf("删除前应先把草稿落盘: %q", data)
+	}
+	if a.currentID != "" {
+		t.Fatal("删除后应清空当前笔记")
+	}
+}
+
+// TestOpenNoteFlushesPreviousDraft 验证换篇时上一篇的草稿先落盘
+// （评审 #2/#3：防抖定时器指向错误笔记时的丢稿窗口）。
+func TestOpenNoteFlushesPreviousDraft(t *testing.T) {
+	a := newTestApp(t)
+	first := mustCreateForApp(t, a, "先打开")
+	second := mustCreateForApp(t, a, "后打开")
+
+	a.openNote(first.ID)
+	a.currentEditor().state.Buffer.Set("换篇前的草稿")
+	a.openNote(second.ID)
+
+	body := a.vault.readBody(a.vault.notes[first.ID].meta)
+	if body != "换篇前的草稿" {
+		t.Fatalf("换篇时应落盘上一篇草稿: %q", body)
+	}
+}

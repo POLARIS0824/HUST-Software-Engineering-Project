@@ -442,12 +442,33 @@ func (n *indexedNote) linkViews() []LinkView {
 }
 
 // SaveContent 保存正文并原子落盘，返回回执（FR-EDIT-04/05/06、BR-04/05）。
+// 落盘前以哈希校验磁盘内容与上次回执一致；被外部修改时返回 ErrExternalEdit
+// 且不覆盖（评审 #7）。确认覆盖外部修改用 ForceSaveContent。
 func (v *Vault) SaveContent(id string, markdown string) (SaveReceipt, error) {
+	return v.saveContent(id, markdown, false)
+}
+
+// ForceSaveContent 跳过外部修改检测强制落盘（用户显式确认覆盖后调用）。
+func (v *Vault) ForceSaveContent(id string, markdown string) (SaveReceipt, error) {
+	return v.saveContent(id, markdown, true)
+}
+
+func (v *Vault) saveContent(id string, markdown string, force bool) (SaveReceipt, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	n, ok := v.notes[id]
 	if !ok {
 		return SaveReceipt{}, ErrNoteNotFound
+	}
+	abs := filepath.Join(v.notesDir(), filepath.FromSlash(n.meta.RelativePath))
+	if !force {
+		if disk, err := os.ReadFile(abs); err == nil {
+			if sha256Hex(normalizeContent(disk)) != n.meta.ContentSha256 {
+				return SaveReceipt{}, ErrExternalEdit
+			}
+		} else if !os.IsNotExist(err) {
+			return SaveReceipt{}, ErrSaveFailed
+		}
 	}
 	content := string(normalizeContent([]byte(markdown)))
 	sha := sha256Hex([]byte(content))
@@ -464,7 +485,7 @@ func (v *Vault) SaveContent(id string, markdown string) (SaveReceipt, error) {
 	if err := writePending(pendingDir, op); err != nil {
 		return SaveReceipt{}, ErrSaveFailed
 	}
-	if err := atomicWriteFile(filepath.Join(v.notesDir(), filepath.FromSlash(n.meta.RelativePath)), []byte(content)); err != nil {
+	if err := atomicWriteFile(abs, []byte(content)); err != nil {
 		return SaveReceipt{}, ErrSaveFailed
 	}
 	n.meta.Revision++
@@ -476,7 +497,8 @@ func (v *Vault) SaveContent(id string, markdown string) (SaveReceipt, error) {
 	clearPending(pendingDir, op.OperationID)
 
 	v.indexNote(n.meta, content)
-	v.recomputeLinks()
+	// 保存不改变标题集合：只重解析本篇出链，避免全量重算（评审 #8）。
+	v.resolveNoteLinks(v.notes[id])
 	// 广播刷新列表摘要与标签树（轻量，本地内存索引）。
 	return SaveReceipt{
 		Revision:      n.meta.Revision,
@@ -511,9 +533,17 @@ func (v *Vault) RenameNote(id string, newTitle string) (NoteDocument, error) {
 	if parent != "" {
 		desired = parent + "/" + cleaned
 	}
-	newRel := uniqueRelPath(v.notesDir(), strings.ReplaceAll(desired, "/", string(filepath.Separator)))
-	// uniqueRelPath 在 notesDir 下展开；目录层级保留。
-	newRel = filepath.ToSlash(filepath.Join(parent, filepath.Base(newRel)))
+	desiredRel := filepath.ToSlash(desired) + ".md"
+	var newRel string
+	if foldString(desiredRel) == foldString(n.meta.RelativePath) {
+		// 仅大小写变化：Windows 文件系统不区分大小写，uniqueRelPath 会把
+		// 自身文件误判为冲突而追加序号，这里直接采用目标名（评审 #5）。
+		newRel = desiredRel
+	} else {
+		newRel = uniqueRelPath(v.notesDir(), strings.ReplaceAll(desired, "/", string(filepath.Separator)))
+		// uniqueRelPath 在 notesDir 下展开；目录层级保留。
+		newRel = filepath.ToSlash(filepath.Join(parent, filepath.Base(newRel)))
+	}
 	// 冲突时 uniqueRelPath 追加了序号，实际标题以最终文件名为准。
 	actualTitle := titleOfRelPath(newRel)
 
@@ -594,9 +624,11 @@ func (v *Vault) cascadeUpdateLinks(targetID, oldTitle, newTitle string) int {
 		}
 		other.meta.Revision++
 		other.meta.UpdatedAtUtc = nowMs()
+		other.meta.ContentSha256 = sha256Hex([]byte(newBody))
 		metaDir, _ := v.metaDirs()
 		saveNoteMeta(metaDir, other.meta)
 		v.reindexOne(other, newBody)
+		v.resolveNoteLinks(other)
 		count++
 	}
 	return count
@@ -648,18 +680,18 @@ func (v *Vault) RestoreFromTrash(id string) (NoteDocument, error) {
 	if !ok {
 		return NoteDocument{}, ErrNoteNotFound
 	}
+	title := titleOfRelPath(m.RelativePath)
+	parent := parentDirOfRelPath(m.RelativePath)
+	rel := filepath.ToSlash(filepath.Join(parent, filepath.Base(uniqueRelPath(filepath.Join(v.notesDir(), filepath.FromSlash(parent)), title))))
 	metaDir, pendingDir := v.metaDirs()
 	op := &PendingOp{
 		OperationID: newID(), NoteID: id, Kind: "restore",
-		OldRelPath: m.RelativePath, NewSha: m.ContentSha256,
+		OldRelPath: m.RelativePath, NewRelPath: rel, NewSha: m.ContentSha256,
 		ExpectedRevision: m.Revision,
 	}
 	if err := writePending(pendingDir, op); err != nil {
 		return NoteDocument{}, ErrSaveFailed
 	}
-	title := titleOfRelPath(m.RelativePath)
-	parent := parentDirOfRelPath(m.RelativePath)
-	rel := filepath.ToSlash(filepath.Join(parent, filepath.Base(uniqueRelPath(filepath.Join(v.notesDir(), filepath.FromSlash(parent)), title))))
 	src := filepath.Join(v.trashDir(), id+".md")
 	dst := filepath.Join(v.notesDir(), filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
@@ -684,20 +716,21 @@ func (v *Vault) RestoreFromTrash(id string) (NoteDocument, error) {
 }
 
 // DeleteForever 彻底粉碎回收站中的单篇笔记（FR-NOTE-07）。
+// 先写 pending 意图再物理删除；删除失败返回错误并保持磁盘与索引一致（评审 #10）。
 func (v *Vault) DeleteForever(id string) (WorkspaceStats, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	if _, ok := v.trashed[id]; !ok {
+	m, ok := v.trashed[id]
+	if !ok {
 		return WorkspaceStats{}, ErrNoteNotFound
 	}
-	os.Remove(filepath.Join(v.trashDir(), id+".md"))
-	os.Remove(filepath.Join(v.metaDir(), id+".json"))
-	delete(v.trashed, id)
-	v.recomputeLinks()
+	if err := v.deleteForeverLocked(m); err != nil {
+		return WorkspaceStats{}, err
+	}
 	return v.stats(), nil
 }
 
-// EmptyTrash 清空回收站。
+// EmptyTrash 清空回收站。单条失败不中断其余条目，结束时返回首个错误。
 func (v *Vault) EmptyTrash() (WorkspaceStats, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -705,12 +738,44 @@ func (v *Vault) EmptyTrash() (WorkspaceStats, error) {
 	for id := range v.trashed {
 		ids = append(ids, id)
 	}
+	var firstErr error
 	for _, id := range ids {
-		os.Remove(filepath.Join(v.trashDir(), id+".md"))
-		os.Remove(filepath.Join(v.metaDir(), id+".json"))
-		delete(v.trashed, id)
+		if err := v.deleteForeverLocked(v.trashed[id]); err != nil && firstErr == nil {
+			firstErr = err
+		}
 	}
-	return v.stats(), nil
+	return v.stats(), firstErr
+}
+
+// deleteForeverLocked 物理删除一篇回收站笔记（文件 + 元数据）。
+// 只有两处删除都成功才更新内存状态，避免"磁盘删失败但索引已移除"的不一致。
+func (v *Vault) deleteForeverLocked(m *NoteMeta) error {
+	metaDir, pendingDir := v.metaDirs()
+	op := &PendingOp{
+		OperationID: newID(), NoteID: m.NoteID, Kind: "delete",
+		OldRelPath: m.RelativePath, NewSha: m.ContentSha256,
+		ExpectedRevision: m.Revision,
+	}
+	if err := writePending(pendingDir, op); err != nil {
+		return ErrSaveFailed
+	}
+	if err := removeIfExists(filepath.Join(v.trashDir(), m.NoteID+".md")); err != nil {
+		return ErrSaveFailed
+	}
+	if err := removeIfExists(filepath.Join(metaDir, m.NoteID+".json")); err != nil {
+		return ErrSaveFailed
+	}
+	clearPending(pendingDir, op.OperationID)
+	delete(v.trashed, m.NoteID)
+	return nil
+}
+
+// removeIfExists 删除文件；不存在视为成功，其余错误原样返回。
+func removeIfExists(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
 
 // GetBacklinks 返回解析指向当前笔记的全部来源（FR-LINK-06/07）。
@@ -844,8 +909,10 @@ func (v *Vault) NoteDir(id string) string {
 	return ""
 }
 
-// NoteAssetPath 解析笔记内引用的本地资源路径（相对笔记目录或 notes/ 根），
-// 校验不越出工作区后返回绝对路径（NFR-SEC-03）。url 含协议头时拒绝。
+// NoteAssetPath 解析笔记内引用的本地资源路径（评审 #4）：
+// 依次尝试笔记目录相对、notes/ 根相对、工作区相对（attachments/… 前缀引用）
+// 与 attachments/ 目录相对（裸文件名），校验不越出对应根后返回绝对路径
+// （NFR-SEC-03）。url 含协议头时拒绝。
 func (v *Vault) NoteAssetPath(id, url string) (string, error) {
 	if strings.Contains(url, "://") || strings.HasPrefix(url, "data:") {
 		return "", ErrPathOutside
@@ -855,22 +922,28 @@ func (v *Vault) NoteAssetPath(id, url string) (string, error) {
 	if n, ok := v.notes[id]; ok {
 		rel = n.meta.RelativePath
 	}
+	root := v.root
 	v.mu.Unlock()
 	if rel == "" {
 		return "", ErrNoteNotFound
 	}
 	dir := parentDirOfRelPath(rel)
-	candidates := []string{url}
+	type candidate struct{ base, rel string }
+	cands := []candidate{}
 	if dir != "" {
-		candidates = append(candidates, dir+"/"+url)
+		cands = append(cands, candidate{filepath.Join(root, dirNotes), dir + "/" + url})
 	}
-	root := v.root
-	for _, cand := range candidates {
-		clean, err := safeRelPath(filepath.Join(root, dirNotes), cand)
+	cands = append(cands,
+		candidate{filepath.Join(root, dirNotes), url},
+		candidate{root, url},
+		candidate{filepath.Join(root, dirAttachments), url},
+	)
+	for _, cand := range cands {
+		clean, err := safeRelPath(cand.base, cand.rel)
 		if err != nil {
 			continue
 		}
-		abs := filepath.Join(v.notesDir(), filepath.FromSlash(clean))
+		abs := filepath.Join(cand.base, filepath.FromSlash(clean))
 		if st, err := os.Stat(abs); err == nil && !st.IsDir() {
 			return abs, nil
 		}

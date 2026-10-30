@@ -40,11 +40,11 @@ type ImportResult struct {
 	NoteID     string `json:"noteId,omitempty"`
 }
 
-// AttachmentResult 描述拖入的附件文件。
+// AttachmentResult 描述拖放导入的单个文件（.md 或附件）。
 type AttachmentResult struct {
 	FileName string `json:"fileName"`
-	RelPath  string `json:"relPath"` // 相对 notes/ 的引用路径
-	Status   string `json:"status"`
+	RelPath  string `json:"relPath"` // 笔记为相对 notes/ 的路径；附件为工作区相对的 attachments/ 引用路径
+	Status   string `json:"status"`  // imported / renamed / copied / failed
 	Reason   string `json:"reason,omitempty"`
 }
 
@@ -58,8 +58,7 @@ func (v *Vault) loadWorkspace() error {
 	}
 
 	metaDir, pendingDir := v.metaDirs()
-	metas := map[string]*NoteMeta{}  // noteID -> meta
-	byPath := map[string]*NoteMeta{} // activePath -> meta
+	metas := map[string]*NoteMeta{} // noteID -> meta
 	entries, _ := os.ReadDir(metaDir)
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".json") {
@@ -67,9 +66,17 @@ func (v *Vault) loadWorkspace() error {
 		}
 		if m, err := loadNoteMeta(filepath.Join(metaDir, e.Name())); err == nil && m != nil {
 			metas[m.NoteID] = m
-			if m.State == stateActive {
-				byPath[foldString(m.RelativePath)] = m
-			}
+		}
+	}
+
+	// 先按 pending 日志对账（评审 #1：trash/restore/delete/rename 中断可恢复），
+	// 再建立路径索引，保证元数据状态与文件位置一致。
+	v.reconcilePending(pendingDir, metas)
+
+	byPath := map[string]*NoteMeta{} // activePath -> meta
+	for _, m := range metas {
+		if m.State == stateActive {
+			byPath[foldString(m.RelativePath)] = m
 		}
 	}
 
@@ -128,19 +135,35 @@ func (v *Vault) loadWorkspace() error {
 			continue
 		}
 		id := strings.TrimSuffix(e.Name(), ".md")
-		if m, ok := metas[id]; ok && m.State == stateTrashed {
+		m, ok := metas[id]
+		if !ok {
+			continue
+		}
+		if m.State == stateTrashed {
 			v.trashed[id] = m
+			continue
+		}
+		// 兜底（pending 缺失时）：回收站副本存在且 notes/ 下原文已消失 →
+		// 视为中断的移入回收站，补完状态（评审 #1）。
+		if m.State == stateActive {
+			if _, err := os.Stat(filepath.Join(notesDir, filepath.FromSlash(m.RelativePath))); err != nil {
+				m.State = stateTrashed
+				if m.TrashedAtUtc == 0 {
+					m.TrashedAtUtc = nowMs()
+				}
+				saveNoteMeta(metaDir, m)
+				v.trashed[id] = m
+			}
 		}
 	}
 
 	v.recomputeLinks()
-	v.reconcilePending(pendingDir, metas)
 	v.purgeExpiredTrash()
 	return nil
 }
 
-// reconcilePending 按 pending 日志幂等补完中断的操作（设计 6.2）。
-// 正文以哈希校验为准：新内容已在则确保元数据一致，否则丢弃临时文件保留旧版。
+// reconcilePending 按 pending 日志幂等补完中断的操作（设计 6.2、评审 #1）。
+// 统一以文件系统为证据：操作已推进则补完元数据，未推进则回退保留旧态。
 func (v *Vault) reconcilePending(pendingDir string, metas map[string]*NoteMeta) {
 	metaDir, _ := v.metaDirs()
 	entries, _ := os.ReadDir(pendingDir)
@@ -157,7 +180,8 @@ func (v *Vault) reconcilePending(pendingDir string, metas map[string]*NoteMeta) 
 			os.Remove(filepath.Join(pendingDir, e.Name()))
 			continue
 		}
-		if op.Kind == "save" {
+		switch op.Kind {
+		case "save":
 			m, ok := metas[op.NoteID]
 			if ok && m.RelativePath != "" {
 				if body, err := os.ReadFile(filepath.Join(v.notesDir(), filepath.FromSlash(m.RelativePath))); err == nil &&
@@ -170,21 +194,66 @@ func (v *Vault) reconcilePending(pendingDir string, metas map[string]*NoteMeta) 
 					}
 				}
 			}
+		case "trash":
+			// 文件已在 .trash/ 但元数据未提交 → 补完移入回收站。
+			m := metas[op.NoteID]
+			if m != nil && m.State == stateActive {
+				if _, err := os.Stat(filepath.Join(v.trashDir(), op.NoteID+".md")); err == nil {
+					if _, err := os.Stat(filepath.Join(v.notesDir(), filepath.FromSlash(m.RelativePath))); err != nil {
+						m.State = stateTrashed
+						if m.TrashedAtUtc == 0 {
+							m.TrashedAtUtc = nowMs()
+						}
+						saveNoteMeta(metaDir, m)
+					}
+				}
+			}
+			// 文件仍在 notes/ → 操作未推进，回退保留活跃态。
+		case "restore":
+			// 文件已回到 notes/（NewRelPath）但元数据未提交 → 补完还原。
+			m := metas[op.NoteID]
+			if m != nil && m.State == stateTrashed {
+				newRel := op.NewRelPath
+				if newRel == "" {
+					newRel = m.RelativePath
+				}
+				if _, err := os.Stat(filepath.Join(v.trashDir(), op.NoteID+".md")); err != nil {
+					if _, err := os.Stat(filepath.Join(v.notesDir(), filepath.FromSlash(newRel))); err == nil {
+						m.State = stateActive
+						m.TrashedAtUtc = 0
+						m.RelativePath = newRel
+						saveNoteMeta(metaDir, m)
+					}
+				}
+			}
+			// 文件仍在 .trash/ → 操作未推进，回退保留回收站态。
+		case "rename":
+			// 文件已改名但元数据未提交 → 补完重命名，避免被当作孤立文件另建身份。
+			m := metas[op.NoteID]
+			if m != nil && m.State == stateActive && m.RelativePath == op.OldRelPath && op.NewRelPath != "" {
+				if _, err := os.Stat(filepath.Join(v.notesDir(), filepath.FromSlash(op.NewRelPath))); err == nil {
+					m.RelativePath = op.NewRelPath
+					saveNoteMeta(metaDir, m)
+				}
+			}
+		case "delete":
+			// 回收站副本已移除 → 补完删除（清掉元数据）；仍在 → 回退保留。
+			if _, err := os.Stat(filepath.Join(v.trashDir(), op.NoteID+".md")); err != nil {
+				os.Remove(filepath.Join(metaDir, op.NoteID+".json"))
+				delete(metas, op.NoteID)
+			}
 		}
-		// 其余情况（rename/trash/restore/delete）：文件系统状态已经是最终态或回退态，
-		// 由 loadWorkspace 的全量扫描对齐；仅清理日志。
 		os.Remove(filepath.Join(pendingDir, e.Name()))
 	}
 }
 
 // purgeExpiredTrash 物理清除超过 30 天的回收站条目（FR-NOTE-05）。
+// 删除失败的条目保留在回收站，下次启动重试，保证磁盘与索引一致（评审 #10）。
 func (v *Vault) purgeExpiredTrash() {
 	cutoff := nowMs() - trashRetentionMs
-	for id, m := range v.trashed {
+	for _, m := range v.trashed {
 		if m.TrashedAtUtc > 0 && m.TrashedAtUtc < cutoff {
-			os.Remove(filepath.Join(v.trashDir(), id+".md"))
-			os.Remove(filepath.Join(v.metaDir(), id+".json"))
-			delete(v.trashed, id)
+			v.deleteForeverLocked(m)
 		}
 	}
 }
@@ -331,6 +400,7 @@ func (v *Vault) PrepareImport(parent *mygo.Window) (ImportPlan, error) {
 
 // ApplyImport 按用户逐项决策执行导入计划。
 // action: rename（默认，追加序号）/ overwrite（先备份 .md.bak）/ skip。
+// 执行阶段重新校验来源与目标路径（评审 #9）：不信任 UI 传入的计划。
 func (v *Vault) ApplyImport(plan ImportPlan, actions map[string]string) ([]ImportResult, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -340,6 +410,23 @@ func (v *Vault) ApplyImport(plan ImportPlan, actions map[string]string) ([]Impor
 	results := []ImportResult{}
 	for _, f := range plan.Files {
 		res := ImportResult{SourcePath: f.SourcePath, FileName: f.FileName, TargetRel: f.TargetRel}
+		if f.Status != "invalid" {
+			clean, err := safeRelPath(v.notesDir(), f.TargetRel)
+			if err != nil {
+				res.Status = "failed"
+				res.Reason = "目标路径非法"
+				results = append(results, res)
+				continue
+			}
+			f.TargetRel = clean
+			res.TargetRel = clean
+			if st, err := os.Stat(f.SourcePath); err != nil || st.IsDir() {
+				res.Status = "failed"
+				res.Reason = "源文件不存在或不是普通文件"
+				results = append(results, res)
+				continue
+			}
+		}
 		switch {
 		case f.Status == "invalid":
 			res.Status = "skipped"
@@ -654,15 +741,14 @@ func (v *Vault) ImportDroppedFiles(paths []string) ([]AttachmentResult, error) {
 		base := filepath.Base(p)
 		res := AttachmentResult{FileName: base}
 		if ext == ".md" || ext == ".markdown" {
-			rel := base
 			title, _ := sanitizeTitle(strings.TrimSuffix(base, ext))
-			rel = title + ".md"
+			rel := title + ".md"
 			f := ImportFile{SourcePath: p, FileName: base, TargetRel: rel}
-			var res ImportResult
-			v.importAsNew(f, &res, true)
-			res.Status = "imported"
-			res.TargetRel = rel
-			res.FileName = base
+			var imported ImportResult
+			v.importAsNew(f, &imported, true)
+			res.Status = imported.Status
+			res.Reason = imported.Reason
+			res.RelPath = imported.TargetRel
 		} else {
 			if err := os.MkdirAll(v.attachmentsDir(), 0o755); err == nil {
 				data, err := os.ReadFile(p)
@@ -679,6 +765,9 @@ func (v *Vault) ImportDroppedFiles(paths []string) ([]AttachmentResult, error) {
 						res.RelPath = dirAttachments + "/" + name
 					}
 				}
+			} else {
+				res.Status = "failed"
+				res.Reason = "无法创建附件目录"
 			}
 		}
 		out = append(out, res)

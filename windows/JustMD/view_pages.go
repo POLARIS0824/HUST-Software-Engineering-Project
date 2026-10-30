@@ -41,7 +41,9 @@ func (a *app) trashView(c *ui.Context) {
 							message: "「" + n.Title + "」将被永久粉碎，无法恢复。确定继续吗？",
 							danger:  true,
 							onOK: func() {
-								a.vault.DeleteForever(n.ID)
+								if _, err := a.vault.DeleteForever(n.ID); err != nil {
+									a.pendingToast = "删除失败：" + err.Error()
+								}
 								a.refreshLists()
 							},
 						}
@@ -56,7 +58,9 @@ func (a *app) trashView(c *ui.Context) {
 				message: "回收站中的全部笔记将被永久粉碎，无法恢复。确定继续吗？",
 				danger:  true,
 				onOK: func() {
-					a.vault.EmptyTrash()
+					if _, err := a.vault.EmptyTrash(); err != nil {
+						a.pendingToast = "部分笔记删除失败：" + err.Error()
+					}
 					a.refreshLists()
 				},
 			}
@@ -86,7 +90,10 @@ func (a *app) settingsView(c *ui.Context) {
 				ui.Row(c).Gap(t.Space(2)).AlignItems(ui.Center).Children(func() {
 					components.Text(c, info.Root).FontSize(12).Grow(1).Wrap()
 					if components.Button(c, "更换文件夹…", components.ButtonSecondary).Clicked() {
-						go a.chooseWorkspaceFlow()
+						// 换库会重置全部编辑器：先保存草稿（评审 #3）。
+						if a.flushAllOrToast() {
+							go a.chooseWorkspaceFlow()
+						}
 					}
 				})
 			})
@@ -99,13 +106,19 @@ func (a *app) settingsView(c *ui.Context) {
 
 			group("导出", "把完整知识库打包为标准 ZIP 归档（notes/ + attachments/ + manifest.json 校验清单），可在其他设备或其他软件中打开。", func() {
 				if components.Button(c, "导出完整知识库为 ZIP…", components.ButtonSecondary).Clicked() {
-					go a.exportVaultFlow()
+					// 导出取一致性快照：先保存全部草稿（评审 #3）。
+					if a.flushAllOrToast() {
+						go a.exportVaultFlow()
+					}
 				}
 			})
 
 			group("索引维护", "标签、双链与检索索引均为可重建的派生数据（BR-02/BR-03）。正文文件永远安然无恙，需要时一键从 Markdown 事实源重建。", func() {
 				if components.Button(c, "重建索引", components.ButtonSecondary).Clicked() {
-					go a.rebuildFlow()
+					// 重建会重置全部编辑器：先保存草稿（评审 #3）。
+					if a.flushAllOrToast() {
+						go a.rebuildFlow()
+					}
 				}
 			})
 		})

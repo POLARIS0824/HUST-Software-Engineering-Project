@@ -281,6 +281,7 @@ func TestResolveLinkTargets(t *testing.T) {
 		CreatedAtUtc: nowMs(), UpdatedAtUtc: nowMs(), Revision: 1, State: stateActive, MetadataOrigin: originOriginal}
 	saveNoteMeta(metaDir, m)
 	v.indexNote(m, "子目录版本")
+	v.recomputeLinks() // indexNote 不再自动全量重算（评审 #8），调用方负责
 
 	targets := v.ResolveLinkTargets("同名")
 	if len(targets) != 2 {
@@ -665,5 +666,297 @@ func TestTitleHelpers(t *testing.T) {
 	}
 	if got := parentDirOfRelPath("TCP.md"); got != "" {
 		t.Fatalf("根目录 parentDir 应为空串: %q", got)
+	}
+}
+
+// ---- 评审 #1：trash/restore/delete/rename 崩溃点对账 --------------------------------
+
+func TestReconcilePendingCompletesTrash(t *testing.T) {
+	v := newTestVault(t)
+	doc := mustCreate(t, v, "中断的删除")
+	mustSave(t, v, doc.ID, "内容")
+	metaDir, pendingDir := v.metaDirs()
+
+	// 模拟 TrashNote 在文件移入 .trash/ 之后、元数据提交之前断电。
+	src := filepath.Join(v.notesDir(), doc.RelativePath)
+	dst := filepath.Join(v.trashDir(), doc.ID+".md")
+	if err := os.Rename(src, dst); err != nil {
+		t.Fatal(err)
+	}
+	op := &PendingOp{OperationID: "op-t", NoteID: doc.ID, Kind: "trash",
+		OldRelPath: doc.RelativePath, ExpectedRevision: v.notes[doc.ID].meta.Revision}
+	if err := writePending(pendingDir, op); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := v.loadWorkspace(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := v.notes[doc.ID]; ok {
+		t.Fatal("中断的 trash 应补完，不应再出现在活跃列表")
+	}
+	m := v.trashed[doc.ID]
+	if m == nil {
+		t.Fatal("中断的 trash 应补完，应出现在回收站（此前会两边都看不到）")
+	}
+	if m.State != stateTrashed {
+		t.Fatalf("状态应为 TRASHED: %s", m.State)
+	}
+	fresh, _ := loadNoteMeta(filepath.Join(metaDir, doc.ID+".json"))
+	if fresh == nil || fresh.State != stateTrashed {
+		t.Fatalf("元数据应提交 TRASHED: %+v", fresh)
+	}
+}
+
+func TestReconcilePendingRollsBackTrash(t *testing.T) {
+	v := newTestVault(t)
+	doc := mustCreate(t, v, "未推进的删除")
+	mustSave(t, v, doc.ID, "内容")
+	_, pendingDir := v.metaDirs()
+	// pending 已写但 rename 未发生：应保留活跃态。
+	op := &PendingOp{OperationID: "op-t2", NoteID: doc.ID, Kind: "trash",
+		OldRelPath: doc.RelativePath, ExpectedRevision: v.notes[doc.ID].meta.Revision}
+	if err := writePending(pendingDir, op); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.loadWorkspace(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := v.notes[doc.ID]; !ok {
+		t.Fatal("未推进的 trash 应回退保留活跃态")
+	}
+	if _, ok := v.trashed[doc.ID]; ok {
+		t.Fatal("未推进的 trash 不应进入回收站")
+	}
+}
+
+func TestReconcilePendingCompletesRestore(t *testing.T) {
+	v := newTestVault(t)
+	doc := mustCreate(t, v, "中断的还原")
+	mustSave(t, v, doc.ID, "内容")
+	if _, err := v.TrashNote(doc.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, pendingDir := v.metaDirs()
+
+	// 模拟 RestoreFromTrash 在文件回到 notes/ 之后、元数据提交之前断电。
+	rel := doc.RelativePath
+	if err := os.Rename(filepath.Join(v.trashDir(), doc.ID+".md"), filepath.Join(v.notesDir(), rel)); err != nil {
+		t.Fatal(err)
+	}
+	op := &PendingOp{OperationID: "op-r", NoteID: doc.ID, Kind: "restore",
+		OldRelPath: rel, NewRelPath: rel, ExpectedRevision: v.trashed[doc.ID].Revision}
+	if err := writePending(pendingDir, op); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := v.loadWorkspace(); err != nil {
+		t.Fatal(err)
+	}
+	n := v.notes[doc.ID]
+	if n == nil {
+		t.Fatal("中断的 restore 应补完并保留原 noteId（此前会另建 RECOVERED 身份）")
+	}
+	if n.meta.State != stateActive || n.meta.RelativePath != rel {
+		t.Fatalf("还原状态错误: %+v", n.meta)
+	}
+	if _, ok := v.trashed[doc.ID]; ok {
+		t.Fatal("补完后不应再出现在回收站")
+	}
+}
+
+func TestReconcilePendingRollsBackRestore(t *testing.T) {
+	v := newTestVault(t)
+	doc := mustCreate(t, v, "未推进的还原")
+	if _, err := v.TrashNote(doc.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, pendingDir := v.metaDirs()
+	op := &PendingOp{OperationID: "op-r2", NoteID: doc.ID, Kind: "restore",
+		OldRelPath: doc.RelativePath, NewRelPath: doc.RelativePath, ExpectedRevision: 1}
+	if err := writePending(pendingDir, op); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.loadWorkspace(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := v.trashed[doc.ID]; !ok {
+		t.Fatal("未推进的 restore 应回退保留回收站态")
+	}
+	if _, ok := v.notes[doc.ID]; ok {
+		t.Fatal("未推进的 restore 不应进入活跃列表")
+	}
+}
+
+func TestReconcilePendingCompletesDelete(t *testing.T) {
+	v := newTestVault(t)
+	doc := mustCreate(t, v, "中断的粉碎")
+	if _, err := v.TrashNote(doc.ID); err != nil {
+		t.Fatal(err)
+	}
+	metaDir, pendingDir := v.metaDirs()
+	// 模拟 DeleteForever 删除回收站副本后、元数据删除前断电。
+	if err := os.Remove(filepath.Join(v.trashDir(), doc.ID+".md")); err != nil {
+		t.Fatal(err)
+	}
+	op := &PendingOp{OperationID: "op-d", NoteID: doc.ID, Kind: "delete", OldRelPath: doc.RelativePath}
+	if err := writePending(pendingDir, op); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := v.loadWorkspace(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := v.trashed[doc.ID]; ok {
+		t.Fatal("中断的 delete 应补完，不应再出现在回收站")
+	}
+	if _, err := os.Stat(filepath.Join(metaDir, doc.ID+".json")); !os.IsNotExist(err) {
+		t.Fatal("元数据应被补删")
+	}
+}
+
+func TestTrashCrashWithoutPendingRecovers(t *testing.T) {
+	v := newTestVault(t)
+	doc := mustCreate(t, v, "丢失 pending 的删除")
+	mustSave(t, v, doc.ID, "内容")
+	// 文件已在 .trash/、元数据仍 ACTIVE、pending 已丢：兜底也应进回收站。
+	if err := os.Rename(filepath.Join(v.notesDir(), doc.RelativePath), filepath.Join(v.trashDir(), doc.ID+".md")); err != nil {
+		t.Fatal(err)
+	}
+	if err := v.loadWorkspace(); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := v.notes[doc.ID]; ok {
+		t.Fatal("不应再出现在活跃列表")
+	}
+	if m := v.trashed[doc.ID]; m == nil || m.State != stateTrashed {
+		t.Fatalf("兜底路径也应恢复到回收站: %+v", m)
+	}
+}
+
+// ---- 评审 #5/#7/#9/#4/#6：大小写重命名、外部修改、路径校验、附件、拖放 --------------
+
+func TestRenameCaseOnlyKeepsPath(t *testing.T) {
+	v := newTestVault(t)
+	doc := mustCreate(t, v, "Note")
+	got, err := v.RenameNote(doc.ID, "note")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RelativePath != "note.md" {
+		t.Fatalf("仅大小写重命名不应追加冲突后缀: %q", got.RelativePath)
+	}
+	if _, err := os.Stat(filepath.Join(v.notesDir(), "note (1).md")); !os.IsNotExist(err) {
+		t.Fatal("不应生成 note (1).md")
+	}
+}
+
+func TestSaveContentDetectsExternalEdit(t *testing.T) {
+	v := newTestVault(t)
+	doc := mustCreate(t, v, "外部修改")
+	mustSave(t, v, doc.ID, "第一版")
+
+	// 另一个程序改写了磁盘文件。
+	abs := filepath.Join(v.notesDir(), doc.RelativePath)
+	if err := os.WriteFile(abs, []byte("外部的新内容"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := v.SaveContent(doc.ID, "编辑器里的内容"); err != ErrExternalEdit {
+		t.Fatalf("检测到外部修改应返回 ErrExternalEdit: %v", err)
+	}
+	if body := v.readBody(v.notes[doc.ID].meta); body != "外部的新内容" {
+		t.Fatalf("冲突时不得覆盖磁盘内容: %q", body)
+	}
+	if _, err := v.ForceSaveContent(doc.ID, "编辑器里的内容"); err != nil {
+		t.Fatalf("显式强制保存应成功: %v", err)
+	}
+	if body := v.readBody(v.notes[doc.ID].meta); body != "编辑器里的内容" {
+		t.Fatalf("强制保存应覆盖: %q", body)
+	}
+}
+
+func TestCascadeUpdateKeepsShaInSync(t *testing.T) {
+	// 级联改写后元数据哈希必须同步，否则后续保存被误判为外部修改（评审 #7）。
+	v := newTestVault(t)
+	target := mustCreate(t, v, "目标")
+	src := mustCreate(t, v, "来源")
+	mustSave(t, v, src.ID, "见 [[目标]]")
+	if _, err := v.RenameNote(target.ID, "新目标"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := v.SaveContent(src.ID, "见 [[新目标]]！"); err != nil {
+		t.Fatalf("级联改写后保存不应误报冲突: %v", err)
+	}
+}
+
+func TestApplyImportRejectsUnsafePlan(t *testing.T) {
+	v := newTestVault(t)
+	external := t.TempDir()
+	src := filepath.Join(external, "x.md")
+	if err := os.WriteFile(src, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	plan := ImportPlan{Files: []ImportFile{
+		{SourcePath: src, FileName: "x.md", TargetRel: "../逃逸.md", Status: "ok"},
+		{SourcePath: filepath.Join(external, "missing.md"), FileName: "missing.md", TargetRel: "missing.md", Status: "ok"},
+	}}
+	results, err := v.ApplyImport(plan, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range results {
+		if r.Status != "failed" {
+			t.Fatalf("非法计划条目应在执行阶段被拒绝: %+v", r)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(v.root, "逃逸.md")); !os.IsNotExist(err) {
+		t.Fatal("目标路径穿越未被拦截")
+	}
+}
+
+func TestImportDroppedFilesAndAttachmentLoad(t *testing.T) {
+	v := newTestVault(t)
+	ext := t.TempDir()
+	mdPath := filepath.Join(ext, "拖入笔记.md")
+	if err := os.WriteFile(mdPath, []byte("# 内容"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	pngPath := filepath.Join(ext, "图片.png")
+	if err := os.WriteFile(pngPath, []byte{0x89, 'P', 'N', 'G'}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	results, err := v.ImportDroppedFiles([]string{mdPath, pngPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("应返回 2 条结果: %d", len(results))
+	}
+	for _, r := range results {
+		if r.Status == "" || r.Status == "failed" {
+			t.Fatalf("拖放结果状态不应为空或失败（此前因变量遮蔽为空）: %+v", r)
+		}
+		if r.RelPath == "" {
+			t.Fatalf("拖放结果 RelPath 不应为空: %+v", r)
+		}
+	}
+
+	// .md 成为笔记；png 的引用路径可被 NoteAssetPath 解析（评审 #4）。
+	var noteID string
+	for id, n := range v.notes {
+		if n.meta.RelativePath == results[0].RelPath {
+			noteID = id
+		}
+	}
+	if noteID == "" {
+		t.Fatalf("拖入的 .md 应入库: %+v", results[0])
+	}
+	abs, err := v.NoteAssetPath(noteID, results[1].RelPath)
+	if err != nil {
+		t.Fatalf("拖入的附件应可加载（此前只在 notes/ 下查找）: %v", err)
+	}
+	if _, err := os.Stat(abs); err != nil {
+		t.Fatalf("附件路径应指向真实文件: %v", err)
 	}
 }

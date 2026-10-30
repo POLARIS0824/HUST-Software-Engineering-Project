@@ -12,5 +12,6 @@ var (
 	ErrPathOutside    = errors.New("路径越出知识库范围")
 	ErrIndexCorrupted = errors.New("索引损坏，请重建索引")
 	ErrSaveFailed     = errors.New("保存失败：无法写入文件，请检查磁盘空间与权限")
+	ErrExternalEdit   = errors.New("笔记已被其他程序修改，为避免覆盖已中止保存")
 	ErrNoWorkspace    = errors.New("尚未选择知识库文件夹")
 )

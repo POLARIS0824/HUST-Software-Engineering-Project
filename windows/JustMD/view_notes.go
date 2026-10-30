@@ -43,7 +43,7 @@ func (a *app) searchBar(c *ui.Context) {
 	box := components.TextBox(c, &a.query, components.TextBoxOptions{LeadingIcon: lucide.Search()}).
 		Label("搜索标题与正文").Placeholder("搜索标题与正文…").FillWidth()
 	if box.Changed() {
-		a.searchNow()
+		a.scheduleSearch()
 	}
 }
 
@@ -171,7 +171,12 @@ func (a *app) editorArea(c *ui.Context) {
 		ui.Row(c).Gap(t.Space(1)).AlignItems(ui.Center).Children(func() {
 			ui.Spacer(c).Grow(1)
 			if components.IconButton(c, lucide.Download(), "导出本篇", components.IconButtonPlain).Clicked() {
-				go a.exportNoteFlow(a.currentID)
+				// 导出读磁盘事实源：先落盘草稿保证导出内容完整（评审 #3）。
+				if a.flushSaveNote(a.currentID) {
+					go a.exportNoteFlow(a.currentID)
+				} else {
+					a.pendingToast = "保存失败，已中止导出"
+				}
 			}
 			if components.IconButton(c, lucide.Trash(), "移入回收站", components.IconButtonPlain).Clicked() {
 				a.trashWithUndo(c, a.currentID, a.currentTitle)
@@ -203,12 +208,18 @@ func (a *app) modeSwitch(c *ui.Context) {
 	parts := components.Tabs(c, &idx, components.TabsSegmented, "编辑", "阅读")
 	if parts.List.Changed() {
 		if idx == 1 {
-			a.flushSave()
-			a.mode = "read"
+			a.enterReadMode()
 		} else {
 			a.mode = "edit"
 		}
 	}
+}
+
+// enterReadMode 先落盘草稿再生成阅读快照（评审 #8：快照只生成一次，不逐帧重算）。
+func (a *app) enterReadMode() {
+	a.flushSave()
+	a.mode = "read"
+	a.readerSrc = a.vault.RenderReaderSource(a.currentID)
 }
 
 // saveBadge 显示保存状态（BR-05）。
@@ -228,7 +239,8 @@ func (a *app) saveBadge(c *ui.Context) {
 	}
 	badge := components.Text(c, "● "+text).FontSize(12).TextColor(color)
 	if a.saveState == saveError {
-		badge.OnClick(func() { a.saveNow() })
+		// 用户显式点击重试：强制覆盖保存（含外部修改冲突，评审 #7）。
+		badge.OnClick(func() { a.saveNowForce() })
 	}
 }
 
@@ -267,11 +279,11 @@ func (a *app) statsBar(c *ui.Context, ed *noteEditor) {
 }
 
 // readerView 是独立阅读页：渲染 Markdown 快照（FR-EDIT-01、BR-06）。
+// 快照在进入阅读模式时生成（a.readerSrc），避免每帧重新改写双链（评审 #8）。
 func (a *app) readerView(c *ui.Context) {
-	src := a.vault.RenderReaderSource(a.currentID)
 	ui.Scroll(c).Grow(1).FillWidth().Children(func() {
 		ui.Column(c).FillWidth().MaxWidth(820).Children(func() {
-			markdown.View(c, src, &markdown.Options{
+			markdown.View(c, a.readerSrc, &markdown.Options{
 				OnLink:    func(u string) { a.onReaderLink(c, u) },
 				LoadImage: a.loadImage,
 				WrapCode:  true,

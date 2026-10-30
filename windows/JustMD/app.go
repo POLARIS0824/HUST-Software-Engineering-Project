@@ -48,9 +48,11 @@ type app struct {
 	tagFilter string // 选中标签的小写全路径，"" 为不过滤
 
 	// 搜索。
-	query     string
-	hits      []SearchHit
-	searching bool
+	query       string
+	hits        []SearchHit
+	searching   bool
+	searchSeq   int         // 检索序号：丢弃过期的后台检索结果
+	searchTimer *time.Timer // 输入防抖
 
 	// 当前笔记与编辑器。
 	currentID    string
@@ -59,6 +61,7 @@ type app struct {
 	currentStats TextStats
 	editors      map[string]*noteEditor
 	mode         string // "edit" / "read"
+	readerSrc    string // 阅读页 Markdown 快照（进入阅读模式时生成，避免逐帧重算）
 	saveState    string
 	saveTimer    *time.Timer
 	statsVersion uint64
@@ -150,7 +153,13 @@ func (a *app) visibleNotes() []NoteSummary {
 // ---- 笔记动作 ----------------------------------------------------------------
 
 // openNote 打开笔记（FR-NOTE-03），会话内保留其编辑器与撤销历史。
+// 切换前先落盘上一篇的未保存草稿，避免防抖定时器指向错误笔记而丢稿。
 func (a *app) openNote(id string) {
+	if a.currentID != "" && a.currentID != id {
+		if !a.flushSaveNote(a.currentID) {
+			a.pendingToast = "上一篇笔记保存失败，草稿仍保留在编辑器中"
+		}
+	}
 	doc, err := a.vault.OpenNote(id)
 	if err != nil || doc.Trashed {
 		return
@@ -212,19 +221,14 @@ func (a *app) renameCurrent(title string) {
 	}
 	a.currentTitle = doc.Title
 	a.currentRel = doc.RelativePath
+	if a.mode == "read" {
+		// 级联改写可能已变更本篇正文，刷新阅读快照。
+		a.readerSrc = a.vault.RenderReaderSource(a.currentID)
+	}
 	a.refreshLists()
 }
 
 // ---- 自动保存（FR-EDIT-04/05/06、BR-04/05）------------------------------------
-
-// currentDirty 判断当前编辑器是否有未落盘修改。
-func (a *app) currentDirty() bool {
-	ed := a.currentEditor()
-	if ed == nil {
-		return false
-	}
-	return ed.state.Buffer.Version() != ed.saved
-}
 
 // scheduleSave 为未落盘的修改安排 2 秒防抖保存（每次新输入重置）。
 func (a *app) scheduleSave() {
@@ -243,33 +247,71 @@ func (a *app) scheduleSave() {
 }
 
 // saveNow 立即保存当前笔记；成功后更新回执状态与派生视图（BR-05）。
+// 落盘 I/O 在后台 goroutine 执行（评审 #8），无窗口（测试）时同步执行。
 func (a *app) saveNow() {
-	ed := a.currentEditor()
-	if ed == nil || a.saveState == saveSaving {
-		return
+	a.saveNote(a.currentID, false)
+}
+
+// saveNowForce 强制保存当前笔记（跳过外部修改检测），供"保存失败"徽章重试（评审 #7）。
+func (a *app) saveNowForce() {
+	a.saveNote(a.currentID, true)
+}
+
+// saveNote 保存指定笔记的编辑器内容。force 时跳过外部修改检测强制覆盖。
+// 返回 false 表示无可保存内容或该笔记已在保存中。
+func (a *app) saveNote(id string, force bool) bool {
+	if id == "" {
+		return false
+	}
+	ed := a.editors[id]
+	if ed == nil {
+		return false
 	}
 	if ed.state.Buffer.Version() == ed.saved {
-		a.saveState = saveSaved
-		return
+		if a.currentID == id {
+			a.saveState = saveSaved
+		}
+		return true
 	}
-	a.saveState = saveSaving
-	receipt, err := a.vault.SaveContent(a.currentID, ed.state.Buffer.String())
-	if err != nil {
-		a.saveState = saveError // FR-EDIT-06：失败保留编辑态，可重试
-		return
+	if a.currentID == id && a.saveState == saveSaving {
+		return false
 	}
-	ed.saved = ed.state.Buffer.Version()
-	ed.state.Buffer.MarkSaved()
-	a.saveState = saveSaved
-	a.currentStats = receipt.Stats
-	a.statsVersion = ed.state.Buffer.Version()
-	a.refreshLists()
-	a.loadBacklinks(a.currentID)
-	// 保存期间又输入了新内容：继续安排下一次保存。
-	if ed.state.Buffer.Version() != ed.saved {
-		a.saveState = saveDirty
-		a.scheduleSave()
+	snap := ed.state.Buffer.Snapshot()
+	if a.currentID == id {
+		a.saveState = saveSaving
 	}
+	run := func() {
+		var receipt SaveReceipt
+		var err error
+		if force {
+			receipt, err = a.vault.ForceSaveContent(id, snap.String())
+		} else {
+			receipt, err = a.vault.SaveContent(id, snap.String())
+		}
+		a.onUIThread(func() { a.applySaveResult(id, snap.Version(), receipt, err) })
+	}
+	if a.win == nil {
+		run()
+	} else {
+		go run()
+	}
+	return true
+}
+
+// flushSaveNote 同步保存指定笔记的未落盘草稿，返回是否成功（无草稿也算成功）。
+// 用于换篇、删除、导出/重建/换库前的一致性保障（评审 #2/#3）。
+func (a *app) flushSaveNote(id string) bool {
+	if id == "" {
+		return true
+	}
+	ed := a.editors[id]
+	if ed == nil || ed.state.Buffer.Version() == ed.saved {
+		return true
+	}
+	snap := ed.state.Buffer.Snapshot()
+	receipt, err := a.vault.SaveContent(id, snap.String())
+	a.applySaveResult(id, snap.Version(), receipt, err)
+	return err == nil
 }
 
 // flushSave 在换篇等时机等待最新内容提交（FR-EDIT-05）。
@@ -278,8 +320,67 @@ func (a *app) flushSave() {
 		a.saveTimer.Stop()
 		a.saveTimer = nil
 	}
-	if a.currentDirty() || a.saveState == saveError {
-		a.saveNow()
+	a.flushSaveNote(a.currentID)
+}
+
+// flushSaveAll 同步保存全部编辑器草稿；任一失败返回 false。
+func (a *app) flushSaveAll() bool {
+	if a.saveTimer != nil {
+		a.saveTimer.Stop()
+		a.saveTimer = nil
+	}
+	ok := true
+	for id := range a.editors {
+		if !a.flushSaveNote(id) {
+			ok = false
+		}
+	}
+	return ok
+}
+
+// flushAllOrToast 保存全部草稿供破坏性/全局操作前置调用；失败提示并返回 false（评审 #3）。
+func (a *app) flushAllOrToast() bool {
+	if a.flushSaveAll() {
+		return true
+	}
+	a.pendingToast = "保存失败，已中止当前操作"
+	return false
+}
+
+// applySaveResult 把落盘回执应用回界面状态（主线程）。
+func (a *app) applySaveResult(id string, ver uint64, receipt SaveReceipt, err error) {
+	ed := a.editors[id]
+	if ed == nil {
+		return
+	}
+	if err != nil {
+		if a.currentID == id {
+			a.saveState = saveError
+		}
+		if err == ErrExternalEdit {
+			a.pendingToast = "笔记已被其他程序修改：点击「保存失败」强制覆盖"
+		}
+		return
+	}
+	if ver >= ed.saved {
+		ed.saved = ver
+	}
+	// 保存期间又有新输入时不得 MarkSaved（会把新输入误标为已保存）。
+	if ed.state.Buffer.Version() == ver {
+		ed.state.Buffer.MarkSaved()
+	}
+	if a.currentID != id {
+		return
+	}
+	a.saveState = saveSaved
+	a.currentStats = receipt.Stats
+	a.statsVersion = ver
+	a.refreshLists()
+	a.loadBacklinks(id)
+	// 保存期间又输入了新内容：继续安排下一次保存。
+	if ed.state.Buffer.Version() != ed.saved {
+		a.saveState = saveDirty
+		a.scheduleSave()
 	}
 }
 
@@ -302,23 +403,49 @@ func (a *app) setSort(option string) {
 	a.refreshLists()
 }
 
-func (a *app) searchNow() {
-	if strings.TrimSpace(a.query) == "" {
+// scheduleSearch 输入防抖 + 后台检索（评审 #8：避免每次按键同步全库检索）。
+// 结果按序号丢弃过期数据；a.searching 驱动列表区的 Spinner。
+func (a *app) scheduleSearch() {
+	query := a.query
+	a.searchSeq++
+	seq := a.searchSeq
+	if a.searchTimer != nil {
+		a.searchTimer.Stop()
+		a.searchTimer = nil
+	}
+	if strings.TrimSpace(query) == "" {
 		a.hits = nil
 		a.searching = false
 		return
 	}
-	a.hits = a.vault.Search(a.query)
-	a.searching = false
+	a.searching = true
+	a.searchTimer = time.AfterFunc(250*time.Millisecond, func() {
+		hits := a.vault.Search(query) // Vault 自带锁，可在后台线程调用
+		a.onUIThread(func() {
+			if seq != a.searchSeq {
+				return // 已有更新的检索，丢弃过期结果
+			}
+			a.searchTimer = nil
+			a.hits = hits
+			a.searching = false
+		})
+	})
 }
 
+// deleteFromList 先保存草稿并确认成功，再移入回收站（评审 #2：避免丢稿）。
 func (a *app) deleteFromList(id string) {
-	a.vault.TrashNote(id)
+	if !a.flushSaveNote(id) {
+		a.pendingToast = "保存失败，已中止删除"
+		return
+	}
+	if _, err := a.vault.TrashNote(id); err != nil {
+		return
+	}
 	if a.currentID == id {
-		a.flushSave()
 		a.currentID = ""
 		a.backlinks = nil
 	}
+	delete(a.editors, id)
 	a.refreshLists()
 }
 
@@ -431,5 +558,45 @@ func (a *app) chooseWorkspaceFlow() {
 				a.openNote(a.notes[0].ID)
 			}
 		}
+	})
+}
+
+// dropFilesFlow 处理拖放导入（评审 #6）：.md 入库、其余进 attachments/。
+// vault 侧可从后台线程调用；界面状态经 onUIThread 回写。
+func (a *app) dropFilesFlow(paths []string) {
+	a.onUIThread(func() { a.busyStart("正在导入拖放的文件…") })
+	results, err := a.vault.ImportDroppedFiles(paths)
+	a.onUIThread(func() {
+		a.busyEnd()
+		if err != nil {
+			a.pendingToast = "拖放导入失败"
+			return
+		}
+		notes, atts, failed := 0, 0, 0
+		for _, r := range results {
+			switch r.Status {
+			case "imported", "renamed":
+				notes++
+			case "copied":
+				atts++
+			default:
+				failed++
+			}
+		}
+		a.refreshLists()
+		parts := []string{}
+		if notes > 0 {
+			parts = append(parts, itoa(notes)+" 篇笔记")
+		}
+		if atts > 0 {
+			parts = append(parts, itoa(atts)+" 个附件")
+		}
+		if failed > 0 {
+			parts = append(parts, itoa(failed)+" 个失败")
+		}
+		if len(parts) == 0 {
+			return
+		}
+		a.pendingToast = "拖放导入完成：" + strings.Join(parts, "，")
 	})
 }

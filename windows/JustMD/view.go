@@ -96,8 +96,7 @@ func (a *app) handleShortcuts(c *ui.Context) {
 	}
 	if c.Shortcut(ui.Ctrl, ui.KeyE) {
 		if a.mode == "edit" {
-			a.flushSave()
-			a.mode = "read"
+			a.enterReadMode()
 		} else {
 			a.mode = "edit"
 		}
