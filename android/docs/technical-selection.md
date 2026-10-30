@@ -1,4 +1,4 @@
-# JustMD 技术选型
+# Looma 技术选型
 
 2026-10-28。根据两轮原型结果，确定采用纯 Kotlin Compose，编辑 Markdown 源码，使用独立的原生阅读页。即时渲染退出本版范围。
 
@@ -19,7 +19,7 @@
 | 派生索引 | Room 3.0.3、`sqlite-bundled:2.7.1`、FTS5 | 最小建表与查询已验证，尚未接入编辑链路 |
 | 并发与外部文件 | Kotlin Coroutines、Flow、SAF | 用于后台读写和导入导出，产品流程待实现 |
 
-这些版本是原型实测组合，不代表最新版本。完整工具链见 [第二轮原型报告](../prototypes/justmd-editor-comparison/research-report.md#构建环境与边界)。
+这些版本是原型实测组合，不代表最新版本。完整工具链见 [第二轮原型报告](../prototypes/looma-editor-comparison/research-report.md#构建环境与边界)。
 
 ## 原型支持这个决定
 

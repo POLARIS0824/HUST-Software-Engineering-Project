@@ -1,4 +1,4 @@
-# JustMD 技术验证记录
+# Looma 技术验证记录
 
 2026-10-28 更新。本文记录两轮研究原型的结果，不替代正式产品验收。当前已选择纯 Kotlin Compose 源码编辑与独立阅读，理由见 [技术选型](technical-selection.md)。需求目标和待实现设计分别见 [需求分析](requirements-analysis.md) 与 [软件设计](software-design.md)。
 
@@ -12,9 +12,9 @@
 | 待实现或待验收 | 没有对应产品实现或运行证据 |
 | 历史方案 | 已退出当前选型，只保留对照证据 |
 
-第一轮原型位于 `prototypes/justmd-research/`，包含界面方向、Vditor、CodeMirror 对照、Room 查询和文件操作探针。第二轮位于 `prototypes/justmd-editor-comparison/`，对比 CodeMirror 与纯 Compose 编辑。两个目录都是可丢弃的研究代码。
+第一轮原型位于 `prototypes/looma-research/`，包含界面方向、Vditor、CodeMirror 对照、Room 查询和文件操作探针。第二轮位于 `prototypes/looma-editor-comparison/`，对比 CodeMirror 与纯 Compose 编辑。两个目录都是可丢弃的研究代码。
 
-实际环境为 Windows、JDK 21、AGP 9.1.1、Gradle 9.3.1、Compose 插件 2.3.20，compileSdk 与 targetSdk 为 37，minSdk 为 26。运行设备为 Pixel_10 AVD、API 37，未覆盖低版本系统或真机。第二轮环境详情见 [device-environment.json](../prototypes/justmd-editor-comparison/evidence/device-environment.json)。
+实际环境为 Windows、JDK 21、AGP 9.1.1、Gradle 9.3.1、Compose 插件 2.3.20，compileSdk 与 targetSdk 为 37，minSdk 为 26。运行设备为 Pixel_10 AVD、API 37，未覆盖低版本系统或真机。第二轮环境详情见 [device-environment.json](../prototypes/looma-editor-comparison/evidence/device-environment.json)。
 
 ## 2. 当前产品决策
 
@@ -43,10 +43,10 @@
 
 证据集中在以下文件。
 
-- [原生源码探针](../prototypes/justmd-editor-comparison/evidence/native-editor-probes.json) 与 [CodeMirror 源码探针](../prototypes/justmd-editor-comparison/evidence/cm-editor-probes.json)。
-- [UI 操作快照与检查结果](../prototypes/justmd-editor-comparison/evidence/ui-journeys.json)。
-- [原生选区问题 E03](../prototypes/justmd-editor-comparison/issues.md#e03-native-ui-selection-collapses-when-entering-reading)。
-- [APK 检查](../prototypes/justmd-editor-comparison/evidence/apk-inspection.json)。原生 APK 没有 editor JS、CodeMirrorPort 或 AndroidX WebKit 类描述符。
+- [原生源码探针](../prototypes/looma-editor-comparison/evidence/native-editor-probes.json) 与 [CodeMirror 源码探针](../prototypes/looma-editor-comparison/evidence/cm-editor-probes.json)。
+- [UI 操作快照与检查结果](../prototypes/looma-editor-comparison/evidence/ui-journeys.json)。
+- [原生选区问题 E03](../prototypes/looma-editor-comparison/issues.md#e03-native-ui-selection-collapses-when-entering-reading)。
+- [APK 检查](../prototypes/looma-editor-comparison/evidence/apk-inspection.json)。原生 APK 没有 editor JS、CodeMirrorPort 或 AndroidX WebKit 类描述符。
 
 第一轮 Vditor 3.9.9 在 8 个未编辑样例中保留了 7 个，引用链接定义丢失标题。禁用 DOM storage 时还出现启动错误。第二轮 CodeMirror 基础操作通过，但需要 WebView、JS 桥接与 CSS 适配，绘制问题仅在指定模拟器上修复。这些结果支持当前原生源码方案，不构成两种编辑器的完整能力或性能排名。
 
@@ -56,7 +56,7 @@
 
 API 37 模拟器的系统色板由蓝色切为绿色后，两条路线都随系统更新。绿色浅色 primary 为 `#326A4D`，深色为 `#A4D1B4`。系统设置和夜间模式在实验后已恢复，恢复后的默认蓝色色值略有变化，未宣称资源逐色还原。
 
-证据见 [主题记录](../prototypes/justmd-editor-comparison/research-report.md#dynamic-color-与截图) 与 [截图比较页](../prototypes/justmd-editor-comparison/comparison.html)。Android 12 以下的静态回退、TalkBack、大字号、横屏和大屏尚未验收。
+证据见 [主题记录](../prototypes/looma-editor-comparison/research-report.md#dynamic-color-与截图) 与 [截图比较页](../prototypes/looma-editor-comparison/comparison.html)。Android 12 以下的静态回退、TalkBack、大字号、横屏和大屏尚未验收。
 
 ## 5. 存储与搜索
 
@@ -71,7 +71,7 @@ API 37 模拟器的系统色板由蓝色切为绿色后，两条路线都随系�
 
 第一轮数据库探针只有 5 条小文档，执行 12 个固定查询。中文单字、两字、多字及字面 `%`、`_`、反斜杠和引号的 LIKE 结果与独立 Kotlin 匹配结果一致。直接 MATCH 不能把一字或两字查询当作 trigram 命中。这里没有计时成绩。
 
-原型 UI 搜索使用固定内存样例，未接入 Room，第二轮也没有将新编辑内容接入全库搜索。原始 SQL、参数与文件回读见 [第一轮 native-probes.json](../prototypes/justmd-research/evidence/native-probes.json)，解释与边界见 [第一轮原型报告](../prototypes/justmd-research/research-report.md#技术验证矩阵)。原 Room 2.6.x 原生提供 FTS5 的说法已撤回。
+原型 UI 搜索使用固定内存样例，未接入 Room，第二轮也没有将新编辑内容接入全库搜索。原始 SQL、参数与文件回读见 [第一轮 native-probes.json](../prototypes/looma-research/evidence/native-probes.json)，解释与边界见 [第一轮原型报告](../prototypes/looma-research/research-report.md#技术验证矩阵)。原 Room 2.6.x 原生提供 FTS5 的说法已撤回。
 
 ## 6. 标签、链接与内容安全
 
@@ -94,7 +94,7 @@ API 37 模拟器的系统色板由蓝色切为绿色后，两条路线都随系�
 | Markleaf | Compose 源码编辑，将 CommonMark AST 适配成 Compose 预览组件 |
 | Kori | state-based BasicTextField 与 Expressive 动态主题，Android Markdown 阅读仍使用 WebView |
 
-仓库地址、固定提交与文件位置见 [源码核查记录](../prototypes/justmd-editor-comparison/research/native-projects.md)。旧文档中的其他竞品性能、价格和行为断言不作为当前选型证据。
+仓库地址、固定提交与文件位置见 [源码核查记录](../prototypes/looma-editor-comparison/research/native-projects.md)。旧文档中的其他竞品性能、价格和行为断言不作为当前选型证据。
 
 ## 8. 仍需执行的验证
 
@@ -123,4 +123,4 @@ API 37 模拟器的系统色板由蓝色切为绿色后，两条路线都随系�
 | VER-PERF-05 | 保存主线程占用 P95 不超过 50 毫秒，峰值不超过 100 毫秒 |
 | VER-PERF-06 | 5,000 篇完整索引重建不超过 60 秒 |
 
-第二轮独立证据审查见 [evidence-review.md](../prototypes/justmd-editor-comparison/evidence/evidence-review.md)。审查确认的是有边界的原型记录，选区、设备覆盖与产品验收缺口仍然存在。
+第二轮独立证据审查见 [evidence-review.md](../prototypes/looma-editor-comparison/evidence/evidence-review.md)。审查确认的是有边界的原型记录，选区、设备覆盖与产品验收缺口仍然存在。

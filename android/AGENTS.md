@@ -1,4 +1,4 @@
-# JustMD 开发约定
+# Looma 开发约定
 
 - 先读 [技术选型](docs/technical-selection.md)。按 [需求分析](docs/requirements-analysis.md) 和 [软件设计](docs/software-design.md) 开发，用 [核实记录](docs/verification-record.md) 区分目标与已验证结果。
 - 当前只有研究原型。正式工程与 `prototypes/` 分开维护，保留原型和证据。
@@ -12,7 +12,7 @@
 - 原生原型构建命令如下。Windows 使用对应的 `gradlew.bat`。
 
 ```bash
-bash prototypes/justmd-editor-comparison/android/gradlew -p prototypes/justmd-editor-comparison/android :app:assembleNativeDebug
+bash prototypes/looma-editor-comparison/android/gradlew -p prototypes/looma-editor-comparison/android :app:assembleNativeDebug
 ```
 
 - 正式工程建立后，补充其构建与测试命令。原型通过不代替正式应用验收。

@@ -1,4 +1,4 @@
-# JustMD 个人 Markdown 笔记与知识管理工具软件设计规格说明书（架构设计与系统设计）
+# Looma 个人 Markdown 笔记与知识管理工具软件设计规格说明书（架构设计与系统设计）
 
 ## 目录
 
@@ -76,15 +76,15 @@
 
 ### 1.4 项目统一命名（2026-10-19）
 
-产品名称为 JustMD。下表是正式应用的命名约定，尚未创建对应生产工程。研究原型仍使用 `edu.hust.justmd` 包前缀，不据此宣称已经迁移。
+产品名称为 Looma。下表是正式应用的命名约定，尚未创建对应生产工程。研究原型仍使用 `edu.hust.looma` 包前缀，不据此宣称已经迁移。
 
 | 命名对象 | 统一约定 |
 | :--- | :--- |
-| 项目与产品展示名 | JustMD，保持此大小写，不写作 JustMd、Just MD 或 JustMD Notes |
-| Android 包与 Kotlin 类型 | 包名前缀 com.justmd，应用 ID 候选 com.justmd.app；JustMDDatabase、JustMDNavHost、JustMDTheme |
+| 项目与产品展示名 | Looma，保持此大小写，不写作 LOOMA、looma 或 Looma Notes |
+| Android 包与 Kotlin 类型 | 包名前缀 com.looma，应用 ID 候选 com.looma.app；LoomaDatabase、LoomaNavHost、LoomaTheme |
 | 编辑与阅读 | `EditorScreen`、`TextFieldState`、Compose Markdown 阅读组件，无 JS 全局对象 |
-| 工作区与数据库 | JustMDWorkspace/；justmd_derived.db |
-| 导出文件与生成器 | JustMD_Backup_{时间戳}.zip；manifest.generator 使用 JustMD 加应用版本 |
+| 工作区与数据库 | LoomaWorkspace/；looma_derived.db |
+| 导出文件与生成器 | Looma_Backup_{时间戳}.zip；manifest.generator 使用 Looma 加应用版本 |
 
 正文、元数据和派生索引的命名约定保留。编辑器改为 Kotlin 状态调用，不保留旧的 JS 接口名称。
 
@@ -94,7 +94,7 @@
 
 ### 2.1 架构设计原则与规模匹配说明
 
-JustMD 是一款纯本地运行（Local-first）、单用户、无远程服务端的 Android 应用程序。为保证 **架构与选题规模高度匹配、不为炫技而过度设计**，本设计遵循以下四项核心架构准则：
+Looma 是一款纯本地运行（Local-first）、单用户、无远程服务端的 Android 应用程序。为保证 **架构与选题规模高度匹配、不为炫技而过度设计**，本设计遵循以下四项核心架构准则：
 1. **整洁分层与单向数据流（Clean Architecture + UDF）**：采用经典的 **Presentation（表现层）— Domain（领域层）— Data（数据层）** 三层架构，杜绝引入不必要的微服务拆分、事件总线（EventBus）或过度抽象的插件微内核。
 2. **正文与派生索引分离**：物理文件系统（`.md` 纯文本）作为 **唯一事实源（Single Source of Truth, SSOT）** 承载全部正文写入与读取；Room SQLite 数据库仅作为 **派生可重建索引缓存（Derived Index Cache）** 承载列表排序、标签聚合、双链拓扑与 FTS5 全文检索。
 3. **编辑与阅读分离**：全部界面采用 Compose，控件优先使用 Material Expressive。编辑页直接修改 Markdown 源码，阅读页只接收不可变快照。正文不经过 HTML 导出，不引入 WebView 或 JS 桥接。
@@ -156,7 +156,7 @@ flowchart TB
 
 ### 3.1 模块划分总览与耦合关系矩阵
 
-| 模块编号 | 模块名称 | 所在包路径 (`com.justmd.*`) | 核心职责概述 | 运行时协作模块 | 对外暴露接口 |
+| 模块编号 | 模块名称 | 所在包路径 (`com.looma.*`) | 核心职责概述 | 运行时协作模块 | 对外暴露接口 |
 | :---: | :--- | :--- | :--- | :--- | :--- |
 | **MOD-01** | **笔记管理与工作区模块** | `feature.note` / `domain.note` | 笔记列表展示、多维排序、新建/打开/重命名、左滑软删除与 5s Snackbar 撤销、回收站管理 | `MOD-03`, `MOD-05`, `MOD-06` | `NoteCrudUseCase`, `TrashManageUseCase` |
 | **MOD-02** | **原生源码编辑与阅读模块** | `feature.editor` | TextFieldState、原生 Markdown 阅读、选区与撤销历史、中文输入、保存状态、快捷工具栏 | `MOD-01`、`MOD-03`、`MOD-05` | `EditorSessionController`、`EditorScreen` |
@@ -435,7 +435,7 @@ sequenceDiagram
 
 	rect rgb(240, 255, 240)
 		Note over User,Sync: 场景二：一键导出完整知识库为标准 ZIP 归档包 (FR-DATA-03 / 4.7 节)
-		User->>UI: 点击"导出完整知识库 (ZIP)" -> SAF 选择保存至 Downloads/JustMD_Backup_20261019.zip
+		User->>UI: 点击"导出完整知识库 (ZIP)" -> SAF 选择保存至 Downloads/Looma_Backup_20261019.zip
 		UI->>VM: onExportBundleRequested(targetSafUri)
 		VM->>UC: exportFullKnowledgeBase(targetSafUri)
 		UC->>FS: 先取最新快照并提交，进入维护只读态和工作区独占锁，再枚举活跃笔记及附件
@@ -492,14 +492,14 @@ sequenceDiagram
 
 ## 5. 接口设计（Interface Design）
 
-本节定义正式应用的 Kotlin 接口与数据约束。这些是待实现的项目接口，不是第三方库已经提供的 API。原型实际接口位于 `prototypes/justmd-editor-comparison/android/app/src/main/kotlin/edu/hust/justmd/comparison/EditorContract.kt`。
+本节定义正式应用的 Kotlin 接口与数据约束。这些是待实现的项目接口，不是第三方库已经提供的 API。原型实际接口位于 `prototypes/looma-editor-comparison/android/app/src/main/kotlin/edu/hust/looma/comparison/EditorContract.kt`。
 
 ### 5.1 统一错误约定与领域异常体系（`DomainError`）
 
 系统内部所有可能失败的挂起函数接口统一采用 Kotlin 标准 `Result<T>` 返回；`DomainError` 继承 `Exception`，作为 `Result.failure(error)` 的受控错误值，**严禁向表现层裸露未捕获的底层 `IOException` 或 `SQLiteException`**（落实 `NFR-USE-04`）。
 
 ```kotlin
-package com.justmd.domain.model
+package com.looma.domain.model
 
 sealed class DomainError(
 	val errorCode: String,
@@ -549,7 +549,7 @@ sealed class DomainError(
 - **用途**：管理笔记的增删改查、原子保存、重命名以及回收站生命周期。
 
 ```kotlin
-package com.justmd.domain.repository
+package com.looma.domain.repository
 
 data class EditSnapshot(
 	val noteId: String,
@@ -650,7 +650,7 @@ interface NoteRepository {
 - **所属模块**：`domain.parser`（纯 Kotlin 无副作用纯函数接口）。
 
 ```kotlin
-package com.justmd.domain.parser
+package com.looma.domain.parser
 
 interface MarkdownMetadataParser {
 	/**
@@ -691,7 +691,7 @@ data class ExtractedLink(
 - **所属模块**：定义于 `domain.repository`，由 `data.repository` 实现。
 
 ```kotlin
-package com.justmd.domain.repository
+package com.looma.domain.repository
 
 sealed interface SearchQuery {
 	data class Literal(val value: String) : SearchQuery
@@ -762,7 +762,7 @@ sealed class LinkResolutionResult {
 - **所属模块**：`domain.repository` / `domain.service`。
 
 ```kotlin
-package com.justmd.domain.repository
+package com.looma.domain.repository
 
 interface PortabilityRepository {
 	/**
@@ -921,10 +921,10 @@ erDiagram
 
 ### 6.2 物理文件系统与非派生元数据
 
-根目录为 context.getExternalFilesDir(DIRECTORY_DOCUMENTS)/JustMDWorkspace/。正文、开放元数据与可丢弃缓存分开；“唯一正文事实源”不等于 UUID 和原始时间也能从正文推导。
+根目录为 context.getExternalFilesDir(DIRECTORY_DOCUMENTS)/LoomaWorkspace/。正文、开放元数据与可丢弃缓存分开；“唯一正文事实源”不等于 UUID 和原始时间也能从正文推导。
 
 ```text
-JustMDWorkspace/
+LoomaWorkspace/
 ├── notes/计算机网络/TCP.md
 ├── attachments/img_001.png
 ├── .meta/
@@ -956,7 +956,7 @@ pending 操作记录包含 operationId、noteId、操作类型、旧/新路径�
 
 ### 6.3 派生索引数据库表结构与字段约束详细定义（Room Schema）
 
-数据库文件名为 `justmd_derived.db`，启用 WAL（Write-Ahead Logging）模式以支持并发读与低延迟事务写。
+数据库文件名为 `looma_derived.db`，启用 WAL（Write-Ahead Logging）模式以支持并发读与低延迟事务写。
 
 #### 6.3.1 表 1：笔记元数据主表 `note_metadata`
 | 字段名 | SQLite 类型 | Kotlin 类型 | 必填/可空 | 索引与约束 | 业务含义与取值范围校验 |
@@ -1325,14 +1325,14 @@ Android 12 起由 dynamicLightColorScheme 与 dynamicDarkColorScheme 提供系�
 | **FR-LINK-08** | 重命名笔记标题时提示是否级联更新其他笔记中的 `[[旧标题]]` 引用 | **低** | `MOD-01`<br>`MOD-06` | `CHG-03` | `NoteRepository.renameNoteTitle(cascadeUpdateLinks=true)` | 批量原子更新引用方 `.md` 与 `wiki_link_edge` | `RenameCascadeConfirmDialog` | `IT-LINK-03` |
 | **FR-DATA-01** | 通过 Android SAF 单选/多选外部 `.md` 导入，同名冲突三选一 | **高** | `MOD-07` | `FLOW-05` | `PortabilityRepository.importMarkdownFiles()` | `notes/*.md`, `.md.bak` | `SettingsPortabilityScreen`<br>`ConflictResolutionDialog` | `AC-DATA-02`<br>`IT-DATA-01` |
 | **FR-DATA-02** | 导出单篇笔记为标准 `.md` 文件至系统公共目录 | **高** | `MOD-07` | `FLOW-05` | `PortabilityRepository.exportSingleNote()` | SAF OutputStream (`UTF-8` 无 BOM + `LF`) | `EditorTopBar.ExportMenu` | `AC-UI-02`<br>`IT-DATA-02` |
-| **FR-DATA-03** | 一键导出完整知识库为标准 ZIP 包（含 `notes/`、`attachments/`、`manifest.json`） | **高** | `MOD-07` | `FLOW-05` | `PortabilityRepository.exportFullKnowledgeBaseZip()` | `JustMD_Backup_*.zip`<br>`manifest.json` (含 SHA-256) | `SettingsPortabilityScreen`<br>`ExportProgressDialog` | `AC-DATA-01`<br>`IT-DATA-03` |
+| **FR-DATA-03** | 一键导出完整知识库为标准 ZIP 包（含 `notes/`、`attachments/`、`manifest.json`） | **高** | `MOD-07` | `FLOW-05` | `PortabilityRepository.exportFullKnowledgeBaseZip()` | `Looma_Backup_*.zip`<br>`manifest.json` (含 SHA-256) | `SettingsPortabilityScreen`<br>`ExportProgressDialog` | `AC-DATA-01`<br>`IT-DATA-03` |
 | **FR-DATA-04** | 所有笔记 CRUD 100% 基于本地物理介质，严禁未授权外联上传 | **高** | `MOD-05` | `FLOW-01` | `AtomicFileWriter` / Manifest 零网络权限 | `getExternalFilesDir/Documents/notes/` | 全应用离线运行 | `AC-UI-02`<br>`SEC-AUDIT-01` |
-| **FR-DATA-05** | 提供“索引全库自愈重建”功能，从本地 Markdown 重新全量生成索引 | **高** | `MOD-06` | `FLOW-06`<br>`FAULT-03` | `IndexRebuildService.rebuildAllIndexesFromDisk()` | 扫描 `notes/*.md` $\rightarrow$ 重建 `justmd_derived.db` | `SelfHealingGuideScreen`<br>`SettingsPortabilityScreen` | `AC-DATA-03`<br>`IT-DATA-04` |
+| **FR-DATA-05** | 提供“索引全库自愈重建”功能，从本地 Markdown 重新全量生成索引 | **高** | `MOD-06` | `FLOW-06`<br>`FAULT-03` | `IndexRebuildService.rebuildAllIndexesFromDisk()` | 扫描 `notes/*.md` $\rightarrow$ 重建 `looma_derived.db` | `SelfHealingGuideScreen`<br>`SettingsPortabilityScreen` | `AC-DATA-03`<br>`IT-DATA-04` |
 | **FR-DATA-06** | 批量导入时单篇文件损坏或编码异常自动跳过并记日志，不中断整体导入 | **中** | `MOD-07` | `FLOW-05`<br>`FAULT-04` | `CharsetDetector.decodeSafe()`<br>`DomainError.CorruptedMarkdownFile` | 导入汇总报告 `ImportBatchProgress` | `ImportSummarySnackbar` | `AC-DATA-02`<br>`IT-DATA-01` |
 | **FR-DATA-07** | 支持从标准备份 ZIP 包完整解压并逆向恢复知识库与附件 | **低** | `MOD-07` | `FLOW-05` | `PortabilityRepository.restoreFromBackupZip()` | 校验、限额与冲突处理后恢复 `notes/` 与 `attachments/` 并校验 `manifest.json` | `SettingsPortabilityScreen` | `IT-DATA-05` |
 | **FR-UI-01** | 所有可点击控件最小触控热区 $\ge 48\text{dp} \times 48\text{dp}$ | **高** | `MOD-01`<br>`MOD-02` | - | `Modifier.minimumInteractiveComponentSize()` | - | 全局所有 `IconButton`, `FAB`, `Chip` | `AC-UI-01`<br>`UI-A11Y-01` |
 | **FR-UI-02** | 关键破坏性与异常操作（删除、保存失败、导入异常）提供即时明确反馈 | **高** | `MOD-01`<br>`MOD-02`<br>`MOD-07` | `FLOW-01`<br>`FLOW-02`<br>`FLOW-05` | `UiEffect.ShowSnackbar` / `ShowAlertDialog` | - | `UndoSnackbar`, `StorageFullRetryDialog`, `ConflictResolutionDialog` | `AC-NOTE-02`<br>`AC-EDIT-02`<br>`AC-DATA-02` |
-| **FR-UI-03** | 从主界面出发完成“新建笔记”或“激活检索框”点击次数 $\le 2$ 次 | **高** | `MOD-01`<br>`MOD-04` | `7.2 节` | `JustMDNavHost` | - | `NoteListScreen.FAB` (1步)<br>`TopSearchBar` (1步) | `UI-NAV-01` |
+| **FR-UI-03** | 从主界面出发完成“新建笔记”或“激活检索框”点击次数 $\le 2$ 次 | **高** | `MOD-01`<br>`MOD-04` | `7.2 节` | `LoomaNavHost` | - | `NoteListScreen.FAB` (1步)<br>`TopSearchBar` (1步) | `UI-NAV-01` |
 | **FR-UI-04** | 适配 Android Edge-to-Edge 沉浸布局，避让状态栏、挖孔与手势条 | **中** | `MOD-01`<br>`MOD-02` | `7.3 节` | `enableEdgeToEdge()` + `WindowInsets` | - | `Scaffold` + `imePadding()` | `UI-LAYOUT-01` |
 | **FR-UI-05** | 方案 B、Expressive 组件与系统深浅色主题 | **中** | `MOD-01`、`MOD-02` | `7.3 节` | `MaterialTheme` | 系统主题状态 | 全局 Compose | `UI-THEME-01` |
 | **FR-UI-06** | 适配 Android 14 Predictive Back（预测性返回手势）与过渡动画 | **中** | `MOD-01`<br>`MOD-02` | `5.4 节` | `PredictiveBackHandler` + `flushImmediately()` | - | `EditorScreen` / `SearchScreen` | `UI-NAV-02` |
@@ -1429,4 +1429,4 @@ Android 12 起由 dynamicLightColorScheme 与 dynamicDarkColorScheme 提供系�
 | [StartupTimingMetric](https://developer.android.com/reference/androidx/benchmark/macro/StartupTimingMetric) | 区分首帧和完整显示测点 |
 
 | [技术选型](technical-selection.md) 与 [核实记录](verification-record.md) | 当前原生方案、已验证范围与待验收项 |
-| [第二轮原型报告](../prototypes/justmd-editor-comparison/research-report.md) | TextFieldState、Compose 阅读、动态主题和包检查的实际证据 |
+| [第二轮原型报告](../prototypes/looma-editor-comparison/research-report.md) | TextFieldState、Compose 阅读、动态主题和包检查的实际证据 |

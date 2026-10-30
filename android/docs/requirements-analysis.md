@@ -1,4 +1,4 @@
-# JustMD 个人 Markdown 笔记与知识管理工具需求分析规格说明书
+# Looma 个人 Markdown 笔记与知识管理工具需求分析规格说明书
 
 > 2026-10-28 更新。本文是正式应用的需求目标，不是已完成功能清单。当前选定纯 Kotlin Compose 源码编辑与独立阅读，保留原需求编号，替换原即时渲染要求。技术理由见 [技术选型](technical-selection.md)，实测范围见 [核实记录](verification-record.md)。
 
@@ -27,7 +27,7 @@ Markdown 凭借纯文本、开放无专利限制、可跨平台无损迁移等�
 ## 2. 产品定位与目标
 
 ### 2.1 产品定位
-JustMD 是一款 **面向高校学生为主、知识工作者为辅的 Android-first、本地优先（Local-first）的 Markdown 个人笔记与知识管理工具**。软件坚持以开放标准的 Markdown 纯文本作为底层永久存储，通过原生源码编辑、独立阅读、正文标签、本地全文搜索以及双向链接，在 Android 移动端实现零配置、沉浸式、高可靠的个人知识管理。
+Looma 是一款 **面向高校学生为主、知识工作者为辅的 Android-first、本地优先（Local-first）的 Markdown 个人笔记与知识管理工具**。软件坚持以开放标准的 Markdown 纯文本作为底层永久存储，通过原生源码编辑、独立阅读、正文标签、本地全文搜索以及双向链接，在 Android 移动端实现零配置、沉浸式、高可靠的个人知识管理。
 
 ### 2.2 产品目标 (Objectives)
 * **OBJ-01 可靠记录与阅读**：使用原生控件编辑 Markdown 源码，一次点击切换到阅读模式。切换时保留正文、选区与本次会话的撤销历史。
@@ -122,7 +122,7 @@ JustMD 是一款 **面向高校学生为主、知识工作者为辅的 Android-f
 ### 4.7 导出包（Export Bundle）目录结构规范
 当用户触发“导出知识库”时，系统将生成标准的 ZIP 压缩归档文件，其内部结构定义如下：
 ```text
-JustMD_Backup_20260928T143000.zip
+Looma_Backup_20260928T143000.zip
 ├── notes/                        # Markdown 笔记正文主目录（保留用户自建层级）
 │   ├── 计算机网络/
 │   │   ├── TCP三次握手.md
@@ -136,7 +136,7 @@ JustMD_Backup_20260928T143000.zip
 `manifest.json` 采用 JSON 格式输出，内容架构如下：
 ```json
 {
-	"generator": "JustMD v1.1",
+	"generator": "Looma v1.1",
 	"exportTimestamp": "2026-09-28T14:30:00+08:00",
 	"schemaVersion": "1.0",
 	"totalNotes": 256,
@@ -532,7 +532,7 @@ JustMD_Backup_20260928T143000.zip
 * **AC-DATA-01 完整知识库 ZIP 导出合规性验证**
   * **Given** 知识库中包含 50 篇分属不同文件夹的 Markdown 笔记及 5 张本地图片；
   * **When** 用户在设置中点击“导出完整知识库为 ZIP”并选定系统 Downloads 路径；
-  * **Then** 系统后台打包生成 `JustMD_Backup_[时间戳].zip`；
+  * **Then** 系统后台打包生成 `Looma_Backup_[时间戳].zip`；
   * **When** 在第三方电脑上解压该压缩包；
   * **Then** 解压目录严格吻合 4.7 节结构规范（`notes/` 包含纯文本，`attachments/` 包含图片，根目录包含有效 `manifest.json`）；所有 `.md` 文件在 VS Code 中无乱码打开。
 * **AC-DATA-02 批量导入同名冲突与单文件损坏容错**
@@ -614,7 +614,7 @@ flowchart TD
 
 ### 11.2 当前选型与实现状态
 
-正式方案采用纯 Kotlin Compose，不保留 Web 编辑器或双引擎切换。技术理由见 [技术选型](technical-selection.md)。两轮可运行原型位于 `prototypes/justmd-research/` 和 `prototypes/justmd-editor-comparison/`，不是正式产品源码。
+正式方案采用纯 Kotlin Compose，不保留 Web 编辑器或双引擎切换。技术理由见 [技术选型](technical-selection.md)。两轮可运行原型位于 `prototypes/looma-research/` 和 `prototypes/looma-editor-comparison/`，不是正式产品源码。
 
 源码探针、基础 UI 操作和动态主题已验证。正式保存、进程恢复、中文候选输入、搜索与链接的产品集成仍待完成。原型的选区折叠问题必须修复后，才能通过 FR-EDIT-03 的验收。
 

@@ -1,6 +1,6 @@
-# JustMD
+# Looma
 
-JustMD 是笔记和知识管理工具
+Looma 是笔记和知识管理工具
 Markdown & Local First
 
 ## V1 目标
@@ -21,7 +21,7 @@ V1 不包含即时渲染、云同步、账号、多人协作、第三方插件�
 
 当前已有两轮可运行的 Android 研究原型，正式应用尚未实现。已选择方案 B、Material Expressive、Dynamic Color 和纯 Compose 源码编辑。基础编辑、主题与独立数据探针已有证据，可靠保存、中文输入法、搜索与双链集成及性能仍待完成。
 
-研究代码见 [第二轮原型](prototypes/justmd-editor-comparison/README.md)，它只保留本次进程内的编辑会话。
+研究代码见 [第二轮原型](prototypes/looma-editor-comparison/README.md)，它只保留本次进程内的编辑会话。
 
 ## 文档
 

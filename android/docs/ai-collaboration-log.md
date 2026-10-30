@@ -1,4 +1,4 @@
-# JustMD AI 辅助需求分析工程协作记录
+# Looma AI 辅助需求分析工程协作记录
 
 > 本文保留实验 1 的历史协作记录，旧的 IR、Vditor 和 WebView 决策不代表当前方案。2026-10-28 用户根据原型选择纯 Kotlin Compose 源码编辑与独立阅读，界面采用方案 B、Material Expressive 和 Dynamic Color。当前决定见 [技术选型](technical-selection.md)，实现与验证状态见 [核实记录](verification-record.md)。历史轮次与引文不作追溯性改写。
 
