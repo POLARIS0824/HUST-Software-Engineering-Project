@@ -78,8 +78,8 @@ go vet . && go tool mygo vet .
 
 ## 5. 验证状态（诚实版）
 
-**已验证**（细节见 `windows/docs/verification-record.md`）：
-- `CGO_ENABLED=0 go test ./...` 37 个用例全过；核心解析/清洗/检索覆盖率 93~100%。
+**已验证**（细节见 `windows/docs/verification-record.md`，该文件为核实状态的唯一权威来源）：
+- `CGO_ENABLED=0 go test ./...` 全部用例通过（2026-10-30 评审整改后为 80 个）；核心解析/清洗/检索覆盖率 93~100%。
 - `go vet` + `go tool mygo vet` 干净。
 - 实机（Win11）手工验证过：工作区选择/持久化、建笔记、标题重命名级联、编辑自动保存落盘、阅读页渲染（标题/加粗/代码块高亮/双链链接）、标签树过滤、导航切换。
 
@@ -87,8 +87,8 @@ go vet . && go tool mygo vet .
 - 阅读页内**检索命中滚动定位**（FR-SEARCH-04 的 native 降级）——`ui/markdown` 暂无锚点滚动 API，我没做。
 - 阅读页双链点击的完整闭环（跳转/一键创建已接线但没逐一截图验收）。
 - 中文 IME 专项、5000 篇性能压测、真实掉电恢复、Narrator 无障碍、NSIS 安装包分发。
-- **拖放导入**：Web 版有，原生版没接（MyGo 有 DropFiles API，未接线）。
-- 附件目录 `attachments/` 的管理 UI（后端 `ImportDroppedFiles` 还在但没入口）。
+- **拖放导入**：2026-10-30 已接线（`Window.OnFileDrop` → `ImportDroppedFiles`，有单测），实机拖放未截图验收。
+- 附件目录 `attachments/` 的管理 UI（拖放入库已有入口；删除/整理附件的管理界面仍无）。
 
 ## 6. 建议的下一步（按价值排序）
 
