@@ -62,11 +62,13 @@ fun VaultSetupScreen(
     onConfirmClick: () -> Unit = {},
     selectedFolderName: String? = null,
     currentFolderName: String? = null,
+    isInitializing: Boolean = false,
     isBusy: Boolean = false,
     errorMessage: String? = null,
     modifier: Modifier = Modifier,
 ) {
     val content = when {
+        isInitializing -> VaultContent.Loading
         selectedFolderName != null -> VaultContent.Pending(selectedFolderName, currentFolderName)
         currentFolderName != null -> VaultContent.Current(currentFolderName)
         else -> VaultContent.Empty
@@ -95,6 +97,7 @@ fun VaultSetupScreen(
                     label = "vaultSetupContent",
                 ) { target ->
                     when (target) {
+                        VaultContent.Loading -> VaultSetupLoading()
                         VaultContent.Empty -> Unit
                         is VaultContent.Pending -> VaultFolderCard(
                             folderName = target.name,
@@ -140,9 +143,20 @@ fun VaultSetupScreen(
 }
 
 private sealed interface VaultContent {
+    data object Loading : VaultContent
     data object Empty : VaultContent
     data class Pending(val name: String, val previous: String?) : VaultContent
     data class Current(val name: String) : VaultContent
+}
+
+@Composable
+private fun VaultSetupLoading() {
+    Box(
+        modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        DelayedLoadingIndicator(loading = true)
+    }
 }
 
 @Composable
@@ -239,6 +253,11 @@ private fun VaultSetupActions(
     onConfirmClick: () -> Unit,
 ) {
     val height = ButtonDefaults.MediumContainerHeight
+    if (content == VaultContent.Loading) {
+        Spacer(Modifier.height(height))
+        return
+    }
+
     if (content == VaultContent.Empty) {
         Button(
             onClick = onChooseFolderClick,
@@ -326,8 +345,6 @@ private fun PrimaryVaultButton(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Spacer(Modifier.size(6.dp))
-            DelayedLoadingIndicator(loading = busy)
         }
     }
 }

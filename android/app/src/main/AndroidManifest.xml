@@ -4,7 +4,7 @@
 
     <!--
       All files access：库是用户目录下的普通文件夹，全部操作走 java.io.File。
-      不上架 Google Play，因此不走 SAF。
+      文件夹选择使用系统 DocumentTree，只用来得到路径，不持久化 URI。
     -->
     <uses-permission
             android:name="android.permission.MANAGE_EXTERNAL_STORAGE"

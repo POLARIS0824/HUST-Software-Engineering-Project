@@ -1,3 +1,4 @@
+
 package com.example.looma.feature.vault
 
 import androidx.lifecycle.ViewModel
@@ -19,28 +20,36 @@ class VaultSetupViewModel(
     private val vaultRepository: VaultRepository,
 ) : ViewModel() {
 
-    // 1. 当前页面可修改的临时状态
-    private val _formState = MutableStateFlow(VaultSetupUiState())
+    // 1. 页面临时状态
+    private val _formState = MutableStateFlow(
+        VaultSetupUiState()
+    )
 
     // 2. 合并 Repository 数据和页面状态
     val uiState: StateFlow<VaultSetupUiState> = combine(
         vaultRepository.currentVaultFlow,
         _formState,
     ) { currentVault, formState ->
-        formState.copy(currentVault = currentVault)
+        formState.copy(
+            currentVault = currentVault,
+            isInitializing = false,
+        )
     }.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5_000),
-        initialValue = VaultSetupUiState(),
+        initialValue = VaultSetupUiState(isInitializing = true),
     )
 
-    // 3. 用户选择文件夹
-    fun onFolderSelected(pathOrUri: String, folderName: String) {
+    // 3. 选择新的文件夹
+    fun onFolderSelected(
+        path: String,
+        folderName: String,
+    ) {
         if (_formState.value.isBusy) return
 
         _formState.update {
             it.copy(
-                pendingVaultPath = pathOrUri,
+                pendingVaultPath = path,
                 pendingVaultName = folderName,
                 errorMessage = null,
                 selectionSaved = false,
@@ -48,22 +57,13 @@ class VaultSetupViewModel(
         }
     }
 
-    // 4. 确认保存或继续
+    // 4. 确认选择或继续使用已有 Vault
     fun confirmSelection() {
         val currentState = _formState.value
 
         if (currentState.isBusy) return
 
         val path = currentState.pendingVaultPath
-        if (path == null) {
-            // 已存在已连接的笔记库，点击“继续”时标记成功并进入后续流程
-            if (uiState.value.currentVault != null) {
-                _formState.update {
-                    it.copy(selectionSaved = true)
-                }
-            }
-            return
-        }
 
         _formState.update {
             it.copy(
@@ -75,7 +75,13 @@ class VaultSetupViewModel(
 
         viewModelScope.launch {
             try {
-                vaultRepository.setCurrentVault(path)
+                if (path != null) {
+                    // 用户选择了新文件夹
+                    vaultRepository.setCurrentVault(path)
+                } else {
+                    // 用户继续使用原来的 Vault
+                    vaultRepository.requireCurrentVault()
+                }
 
                 _formState.update {
                     it.copy(
@@ -94,28 +100,44 @@ class VaultSetupViewModel(
                 _formState.update {
                     it.copy(
                         isBusy = false,
-                        errorMessage = e.localizedMessage?.takeIf { it.isNotBlank() } ?: "保存笔记库失败，请重试",
+                        errorMessage = e.localizedMessage
+                            ?.takeIf { it.isNotBlank() }
+                            ?: "连接笔记库失败，请重试",
                     )
                 }
             }
         }
     }
 
-    // 5. 页面已处理保存成功状态
-    fun onNavigationHandled() {
+    // 5. 外部错误，例如文件选择器不支持的 URI
+    fun showError(message: String) {
         _formState.update {
-            it.copy(selectionSaved = false)
+            it.copy(
+                errorMessage = message,
+                selectionSaved = false,
+            )
         }
     }
 
     // 6. 清除错误
     fun clearError() {
         _formState.update {
-            it.copy(errorMessage = null)
+            it.copy(
+                errorMessage = null,
+            )
         }
     }
 
-    // 7. ViewModel Factory
+    // 7. 页面已处理连接成功事件
+    fun onNavigationHandled() {
+        _formState.update {
+            it.copy(
+                selectionSaved = false,
+            )
+        }
+    }
+
+    // 8. ViewModel Factory
     companion object {
         fun factory(
             vaultRepository: VaultRepository,

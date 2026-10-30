@@ -14,12 +14,15 @@ import kotlinx.coroutines.withContext
 
 class VaultRepository(
     private val preferences: VaultPreferences,
+    private val storageAccess: VaultStorageAccess,
 ) {
 
     constructor(context: Context) : this(
-        VaultPreferences(context.applicationContext)
+        VaultPreferences(context.applicationContext),
+        VaultStorageAccess(context),
     )
 
+    // 1. 观察当前 Vault
     val currentVaultFlow: Flow<Vault?> =
         preferences.vaultDataFlow.map { data ->
 
@@ -42,59 +45,41 @@ class VaultRepository(
             )
         }
 
+    // 2. 获取当前 Vault
     suspend fun getCurrentVault(): Vault? {
         return currentVaultFlow.first()
     }
 
+    // 3. 设置当前 Vault
     suspend fun setCurrentVault(rootPath: String): Vault =
         withContext(Dispatchers.IO) {
 
-            // 1. 获取规范化路径
-            val directory = File(rootPath).canonicalFile
+            val directory = requireValidDirectory(rootPath)
 
-            // 2. 获取设备共享存储空间根目录
-            val storageRoot = Environment.getExternalStorageDirectory().canonicalFile
-
-            // 3. 检查目录范围
-            require(
-                directory.toPath().startsWith(storageRoot.toPath())
-            ) {
-                "只能选择设备共享存储空间中的文件夹"
-            }
-
-            require(directory != storageRoot) {
-                "不能直接将整个存储空间作为笔记库"
-            }
-
-            // 4. 检查目录是否合法
-            require(directory.isDirectory) {
-                "所选文件夹不存在或不是目录"
-            }
-
-            require(directory.canRead() && directory.canWrite()) {
-                "没有该文件夹的读写权限"
-            }
-
-            // 5. 获取旧 Vault
             val currentVault = getCurrentVault()
 
-            // 6. 相同路径复用 ID，不同路径生成新 ID
+            // 比较规范化路径，避免重复创建 ID
+            val currentPath = currentVault?.rootPath?.let { path ->
+                runCatching {
+                    File(path).canonicalPath
+                }.getOrNull()
+            }
+
             val id = if (
-                currentVault?.rootPath == directory.path
+                currentVault != null &&
+                currentPath == directory.path
             ) {
                 currentVault.id.value
             } else {
                 UUID.randomUUID().toString()
             }
 
-            // 7. 构造领域对象
             val vault = Vault(
                 id = VaultId(id),
                 name = extractVaultName(directory.path),
                 rootPath = directory.path,
             )
 
-            // 8. 持久化配置
             preferences.saveVault(
                 id = vault.id.value,
                 name = vault.name,
@@ -104,8 +89,74 @@ class VaultRepository(
             vault
         }
 
+    // 4. 获取并验证已经保存的 Vault
+    suspend fun requireCurrentVault(): Vault =
+        withContext(Dispatchers.IO) {
+
+            val vault = getCurrentVault()
+                ?: error("尚未选择笔记库")
+
+            requireValidDirectory(vault.rootPath)
+
+            vault
+        }
+
+    // 5. 检查指定 Vault 是否可访问
+    suspend fun isVaultAccessible(
+        vault: Vault,
+    ): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            requireValidDirectory(vault.rootPath)
+        }.isSuccess
+    }
+
+    // 6. 清除当前 Vault
     suspend fun clearCurrentVault() {
         preferences.clearVault()
+    }
+
+    // 7. 验证真实文件夹和存储权限
+    private fun requireValidDirectory(rootPath: String): File {
+        require(rootPath.isNotBlank()) {
+            "笔记库路径不能为空"
+        }
+
+        require(!rootPath.contains("://")) {
+            "笔记库必须使用真实文件路径，而不是 URI"
+        }
+
+        check(storageAccess.hasAccess()) {
+            storageAccess.accessRequiredMessage
+        }
+
+        check(storageAccess.isStorageMounted()) {
+            "系统还没有挂载共享存储，请重启手机或重新安装应用"
+        }
+
+        val directory = File(rootPath).canonicalFile
+
+        val storageRoot =
+            Environment.getExternalStorageDirectory().canonicalFile
+
+        require(
+            directory != storageRoot &&
+                    directory.toPath().startsWith(storageRoot.toPath())
+        ) {
+            "只能选择主共享存储空间内的子文件夹"
+        }
+
+        require(directory.isDirectory) {
+            "所选笔记库不存在或不是文件夹"
+        }
+
+        require(
+            directory.canRead() &&
+                    directory.canWrite()
+        ) {
+            "没有笔记库的读写权限"
+        }
+
+        return directory
     }
 
     private fun extractVaultName(path: String): String {

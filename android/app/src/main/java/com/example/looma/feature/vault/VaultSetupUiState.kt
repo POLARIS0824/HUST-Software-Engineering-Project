@@ -6,6 +6,7 @@ data class VaultSetupUiState(
     val currentVault: Vault? = null,
     val pendingVaultPath: String? = null,
     val pendingVaultName: String? = null,
+    val isInitializing: Boolean = true,
     val isBusy: Boolean = false,
     val errorMessage: String? = null,
     val selectionSaved: Boolean = false,
