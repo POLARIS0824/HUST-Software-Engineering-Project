@@ -266,28 +266,39 @@ private fun VaultSetupActions(
                 ) { Text(secondaryLabel) }
             }
         } else {
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
+                horizontalArrangement = Arrangement.spacedBy(
+                    ButtonGroupDefaults.ConnectedSpaceBetween
+                ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                FilledTonalButton(
+                    onClick = onChooseFolderClick,
+                    enabled = !busy,
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = height),
+                    shape = ButtonGroupDefaults.connectedLeadingButtonShape,
+                    contentPadding = ButtonDefaults.contentPaddingFor(height),
+                ) {
+                    Text(
+                        text = secondaryLabel,
+                        style = ButtonDefaults.textStyleFor(height),
+                        maxLines = 1,
+                    )
+                }
+
                 PrimaryVaultButton(
                     text = primaryLabel,
                     busy = busy,
                     onClick = onConfirmClick,
-                    modifier = Modifier.weight(1.4f),
-                    shape = ButtonGroupDefaults.connectedLeadingButtonShape,
-                )
-                FilledTonalButton(
-                    onClick = onChooseFolderClick,
-                    enabled = !busy,
-                    modifier = Modifier.weight(1f).heightIn(min = height),
+                    modifier = Modifier.weight(1f),
                     shape = ButtonGroupDefaults.connectedTrailingButtonShape,
-                    contentPadding = ButtonDefaults.contentPaddingFor(height),
-                ) {
-                    Text(secondaryLabel, maxLines = 1)
-                }
+                )
             }
+
         }
     }
 }
