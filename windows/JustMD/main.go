@@ -55,12 +55,22 @@ func main() {
 			{Role: mygo.RoleWindowMenu},
 		}))
 
+		// 窗口尺寸按主屏工作区收缩：写死的 1360×860 在高缩放小屏上会比
+		// 屏幕还大，内容被挤出可视区（外框 DIP，见 Onevra ShellOptions）。
+		width, height, minW, minH := 1360, 860, 980, 600
+		if wa := mygo.Screen.PrimaryDisplay().WorkArea; wa.Width > 0 && wa.Height > 0 {
+			width = min(width, wa.Width-48)
+			height = min(height, wa.Height-48)
+			minW = min(minW, width)
+			minH = min(minH, height)
+		}
+
 		shell := sidebar.NewShell(sidebar.ShellOptions{
 			Title:     "JustMD",
-			Width:     1360,
-			Height:    860,
-			MinWidth:  980,
-			MinHeight: 600,
+			Width:     width,
+			Height:    height,
+			MinWidth:  minW,
+			MinHeight: minH,
 			StateKey:  "main",
 			Left:      a.leftView,
 			Content:   a.contentView,

@@ -12,14 +12,15 @@ import (
 	"github.com/egoist/mygo/ui/markdown"
 	"github.com/oneo-me/onevra/source/components"
 	"github.com/oneo-me/onevra/source/icons/lucide"
+	"github.com/oneo-me/onevra/source/shells/sidebar"
 )
 
 // notesView 是主页面：搜索与笔记列表 | 编辑器或阅读页 | 反链面板。
 func (a *app) notesView(c *ui.Context) {
 	t := c.Theme()
 	ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
-		// 中栏：搜索 + 排序 + 列表。
-		ui.Column(c).Width(300).Shrink(0).Gap(t.Space(2)).Padding(t.Space(2)).Background(t.Surface).Children(func() {
+		// 中栏：搜索 + 排序 + 列表。顶部让出浮动标题栏高度。
+		ui.Column(c).Width(300).Shrink(0).Gap(t.Space(2)).Padding(sidebar.HeaderHeight(c), t.Space(2), t.Space(2), t.Space(2)).Background(t.Surface).Children(func() {
 			a.searchBar(c)
 			a.sortBar(c)
 			a.noteList(c)
@@ -117,15 +118,18 @@ func (a *app) noteList(c *ui.Context) {
 				if n.Summary != "" {
 					components.Text(c, n.Summary).FontSize(12).TextColor(t.TextMuted).Wrap()
 				}
-				ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-					components.Text(c, formatTime(n.UpdatedAtUtc)).FontSize(11).TextColor(t.TextMuted)
-					for j, tag := range n.Tags {
-						if j >= 3 {
-							break
+				// 时间与标签分行显示：同排时标签会把时间挤成竖排换行。
+				components.Text(c, formatTime(n.UpdatedAtUtc)).FontSize(11).TextColor(t.TextMuted)
+				if len(n.Tags) > 0 {
+					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
+						for j, tag := range n.Tags {
+							if j >= 3 {
+								break
+							}
+							components.Badge(c, "#"+tag)
 						}
-						components.Badge(c, "#"+tag)
-					}
-				})
+					})
+				}
 			}).OnClick(func() {
 				a.openNote(n.ID)
 			}).ContextMenu(func(m *ui.Menu) {
@@ -154,8 +158,8 @@ func (a *app) editorArea(c *ui.Context) {
 	if ed == nil {
 		return
 	}
-	// 标题与工具行。
-	ui.Column(c).Grow(1).MinWidth(0).Gap(t.Space(2)).Padding(t.Space(2), t.Space(3)).Children(func() {
+	// 标题与工具行。顶部让出浮动标题栏高度（窗口按钮悬浮于此）。
+	ui.Column(c).Grow(1).MinWidth(0).Gap(t.Space(2)).Padding(sidebar.HeaderHeight(c), t.Space(3), t.Space(2), t.Space(2)).Children(func() {
 		ui.Row(c).Gap(t.Space(2)).AlignItems(ui.Center).Children(func() {
 			title := a.currentTitle
 			input := components.TextBox(c, &title, components.TextBoxOptions{}).
@@ -350,7 +354,7 @@ func (a *app) loadImage(u string) (ui.ImageSource, error) {
 // backlinksView 是反向引用面板（FR-LINK-06/07）。
 func (a *app) backlinksView(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Width(280).Shrink(0).Gap(t.Space(2)).Padding(t.Space(2)).Background(t.Surface).Children(func() {
+	ui.Column(c).Width(280).Shrink(0).Gap(t.Space(2)).Padding(sidebar.HeaderHeight(c), t.Space(2), t.Space(2), t.Space(2)).Background(t.Surface).Children(func() {
 		components.Text(c, "🔗 反向链接（"+itoa(len(a.backlinks))+"）").Bold()
 		if len(a.backlinks) == 0 {
 			components.Text(c, "还没有笔记引用「"+a.currentTitle+"」。").FontSize(12).TextColor(t.TextMuted).Wrap()
