@@ -11,7 +11,7 @@ import (
 // trashView 是回收站视图（FR-NOTE-07）：还原、彻底删除、清空。
 func (a *app) trashView(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Fill().Gap(t.Space(3)).Padding(sidebar.HeaderHeight(c)+t.Space(2), t.Space(5), t.Space(4), t.Space(5)).Children(func() {
+	ui.Column(c).Key("page-trash").Transition(pageEnter).Fill().Gap(t.Space(3)).Padding(sidebar.HeaderHeight(c)+t.Space(2), t.Space(5), t.Space(4), t.Space(5)).Children(func() {
 		components.Text(c, "回收站").FontSize(22).Bold()
 		components.Text(c, "删除的笔记在此保留 30 天，之后自动清除。").TextColor(t.TextMuted)
 
@@ -82,7 +82,7 @@ func (a *app) settingsView(c *ui.Context) {
 		})
 	}
 
-	ui.Scroll(c).Grow(1).FillWidth().Children(func() {
+	ui.Scroll(c).Key("page-settings").Transition(pageEnter).Grow(1).FillWidth().Children(func() {
 		ui.Column(c).FillWidth().Gap(t.Space(3)).MaxWidth(860).Padding(sidebar.HeaderHeight(c)+t.Space(2), t.Space(5), t.Space(4), t.Space(5)).Children(func() {
 			components.Text(c, "设置与数据").FontSize(22).Bold()
 			components.Text(c, "全部数据保存在本地文件系统，无账号、无网络依赖（BR-08/BR-10）。").TextColor(t.TextMuted).Wrap()
