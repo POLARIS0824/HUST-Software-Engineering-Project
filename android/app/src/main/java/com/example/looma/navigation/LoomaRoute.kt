@@ -13,6 +13,19 @@ sealed interface LoomaRoute : NavKey {
     data object Home : LoomaRoute
 
     @Serializable
+    data class Reader(
+        val vaultId: String,
+        val relativePath: String,
+    ) : LoomaRoute {
+        companion object {
+            fun from(id: NoteId): Reader = Reader(
+                vaultId = id.vaultId.value,
+                relativePath = id.path.relativePath,
+            )
+        }
+    }
+
+    @Serializable
     data class Editor(
         val vaultId: String,
         val relativePath: String,
