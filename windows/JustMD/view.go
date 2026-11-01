@@ -16,10 +16,12 @@ var (
 	navPillFade  = ui.Animation{Duration: 160 * time.Millisecond}
 )
 
-// pageEnter 是页面/内容切换的进出场（轻量上移 + 淡入淡出）。
+// pageEnter 是页面/内容切换的进出场：原地淡入淡出。
+// 不做位移类几何动画：进出场期间绘制位置与命中盒不一致（自测复现），
+// 大面积面板上偏移不明显，但语义上保持"所见即所点"。
 var pageEnter = ui.ElementTransition{
 	Animation: &ui.Animation{Duration: 180 * time.Millisecond, Ease: ui.CubicBezier(.22, 1, .36, 1)},
-	Enter:     &ui.Motion{Y: 8, Opacity: 0},
+	Enter:     &ui.Motion{Opacity: 0},
 	Exit:      &ui.Motion{Opacity: 0},
 }
 

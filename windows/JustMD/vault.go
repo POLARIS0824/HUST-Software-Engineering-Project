@@ -296,29 +296,34 @@ func (v *Vault) ListTags() []TagNode {
 		}
 	}
 
-	// 按层级拆分构建树。
-	var roots []TagNode
-	nodes := map[string]*TagNode{}
-	var ensureNode func(path string) *TagNode
-	ensureNode = func(path string) *TagNode {
-		if node, ok := nodes[path]; ok {
-			return node
+	// 按层级拆分构建指针树：之前的值拷贝建树会在子孙回填时丢失更新，
+	// 且"仅无斜杠路径作根"漏掉了多级标签的父节点（整棵树消失）。
+	type pnode struct {
+		name string
+		path string
+		cnt  int
+		kids []*pnode
+	}
+	nodes := map[string]*pnode{}
+	var ensure func(path string) *pnode
+	ensure = func(path string) *pnode {
+		if p, ok := nodes[path]; ok {
+			return p
 		}
 		parts := strings.Split(path, "/")
-		parentPath := strings.Join(parts[:len(parts)-1], "/")
-		node := &TagNode{Name: parts[len(parts)-1], Path: path, Children: []TagNode{}}
+		p := &pnode{name: parts[len(parts)-1], path: path}
+		nodes[path] = p
 		if info, ok := infos[path]; ok {
-			node.Name = info.display
-			node.Count = info.count
+			// 展示名取本级段的原始大小写（info.display 是含斜杠的全路径）。
+			segs := strings.Split(info.display, "/")
+			p.name = segs[len(segs)-1]
+			p.cnt = info.count
 		}
-		nodes[path] = node
-		if parentPath == "" {
-			roots = append(roots, *node)
-		} else {
-			parent := ensureNode(parentPath)
-			parent.Children = append(parent.Children, *node)
+		if parent := strings.Join(parts[:len(parts)-1], "/"); parent != "" {
+			pp := ensure(parent)
+			pp.kids = append(pp.kids, p)
 		}
-		return node
+		return p
 	}
 	paths := make([]string, 0, len(infos))
 	for p := range infos {
@@ -326,16 +331,31 @@ func (v *Vault) ListTags() []TagNode {
 	}
 	sort.Strings(paths)
 	for _, p := range paths {
-		ensureNode(p)
+		ensure(p)
 	}
-	// ensureNode 通过值拷贝追加根节点，回填最终状态。
-	roots = roots[:0]
-	for _, p := range paths {
-		if !strings.Contains(p, "/") {
-			roots = append(roots, *nodes[p])
+
+	// 物化为值树返回，按路径稳定排序。
+	var materialize func(p *pnode) TagNode
+	materialize = func(p *pnode) TagNode {
+		sort.Slice(p.kids, func(i, j int) bool { return p.kids[i].path < p.kids[j].path })
+		node := TagNode{Name: p.name, Path: p.path, Count: p.cnt, Children: []TagNode{}}
+		for _, k := range p.kids {
+			node.Children = append(node.Children, materialize(k))
+		}
+		return node
+	}
+	roots := []string{}
+	for path := range nodes {
+		if !strings.Contains(path, "/") {
+			roots = append(roots, path)
 		}
 	}
-	return roots
+	sort.Strings(roots)
+	out := []TagNode{}
+	for _, path := range roots {
+		out = append(out, materialize(nodes[path]))
+	}
+	return out
 }
 
 // CreateNote 新建空白笔记（FR-NOTE-01）。

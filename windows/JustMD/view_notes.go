@@ -23,7 +23,7 @@ var (
 	panelMotion = ui.Animation{Spring: ui.SpringOptions{Duration: 380 * time.Millisecond, Bounce: 0.1}}
 	paneSwap    = ui.ElementTransition{
 		Animation: &ui.Animation{Duration: 170 * time.Millisecond, Ease: ui.CubicBezier(.22, 1, .36, 1)},
-		Enter:     &ui.Motion{Y: 10, Opacity: 0},
+		Enter:     &ui.Motion{Opacity: 0},
 		Exit:      &ui.Motion{Opacity: 0},
 	}
 	fadeSwap = ui.ElementTransition{
@@ -34,14 +34,14 @@ var (
 	hoverEase = ui.Animation{Duration: 130 * time.Millisecond, Ease: ui.EaseOut}
 )
 
-// rowTransition 是笔记列表行的进出场：淡入上移、淡出收拢；
-// 排序重排时平滑滑动；同批入场按行号错峰（Delay）。
+// rowTransition 是笔记列表行的进出场：原地淡入淡出（含按行错峰），
+// 出场沿主轴收拢。刻意不做位移类动画——ElementTransition 的几何
+// 进出场期间绘制位置与命中盒不一致，点卡片会命中邻居行（自测复现）。
 func rowTransition(i int) ui.ElementTransition {
 	delay := time.Duration(min(i, 8)) * 28 * time.Millisecond
 	return ui.ElementTransition{
 		Animation: &ui.Animation{Duration: 230 * time.Millisecond, Ease: ui.CubicBezier(.22, 1, .36, 1), Delay: delay},
-		Position:  true,
-		Enter:     &ui.Motion{Y: 10, Opacity: 0},
+		Enter:     &ui.Motion{Opacity: 0},
 		Exit:      &ui.Motion{Opacity: 0, Collapse: true},
 	}
 }
@@ -177,10 +177,18 @@ func (a *app) noteList(c *ui.Context) {
 
 // trashWithUndo 删除并给出 5 秒撤销窗口（BR-11、AC-NOTE-02）。
 func (a *app) trashWithUndo(c *ui.Context, id, title string) {
-	a.deleteFromList(id)
+	wasCurrent := a.currentID == id
+	if !a.deleteFromList(id) {
+		return // 删除未发生（如保存失败），不弹误导性提示
+	}
 	c.ToastAction("已将「"+title+"」移入回收站", "撤销", func() {
-		a.vault.RestoreFromTrash(id)
+		if _, err := a.vault.RestoreFromTrash(id); err != nil {
+			return
+		}
 		a.refreshLists()
+		if wasCurrent {
+			a.openNote(id) // 撤销后回到刚才正在编辑的笔记
+		}
 		c.Toast("已撤销删除")
 	})
 }
@@ -197,13 +205,14 @@ func (a *app) editorArea(c *ui.Context) {
 		ui.Row(c).Gap(t.Space(2)).AlignItems(ui.Center).Children(func() {
 			// 标题编辑缓冲持久保存（app.titleEdit）。绑定到每帧重建的局部
 			// 变量会在"删空→改名被拒"时触发框架的值回同步，把旧字符弹回
-			// 输入框——表现为"最后一个字符删不掉"。草稿允许为空，失焦时回填。
-			if !a.titleFocused && a.titleEdit != a.currentTitle {
-				a.titleEdit = a.currentTitle
-			}
+			// 输入框——表现为"最后一个字符删不掉"。空值是合法草稿：
+			// 不改名、不回弹，提交（Enter）时回填原标题。
 			input := components.TextBox(c, &a.titleEdit, components.TextBoxOptions{}).
 				Label("笔记标题").Placeholder("标题").Grow(1)
-			a.titleFocused = input.Focused()
+			if a.focusTitle {
+				input.Focus() // 新建后直接键入即命名
+				a.focusTitle = false
+			}
 			if input.Changed() || input.Submitted() {
 				trimmed := strings.TrimSpace(a.titleEdit)
 				switch {

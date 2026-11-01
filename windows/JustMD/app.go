@@ -61,9 +61,10 @@ type app struct {
 	currentStats TextStats
 	// titleEdit 是标题输入框的持久编辑缓冲。不能绑定到每帧重建的局部
 	// 变量：删空后改名会被 ErrTitleEmpty 拒绝，旧字符随绑定值回弹，
-	// 表现为"最后一个字符删不掉"。草稿允许为空，失焦/换篇时回填。
+	// 表现为"最后一个字符删不掉"。空值是合法草稿：不改名、不回弹，
+	// 提交（Enter）或换篇时回填真实标题。
 	titleEdit    string
-	titleFocused bool
+	focusTitle   bool // 新建笔记后把焦点交给标题框，键入即命名
 	editors      map[string]*noteEditor
 	mode         string // "edit" / "read"
 	readerSrc    string // 阅读页 Markdown 快照（进入阅读模式时生成，避免逐帧重算）
@@ -174,7 +175,7 @@ func (a *app) openNote(id string) {
 	a.currentRel = doc.RelativePath
 	a.currentStats = doc.Stats
 	a.titleEdit = doc.Title
-	a.titleFocused = false
+	a.focusTitle = false
 	a.statsVersion = 0
 	a.mode = "edit"
 	a.saveState = saveSaved
@@ -214,6 +215,10 @@ func (a *app) createNote() {
 	}
 	a.refreshLists()
 	a.openNote(doc.ID)
+	// 新笔记的标题框以空草稿 + 占位符呈现：键入即替换，
+	// 不会把字接在"未命名笔记"后面。
+	a.titleEdit = ""
+	a.focusTitle = true
 	a.view = viewNotes
 }
 
@@ -228,7 +233,8 @@ func (a *app) renameCurrent(title string) {
 	}
 	a.currentTitle = doc.Title
 	a.currentRel = doc.RelativePath
-	if !a.titleFocused {
+	if doc.Title != title {
+		// 冲突加了后缀等情形：输入框如实显示最终标题。
 		a.titleEdit = doc.Title
 	}
 	if a.mode == "read" {
@@ -443,13 +449,14 @@ func (a *app) scheduleSearch() {
 }
 
 // deleteFromList 先保存草稿并确认成功，再移入回收站（评审 #2：避免丢稿）。
-func (a *app) deleteFromList(id string) {
+// 返回是否实际执行了删除。
+func (a *app) deleteFromList(id string) bool {
 	if !a.flushSaveNote(id) {
 		a.pendingToast = "保存失败，已中止删除"
-		return
+		return false
 	}
 	if _, err := a.vault.TrashNote(id); err != nil {
-		return
+		return false
 	}
 	if a.currentID == id {
 		a.currentID = ""
@@ -457,6 +464,7 @@ func (a *app) deleteFromList(id string) {
 	}
 	delete(a.editors, id)
 	a.refreshLists()
+	return true
 }
 
 // ---- 后台流程（导入/导出/重建/换库）---------------------------------------------

@@ -254,6 +254,44 @@ func TestTitleBoxDeletesToEmptyWithoutBounce(t *testing.T) {
 	}
 }
 
+// TestContextMenuHitsAnimatedRow 回归：列表行进出场动画期间右键，
+// 菜单必须命中目标行本身。几何类进出场（位移/重排滑动）会让绘制位置
+// 与命中盒不一致，曾导致右键删掉的是邻居行。
+func TestContextMenuHitsAnimatedRow(t *testing.T) {
+	a := newTestApp(t)
+	first := mustCreateForApp(t, a, "待删当前")
+	mustSaveForApp(t, a, first.ID, "内容A")
+	a.openNote(first.ID)
+	second := mustCreateForApp(t, a, "快切甲")
+	mustSaveForApp(t, a, second.ID, "甲")
+	third := mustCreateForApp(t, a, "快切乙")
+	mustSaveForApp(t, a, third.ID, "乙")
+
+	m := ui.NewTester(a.contentView, 1200, 760)
+	a.refreshLists()
+	// 不推进时钟：行仍处于进出场动画窗口内。
+	for i := 0; i < 2; i++ {
+		a.openNote(second.ID)
+		a.openNote(third.ID)
+		a.openNote(first.ID)
+		m.Frame()
+	}
+	if err := m.RightClick("快切甲"); err != nil {
+		t.Fatalf("右键卡片: %v", err)
+	}
+	if err := m.ChooseMenuItem("移入回收站"); err != nil {
+		t.Fatalf("选择菜单项: %v", err)
+	}
+	m.Frame()
+	data, _ := a.vault.OpenNote(second.ID)
+	if !data.Trashed {
+		t.Fatal("应删除被右键的「快切甲」，而不是邻居行")
+	}
+	if _, err := a.vault.OpenNote(first.ID); err != nil {
+		t.Fatal("邻居「待删当前」不应被误删")
+	}
+}
+
 // TestAnimationTransitionsSmoke 驱动各动画状态切换并推进虚拟时钟，
 // 断言渲染不崩溃且关键内容可见。本用例曾回归出 Onevra components.Tabs
 // 在 paint-only 帧持有过期 Element 的崩溃；现覆盖侧栏胶囊、反链面板

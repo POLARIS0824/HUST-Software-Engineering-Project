@@ -84,11 +84,40 @@ func main() {
 			paths := append([]string(nil), e.Paths...)
 			go a.dropFilesFlow(paths)
 		})
+		// 关窗前把未落盘草稿全部同步落盘：防抖窗口内的输入
+		// 不会因为关闭而丢失。
+		shell.Window().OnClose(func(*mygo.CloseEvent) {
+			a.flushSaveAll()
+		})
+		clampWindowToScreen(shell.Window())
 		a.onUIThread(a.bootstrap)
 	})
 	// Windows 惯例：关闭全部窗口即退出。
-	app.OnWindowAllClosed(func() { app.Quit() })
+	app.OnWindowAllClosed(func() {
+		a.flushSaveAll() // 兜底：异常路径也不丢草稿
+		app.Quit()
+	})
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
+	}
+}
+
+// clampWindowToScreen 校正越界窗口：StateKey 恢复的上次位置/尺寸可能
+// 大部分在屏幕外（换显示器、改缩放后常见）。缩到工作区内，几乎不可见时居中。
+func clampWindowToScreen(w *mygo.Window) {
+	wa := mygo.Screen.PrimaryDisplay().WorkArea
+	if wa.Width <= 0 || wa.Height <= 0 {
+		return
+	}
+	b := w.Bounds()
+	maxW, maxH := wa.Width-20, wa.Height-20
+	if b.Width > maxW || b.Height > maxH {
+		w.SetSize(min(b.Width, maxW), min(b.Height, maxH))
+		b = w.Bounds()
+	}
+	visW := min(b.X+b.Width, wa.X+wa.Width) - max(b.X, wa.X)
+	visH := min(b.Y+b.Height, wa.Y+wa.Height) - max(b.Y, wa.Y)
+	if visW < b.Width/2 || visH < b.Height/2 {
+		w.Center()
 	}
 }

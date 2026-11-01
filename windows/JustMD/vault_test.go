@@ -635,6 +635,44 @@ func TestReconcilePendingDiscardsIncompleteWrite(t *testing.T) {
 	}
 }
 
+// ---- 标签树（多级嵌套） ---------------------------------------------------------
+
+func TestListTagsMultiLevelTree(t *testing.T) {
+	v := newTestVault(t)
+	doc := mustCreate(t, v, "标签页")
+	mustSave(t, v, doc.ID, "内容A #复习计划/第一章 #复习计划/第二章 #TCP")
+	mustSave(t, v, mustCreate(t, v, "二号").ID, "#复习计划/第一章")
+
+	tags := v.ListTags()
+	var root *TagNode
+	for i := range tags {
+		if tags[i].Name == "复习计划" {
+			root = &tags[i]
+		}
+	}
+	if root == nil {
+		t.Fatalf("多级标签的父节点应作为根出现: %+v", tags)
+	}
+	if len(root.Children) != 2 {
+		t.Fatalf("复习计划应有两个子级: %+v", root.Children)
+	}
+	if root.Children[0].Name != "第一章" || root.Children[0].Count != 2 {
+		t.Fatalf("第一章应计数 2: %+v", root.Children[0])
+	}
+	if root.Children[1].Name != "第二章" || root.Children[1].Count != 1 {
+		t.Fatalf("第二章应计数 1: %+v", root.Children[1])
+	}
+	var flat *TagNode
+	for i := range tags {
+		if tags[i].Name == "TCP" {
+			flat = &tags[i]
+		}
+	}
+	if flat == nil || flat.Count != 1 || len(flat.Children) != 0 {
+		t.Fatalf("单级标签不受影响: %+v", tags)
+	}
+}
+
 // ---- 排序 ---------------------------------------------------------------------
 
 func TestSortSummaries(t *testing.T) {
