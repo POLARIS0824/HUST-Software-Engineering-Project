@@ -114,8 +114,12 @@ func TestImportSummaryReportsSkippedAndFailed(t *testing.T) {
 	}
 }
 
-// TestSaveErrorStopsAutoRetry 保存失败后不再每 2 秒自动重试：
-// saveError 状态下 scheduleSave 不排定时器，继续输入也不改回 dirty。
+// TestSaveErrorStopsAutoRetry 保存失败后不再每 2 秒自动重试**失败的那一次**：
+// saveError 状态下 scheduleSave 不排定时器，原地不动也不改回 dirty
+// （否则外部修改/磁盘故障时会无限读盘、提示无限刷屏）。
+//
+// 但用户在失败之后又继续输入时必须重新启用自动保存（评审 N3）：
+// 否则"改了东西却一直不保存"，用户只能自己去点徽章。
 func TestSaveErrorStopsAutoRetry(t *testing.T) {
 	a := newTestApp(t)
 	doc := mustCreateForApp(t, a, "失败重试")
@@ -125,17 +129,53 @@ func TestSaveErrorStopsAutoRetry(t *testing.T) {
 	m.Frame()
 
 	a.saveState = saveError
+	a.saveErrorVersion = a.editors[doc.ID].state.Buffer.Version()
 	a.titleWarn = ""
+	m.ClickAt(600, 260)
+	m.Frame()
+
+	// 未继续输入：不应排定重试定时器（否则外部修改/磁盘故障时无限读盘刷屏）。
+	if a.saveTimer != nil {
+		t.Fatal("保存失败后不应再排定自动重试定时器")
+	}
+	if a.saveState != saveError {
+		t.Fatalf("失败后未继续输入时不应被静默改回，得到 %q", a.saveState)
+	}
+
+	// 再输入一个字：应当重新启用自动保存。
+	m.Type("q")
+	m.Frame()
+	if a.saveState != saveDirty {
+		t.Fatalf("失败后继续输入应重新启用自动保存，得到 %q", a.saveState)
+	}
+	if a.saveTimer == nil {
+		t.Fatal("失败后继续输入应排定保存定时器")
+	}
+}
+
+// TestSaveErrorExternalConflictNotAutoRetried 外部修改冲突必须由用户
+// 显式确认强制覆盖：即使继续输入也不自动重试（FR-EDIT-06）。
+func TestSaveErrorExternalConflictNotAutoRetried(t *testing.T) {
+	a := newTestApp(t)
+	doc := mustCreateForApp(t, a, "外部冲突")
+	a.refreshLists()
+	a.openNote(doc.ID)
+	m := ui.NewTester(a.contentView, 1200, 760)
+	m.Frame()
+
+	a.saveState = saveError
+	a.saveErrorExternal = true
+	a.saveErrorVersion = a.editors[doc.ID].state.Buffer.Version()
 	m.ClickAt(600, 260)
 	m.Frame()
 	m.Type("q")
 	m.Frame()
 
 	if a.saveTimer != nil {
-		t.Fatal("保存失败后不应再排定自动重试定时器")
+		t.Fatal("外部修改冲突不应排定自动重试定时器")
 	}
 	if a.saveState != saveError {
-		t.Fatalf("保存失败态不应被静默改回，得到 %q", a.saveState)
+		t.Fatalf("外部修改冲突应保持 saveError，得到 %q", a.saveState)
 	}
 }
 

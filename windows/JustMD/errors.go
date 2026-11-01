@@ -13,5 +13,11 @@ var (
 	ErrIndexCorrupted = errors.New("索引损坏，请重建索引")
 	ErrSaveFailed     = errors.New("保存失败：无法写入文件，请检查磁盘空间与权限")
 	ErrExternalEdit   = errors.New("笔记已被其他程序修改，为避免覆盖已中止保存")
-	ErrNoWorkspace    = errors.New("尚未选择知识库文件夹")
+	// ErrStaleRevision 表示本次保存携带的版本比磁盘上的版本旧：
+	// 另一次保存已先落盘，这一份是迟到的旧快照，不应再覆盖新内容。
+	ErrStaleRevision = errors.New("本次保存的内容已过期（另有更新的内容已保存），已中止覆盖")
+	// ErrNoteVanished 表示笔记的正文文件已被外部删除，内存索引里的这条
+	// 记录已无对应文件（僵尸笔记），需要从索引中移除。
+	ErrNoteVanished = errors.New("笔记文件已被外部删除")
+	ErrNoWorkspace  = errors.New("尚未选择知识库文件夹")
 )

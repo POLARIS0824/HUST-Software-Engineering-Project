@@ -193,6 +193,11 @@ func (a *app) contentView(c *ui.Context) {
 // handleShortcuts 处理全局快捷键（角色 2：外接键盘诉求）。
 // 确认弹窗/导入冲突弹窗打开时不响应：旧实现里在弹窗上按 Ctrl+N 会在
 // 弹窗背后新建笔记，关闭弹窗后用户面对的是另一篇，状态容易错乱。
+//
+// Ctrl+S 的例外（评审 N5）：保存是无害且期望中的操作，尤其在"草稿保存失败，
+// 请确认是否退出"的弹窗上正是用户想重试保存的快捷键。但 MyGo 的 Modal 弹窗
+// 会让窗口级快捷键整体失效（c.Shortcut 在弹窗外一律返回 false），
+// 因此 Ctrl+S 是在弹窗**内部**单独注册的，见 confirmDialog。
 func (a *app) handleShortcuts(c *ui.Context) {
 	if a.confirm.open || a.importPlan != nil || a.importDialogOpen {
 		return

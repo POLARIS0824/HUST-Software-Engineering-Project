@@ -22,6 +22,12 @@ type Vault struct {
 	trashed   map[string]*NoteMeta    // 回收站元数据
 	byTitle   map[string][]string     // titleLower -> noteID 列表
 	pendingOp string                  // 当前未完成的操作记录 ID（简化单机协议）
+
+	// writeSeq 记录每篇笔记最后一次成功落盘的内容序号（评审 W03）。
+	// 用于拒绝迟到的旧快照：同一篇里序号越大表示内容越新，落盘时若发现
+	// 本篇已落盘过更大的序号，这一份就是旧快照，不应覆盖新内容。
+	// 只在内存中维护：重启后序号归零，由 UI 层重新分配，不会误判。
+	writeSeq map[string]int64
 }
 
 // WorkspaceInfo 描述当前工作区状态。
@@ -282,17 +288,20 @@ func (v *Vault) ListTags() []TagNode {
 
 	type tagInfo struct {
 		display string
-		count   int
+		// notes 是直接使用该标签的笔记 ID 集合。
+		// 用集合而非计数，是为了让父节点的计数能按"笔记数"去重：
+		// 一篇笔记同时写了 #a 与 #a/b 时，子树里它只能算一次。
+		notes map[string]bool
 	}
 	infos := map[string]*tagInfo{}
-	for _, n := range v.notes {
+	for id, n := range v.notes {
 		for _, t := range n.tags {
 			info, ok := infos[t.NameLower]
 			if !ok {
-				info = &tagInfo{display: t.Name}
+				info = &tagInfo{display: t.Name, notes: map[string]bool{}}
 				infos[t.NameLower] = info
 			}
-			info.count++
+			info.notes[id] = true
 		}
 	}
 
@@ -301,8 +310,13 @@ func (v *Vault) ListTags() []TagNode {
 	type pnode struct {
 		name string
 		path string
-		cnt  int
-		kids []*pnode
+		// own 是直接使用该标签的笔记 ID 集合。
+		own map[string]bool
+		// cnt 是子树内去重后的笔记数（含自身与所有子孙，评审 W14）。
+		cnt int
+		// subtree 是整棵子树里出现过的笔记 ID 集合（物化时回填）。
+		subtree map[string]bool
+		kids    []*pnode
 	}
 	nodes := map[string]*pnode{}
 	var ensure func(path string) *pnode
@@ -311,13 +325,13 @@ func (v *Vault) ListTags() []TagNode {
 			return p
 		}
 		parts := strings.Split(path, "/")
-		p := &pnode{name: parts[len(parts)-1], path: path}
+		p := &pnode{name: parts[len(parts)-1], path: path, own: map[string]bool{}}
 		nodes[path] = p
 		if info, ok := infos[path]; ok {
 			// 展示名取本级段的原始大小写（info.display 是含斜杠的全路径）。
 			segs := strings.Split(info.display, "/")
 			p.name = segs[len(segs)-1]
-			p.cnt = info.count
+			p.own = info.notes
 		}
 		if parent := strings.Join(parts[:len(parts)-1], "/"); parent != "" {
 			pp := ensure(parent)
@@ -335,13 +349,29 @@ func (v *Vault) ListTags() []TagNode {
 	}
 
 	// 物化为值树返回，按路径稳定排序。
+	//
+	// 父节点的计数是**整棵子树**内去重后的笔记数（评审 W14）：
+	// 旧实现只统计"直接关联该路径"的笔记，#复习计划/第一章 的父节点
+	// #复习计划 显示 0 而子节点有值，侧栏树里容易被误解成没有笔记。
+	// 去重是必要的：一篇笔记同时写了 #a 与 #a/b，在 a 的子树里只能算一次。
 	var materialize func(p *pnode) TagNode
 	materialize = func(p *pnode) TagNode {
 		sort.Slice(p.kids, func(i, j int) bool { return p.kids[i].path < p.kids[j].path })
-		node := TagNode{Name: p.name, Path: p.path, Count: p.cnt, Children: []TagNode{}}
-		for _, k := range p.kids {
-			node.Children = append(node.Children, materialize(k))
+		// 先收集子孙，再算自己的计数。
+		children := make([]TagNode, 0, len(p.kids))
+		subtree := map[string]bool{}
+		for id := range p.own {
+			subtree[id] = true
 		}
+		for _, k := range p.kids {
+			child := materialize(k)
+			children = append(children, child)
+			for id := range k.subtree {
+				subtree[id] = true
+			}
+		}
+		p.subtree = subtree
+		node := TagNode{Name: p.name, Path: p.path, Count: len(subtree), Children: children}
 		return node
 	}
 	roots := []string{}
@@ -447,6 +477,60 @@ func (v *Vault) openNoteLocked(id string) (NoteDocument, error) {
 	return NoteDocument{}, ErrNoteNotFound
 }
 
+// NoteFileExists 判断笔记的正文文件是否仍在磁盘上（评审 W02）。
+// 内存索引在运行期不监听文件系统，外部删除 .md 后索引里会留下"僵尸笔记"：
+// 列表里还在、点不开、也删不掉。界面据此给出提示并清理索引。
+func (v *Vault) NoteFileExists(id string) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	n, ok := v.notes[id]
+	if !ok {
+		return false
+	}
+	abs := filepath.Join(v.notesDir(), filepath.FromSlash(n.meta.RelativePath))
+	_, err := os.Stat(abs)
+	return err == nil
+}
+
+// DropVanishedNote 把正文文件已被外部删除的笔记从内存索引中移除（评审 W02）。
+// 只清索引与元数据，不动回收站与磁盘上的其它文件：
+// 文件已经不在了，留下元数据只会让下次启动再重建一条孤儿。
+// 返回被移除的笔记标题，供界面提示用户。
+func (v *Vault) DropVanishedNote(id string) (string, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	n, ok := v.notes[id]
+	if !ok {
+		return "", ErrNoteNotFound
+	}
+	abs := filepath.Join(v.notesDir(), filepath.FromSlash(n.meta.RelativePath))
+	if _, err := os.Stat(abs); err == nil {
+		// 文件还在，不是僵尸笔记，不做处理。
+		return "", ErrNoteNotFound
+	}
+	title := n.title
+	delete(v.notes, id)
+	// 标题索引里也要摘掉，否则同名解析会指向已经不存在的 noteID。
+	lower := n.titleLower
+	kept := v.byTitle[lower][:0]
+	for _, cid := range v.byTitle[lower] {
+		if cid != id {
+			kept = append(kept, cid)
+		}
+	}
+	if len(kept) == 0 {
+		delete(v.byTitle, lower)
+	} else {
+		v.byTitle[lower] = kept
+	}
+	// 元数据一并移除：文件已不存在，留着只会变成孤儿元数据。
+	metaDir, _ := v.metaDirs()
+	os.Remove(filepath.Join(metaDir, id+".json"))
+	// 指向它的双链变成未解析，反链面板也要随之更新。
+	v.recomputeLinks()
+	return title, nil
+}
+
 func (n *indexedNote) linkViews() []LinkView {
 	views := make([]LinkView, 0, len(n.links))
 	for i, l := range n.links {
@@ -465,20 +549,46 @@ func (n *indexedNote) linkViews() []LinkView {
 // 落盘前以哈希校验磁盘内容与上次回执一致；被外部修改时返回 ErrExternalEdit
 // 且不覆盖（评审 #7）。确认覆盖外部修改用 ForceSaveContent。
 func (v *Vault) SaveContent(id string, markdown string) (SaveReceipt, error) {
-	return v.saveContent(id, markdown, false)
+	return v.saveContent(id, markdown, false, 0)
+}
+
+// SaveContentSeq 与 SaveContent 相同，但携带写入序号做乱序保护（评审 W03）。
+//
+// seq 是「这份内容在编辑器里的先后序号」：同一篇笔记里，序号越大表示内容越新。
+// 落盘时若发现本篇已落盘过序号更大的内容，说明这一份是迟到的旧快照，
+// 返回 ErrStaleRevision 且不覆盖。seq 为 0 表示不做乱序保护（领域内部调用：
+// 导入、级联改写等不涉及编辑竞态的路径）。
+//
+// 为什么不用「基线版本号」判定：两份内容可能基于同一个基线（都是用户在
+// 同一段编辑里先后产生的），基线版本相同就无法区分新旧；而按序号比较，
+// 「旧快照后落盘」会被准确拦下，「新快照后落盘」正常生效。
+func (v *Vault) SaveContentSeq(id string, markdown string, seq int64) (SaveReceipt, error) {
+	return v.saveContent(id, markdown, false, seq)
 }
 
 // ForceSaveContent 跳过外部修改检测强制落盘（用户显式确认覆盖后调用）。
 func (v *Vault) ForceSaveContent(id string, markdown string) (SaveReceipt, error) {
-	return v.saveContent(id, markdown, true)
+	return v.saveContent(id, markdown, true, 0)
 }
 
-func (v *Vault) saveContent(id string, markdown string, force bool) (SaveReceipt, error) {
+// ForceSaveContentSeq 与 ForceSaveContent 相同，但携带写入序号做乱序保护。
+func (v *Vault) ForceSaveContentSeq(id string, markdown string, seq int64) (SaveReceipt, error) {
+	return v.saveContent(id, markdown, true, seq)
+}
+
+func (v *Vault) saveContent(id string, markdown string, force bool, seq int64) (SaveReceipt, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	n, ok := v.notes[id]
 	if !ok {
 		return SaveReceipt{}, ErrNoteNotFound
+	}
+	// 乱序保护（评审 W03）：本篇已落盘过更新的内容，这一份是迟到的旧快照，
+	// 落盘会静默覆盖用户的新输入。必须在哈希校验之前判断——旧快照的哈希
+	// 与磁盘不符，下面会先返回 ErrExternalEdit，同样能拦住，但错误语义不对：
+	// 那不是外部修改，是本进程内的保存竞态。
+	if seq > 0 && seq <= v.writeSeq[id] {
+		return SaveReceipt{}, ErrStaleRevision
 	}
 	abs := filepath.Join(v.notesDir(), filepath.FromSlash(n.meta.RelativePath))
 	if !force {
@@ -521,6 +631,15 @@ func (v *Vault) saveContent(id string, markdown string, force bool) (SaveReceipt
 	}
 	clearPending(pendingDir, op.OperationID)
 
+	// 记录本次落盘的内容序号：更大的序号代表更新的内容，迟到的旧快照
+	// 会因 seq <= writeSeq[id] 被拒（评审 W03）。
+	if seq > 0 {
+		if v.writeSeq == nil {
+			v.writeSeq = map[string]int64{}
+		}
+		v.writeSeq[id] = seq
+	}
+
 	v.indexNote(n.meta, content)
 	// 保存不改变标题集合：只重解析本篇出链，避免全量重算（评审 #8）。
 	v.resolveNoteLinks(v.notes[id])
@@ -543,11 +662,21 @@ func (v *Vault) saveContent(id string, markdown string, force bool) (SaveReceipt
 type RenameReport struct {
 	Affected []string `json:"affected"`
 	Skipped  []string `json:"skipped"`
+	// External 是因磁盘正文被外部程序改过而跳过的笔记 ID。
+	External []string `json:"external"`
+	// Dirty 是因编辑器里还有未落盘草稿而跳过的笔记 ID：
+	// 磁盘内容没被外部动过，只是内存里的正文比磁盘新。
+	Dirty []string `json:"dirty"`
 }
 
 // emptyRenameReport 返回可直接 JSON 序列化的空报告（nil 切片会序列化成 null）。
 func emptyRenameReport() RenameReport {
-	return RenameReport{Affected: []string{}, Skipped: []string{}}
+	return RenameReport{
+		Affected: []string{},
+		Skipped:  []string{},
+		External: []string{},
+		Dirty:    []string{},
+	}
 }
 
 // RenameNote 重命名笔记并级联重命名底层文件（FR-NOTE-04），
@@ -717,9 +846,18 @@ func (v *Vault) cascadeUpdateLinks(targetID, oldTitle, newTitle string, report *
 			continue
 		}
 		diskBody := string(normalizeContent(disk))
-		if sha256Hex([]byte(diskBody)) != other.meta.ContentSha256 || diskBody != other.body {
-			// 磁盘已被外部修改（或元数据哈希尚未校准）：自动改写会覆盖用户的
-			// 新内容，跳过；旧链接保持原样，用户可自行修正。
+		// 两种跳过原因要分开（评审 N2）：提示语不同，处理方式也不同。
+		//   1) 磁盘哈希与元数据不符 —— 确实被外部程序改过；
+		//   2) 磁盘正文与内存正文不符 —— 只是这篇在编辑器里有未落盘的草稿，
+		//      磁盘本身没被外部动过。旧实现把两者都报成"已被其它程序修改"，
+		//      用户看到提示却找不到哪一篇被改了。
+		if sha256Hex([]byte(diskBody)) != other.meta.ContentSha256 {
+			report.External = append(report.External, id)
+			report.Skipped = append(report.Skipped, id)
+			continue
+		}
+		if diskBody != other.body {
+			report.Dirty = append(report.Dirty, id)
 			report.Skipped = append(report.Skipped, id)
 			continue
 		}
@@ -805,6 +943,30 @@ func (v *Vault) TrashNote(id string) (WorkspaceStats, error) {
 		return WorkspaceStats{}, ErrSaveFailed
 	}
 	if err := os.Rename(src, dst); err != nil {
+		// 正文文件已被外部删除（评审 W02）：此时没有可移入回收站的内容，
+		// 但删除意图仍然成立——把这条僵尸笔记从索引里清掉即可，
+		// 不能让用户被一条点不动、删不掉的记录卡住。
+		if os.IsNotExist(err) {
+			n.meta.State = stateTrashed
+			n.meta.TrashedAtUtc = nowMs()
+			saveNoteMeta(metaDir, n.meta)
+			clearPending(pendingDir, op.OperationID)
+			delete(v.notes, id)
+			lower := n.titleLower
+			kept := v.byTitle[lower][:0]
+			for _, cid := range v.byTitle[lower] {
+				if cid != id {
+					kept = append(kept, cid)
+				}
+			}
+			if len(kept) == 0 {
+				delete(v.byTitle, lower)
+			} else {
+				v.byTitle[lower] = kept
+			}
+			v.recomputeLinks()
+			return v.stats(), nil
+		}
 		return WorkspaceStats{}, ErrSaveFailed
 	}
 	n.meta.State = stateTrashed
@@ -1081,10 +1243,21 @@ func (v *Vault) NoteAssetPath(id, url string) (string, error) {
 	if dir != "" {
 		cands = append(cands, candidate{filepath.Join(root, dirNotes), dir + "/" + url})
 	}
+	// 作用域限于 notes/ 与 attachments/（评审 W11）。
+	// 旧实现还把工作区根作为候选，![](secret.txt) 就能读到根下的任意文件，
+	// 连 .meta/ 里的元数据 JSON 也在射程内——与 NFR-SEC-03
+	// 「附件不得越界读取」相悖。附件本来就落在 attachments/，
+	// 正文在 notes/，根目录不是附件位置，去掉它不影响正常引用。
+	//
+	// 引用路径可以是工作区相对（"attachments/x.png"），
+	// 也可以是相对 attachments/ 本身（"x.png"），两种都要认。
+	notesBase := filepath.Join(root, dirNotes)
+	attBase := filepath.Join(root, dirAttachments)
 	cands = append(cands,
-		candidate{filepath.Join(root, dirNotes), url},
-		candidate{root, url},
-		candidate{filepath.Join(root, dirAttachments), url},
+		candidate{notesBase, url},
+		candidate{attBase, url},
+		candidate{notesBase, strings.TrimPrefix(url, dirNotes+"/")},
+		candidate{attBase, strings.TrimPrefix(url, dirAttachments+"/")},
 	)
 	for _, cand := range cands {
 		clean, err := safeRelPath(cand.base, cand.rel)
@@ -1097,6 +1270,18 @@ func (v *Vault) NoteAssetPath(id, url string) (string, error) {
 		}
 	}
 	return "", os.ErrNotExist
+}
+
+// ReadNoteAsset 读取笔记引用的本地资源内容（评审 W12）。
+//
+// 读文件属于领域职责：视图层不直接操作文件系统（windows/AGENTS.md）。
+// 路径解析与越界校验仍在 NoteAssetPath 里，这里只负责按解析出的路径取字节。
+func (v *Vault) ReadNoteAsset(id, url string) ([]byte, error) {
+	abs, err := v.NoteAssetPath(id, url)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(abs)
 }
 
 // readerScheme 已解析/未解析双链在阅读源中的协议前缀。

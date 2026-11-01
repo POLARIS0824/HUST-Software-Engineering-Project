@@ -131,6 +131,84 @@
 - **导出包对齐基线 4.7**：`generator` 改为 `JustMD v1.1`、`schemaVersion` 改为 `1.0`；附件递归收集（`attachments/sub/x.png` 不再静默丢出备份包）；把写包体抽成 `writeVaultZip(io.Writer)` 并在单测里真实执行 manifest 组装/哈希/子目录附件（此前 `ExportVault` 本体从未被执行过）。
 - `RebuildIndex.PurgedTrash` 不再恒为 0（按前后回收站条目数差统计）。
 
+### PR #1 第二轮评审整改（2026-11-01 晚，评审 W01~W14 / N1~N5）
+
+针对最新推送 `91a72007` 的二次评审，逐条复现后再修。本轮新增 19 个回归用例
+（`windows/JustMD/review_followup_test.go`）：`CGO_ENABLED=0 go test ./...` 共
+**148 个用例全绿**，`gofmt`/`go vet`/`go tool mygo vet` 无输出。
+
+**界面与动画**
+
+- **W01 新建笔记时目录行重叠**：列表行按序号加递增 `Delay` 做错峰淡入，各行补间起点错开，
+  上方行先走、下方行还没跟上，中间帧两行叠在一起（实测相邻行重叠约 7 DIP）。
+  保留"目录向下位移"的动画，但去掉按行错峰：所有行共享同一个无 `Delay` 的
+  `ElementTransition`，整齐同步移动。修复后各行间距全程恒定 51.25 DIP。
+  根因写在 `windows/AGENTS.md`：`properties()` 在 `Position`/`Size`/`Colors` 都未显式声明时
+  会补间全部属性（位置随之补间），但各行起点必须一致，否则中间帧重叠。
+  回归 `TestW01_ShiftedRowsDoNotOverlap`、`TestW01_RowTransitionHasNoPerRowDelay`。
+- **N5 弹窗打开时 Ctrl+S 失效**：MyGo 的 `Modal` 弹窗会让窗口级快捷键整体失效
+  （`c.Shortcut` 在弹窗外一律返回 false）。改为在弹窗**作用域内**重新注册 Ctrl+S，
+  用户在"草稿保存失败"的确认框上可直接用快捷键重试保存。
+  回归 `TestN5_CtrlSWorksWhileDialogOpen`。
+
+**数据安全与一致性**
+
+- **W03 保存乱序静默覆盖**：异步保存与同步 flush 之间没有次序保证，迟到的旧快照会
+  静默覆盖已落盘的新内容。新增写入序号（`SaveContentSeq`/`ForceSaveContentSeq`）：
+  序号是"这份内容在编辑器里的先后次序"，落盘时若本篇已落盘过更大序号即返回
+  `ErrStaleRevision` 并拒绝覆盖。不用"基线版本号"判定——两份内容可能基于同一基线，
+  无法区分新旧；按序号则"旧快照后落盘"被准确拦下、"新快照后落盘"正常生效。
+  回归 `TestW03_StaleSnapshotDoesNotOverwriteNewerSave` 等 4 例。
+- **N3 关窗丢草稿**：旧实现只拦一次关窗，用户再点一次关闭就放行 → 草稿直接丢失。
+  改为失败时弹出确认框（「重试保存」/「放弃并退出」），在用户做出选择之前一律拦住。
+  回归 `TestN3_CloseWithFailedSaveKeepsBlocking`、`TestN3_CloseSucceedsWhenSaveWorks`。
+- **W02 外部删除 .md 产生僵尸笔记**：内存索引不监听文件系统，外部删掉正文后
+  列表里还在、点不开、也删不掉。新增 `NoteFileExists`/`DropVanishedNote`：
+  打开失败时提示"文件已被外部删除"并从列表移除；删除时不再被卡住。
+  回归 `TestW02_OpenVanishedNoteGivesFeedback` 等 4 例。
+- **N3 保存失败后不再自动保存**：旧实现把 `saveError` 当终态，用户再敲一个字也不保存。
+  改为记录失败时的缓冲区版本号，用户在失败后**又继续输入**时重新启用自动保存；
+  但外部修改冲突仍不自动重试（须用户显式确认强制覆盖，FR-EDIT-06）。
+  回归 `TestSaveErrorStopsAutoRetry`、`TestSaveErrorExternalConflictNotAutoRetried`。
+- **N2 级联跳过的原因被误报**：`RenameReport` 只有 `Skipped`，一律提示"已被其它程序修改"，
+  但其中一部分只是"编辑器里有未落盘草稿"。新增 `External`/`Dirty` 两个字段分开报告，
+  提示语相应区分。回归 `TestN2_RenameReportDistinguishesExternalAndDirty`。
+- **W06 切到回收站不落盘**：`setView` 对回收站跳过 flush，草稿仍在内存但逻辑不一致。
+  改为无条件 flush。回归 `TestW06_SetViewFlushesDraft`。
+
+**更正：N1 不成立**
+
+N1（"重启后外部改写的内容被静默覆盖"）经真实 UI 流程复验**不成立**：
+编辑器缓冲区从磁盘加载，外部改写的内容会保留在用户编辑的基础上。
+
+```
+重启后编辑器缓冲区 = "外部工具完全改写的内容"
+保存后磁盘 = "外部工具完全改写的内容，用户新写的一行"
+```
+
+原结论来自测试方法错误——直接调 `SaveContent` 整体覆盖了正文，而非走
+"重启 → openNote → 继续输入 → 保存"的 UI 流程。已改为回归用例固化正确结论：
+`TestN1_ExternalRewriteSurvivesRestart`。
+
+**其余**
+
+- **W11 附件作用域过大**：`NoteAssetPath` 的候选路径含工作区根，
+  `![](secret.txt)` 能读到根下任意文件（含 `.meta/` 里的元数据 JSON）。
+  作用域收窄到 `notes/` 与 `attachments/`。回归 `TestW11_AssetPathScopedToNotesAndAttachments`。
+- **W12 视图层直接读文件**：`loadImage` 在视图层调 `os.ReadFile`，违反
+  `windows/AGENTS.md` 的分层约定。读取下沉到领域层 `Vault.ReadNoteAsset`。
+  回归 `TestW12_ReadNoteAssetDelegatesToDomain`。
+- **W14 多级标签父节点计数只统计直接关联**：`#复习计划/第一章` 的父节点
+  `#复习计划` 显示 0。改为整棵子树去重后的笔记数（同一篇笔记在同一子树里只算一次）。
+  回归 `TestW14_ParentTagCountIncludesSubtree`、`TestW14_ParentTagCountDedupsSameNote`。
+- **W10 parser.go 注释与代码相反**：注释说"允许非 ASCII 的字母"，
+  但上一行条件 `unicode.IsLetter(r) && r < 0x80` 恰恰拒绝非 ASCII 字母。改正注释。
+- **W13 syncDir 在 Windows 上静默吞错**：改为显式 `runtime.GOOS == "windows"` 分支跳过
+  （Windows 不支持对目录 fsync），并处理 `d.Sync()`/`d.Close()` 的错误。
+- **W05「2 秒防抖」表述错误**：实际是节流（变脏后每 2 秒落盘一次），不是防抖。
+  `README.md`/`HANDOFF.md`/代码注释统一改为"2 秒自动保存（节流）"，并说明
+  不做防抖的原因（防抖在持续输入时永不落盘，丢失窗口不可控）。
+
 
 ## 待验证（对应 Android 版基线，Windows 版尚未覆盖）
 

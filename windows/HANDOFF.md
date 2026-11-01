@@ -82,9 +82,11 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 2. **界面效果整改**（实机截图 `docs/ui-effect-2026-10-31.png`）：浮动标题栏让位
    （`sidebar.HeaderHeight`）、侧栏计数徽章、卡片时间换行、窗口尺寸按工作区收缩。
 3. **交互动画**（分帧证据 `docs/ui-animation-2026-11-01.png`）：侧栏滑动胶囊、反链面板
-   宽度收展、编辑/阅读与页面进出场、列表行错峰淡入淡出、卡片 hover 渐变。
+   宽度收展、编辑/阅读与页面进出场、列表行淡入淡出（**已去掉按行错峰**，见第 6 节决策 18）、
+   卡片 hover 渐变。
    **注意：交互元素的进出场刻意只用透明度**——几何类 `ElementTransition` 在动画期间
    绘制位置与命中盒不一致，会点错行（自测复现，见第 6 节）。
+   但列表**重排**时的位移（新建笔记后下方行下移）是位置补间带来的，不是刻意做的几何进出场。
 4. **用户流程自测修复**（`usersim*_test.go` 三轮模拟）：
    - 多级标签树整体丢失（`ListTags` 重写为指针树）
    - 动画期间右键删错笔记（几何进出场改纯淡入淡出）
@@ -112,6 +114,17 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
    删除时把列表行按竖条切片、错峰下落旋转淡出，播完才真正移入回收站。用 MyGo 的
    `Element.Effect` + `Painter.ImageRegion/Transform/Clip` 实现，不截屏、不加浮层；
    系统"减少动态效果"时直接删除。代码在 `shred.go`，决策见第 6 节第 17 条。
+8. **PR #1 第二轮评审整改**（2026-11-01 晚，评审 W01~W14 / N1~N5）：新增 19 个回归用例
+   （共 148 个）。修掉的主要问题：列表行按行错峰导致新建笔记时相邻行重叠（保留位移动画、
+   去掉错峰）、保存乱序静默覆盖新内容（写入序号 + `ErrStaleRevision`）、外部删 `.md`
+   产生点不开也删不掉的僵尸笔记、关窗保存失败只拦一次导致丢稿（改为弹确认框由用户选择）、
+   保存失败后再输入也不自动保存、级联跳过的原因一律误报"已被其它程序修改"、
+   切到回收站不落盘、弹窗打开时 Ctrl+S 失效（MyGo 的 Modal 会禁掉窗口级快捷键，
+   改为在弹窗作用域内单独注册）、附件作用域过大（能读到 `.meta/` 里的元数据）、
+   视图层直接读文件（读取下沉到 `Vault.ReadNoteAsset`）、多级标签父节点计数只算直接关联。
+   另**更正 N1 不成立**：重启后外部改写的内容不会丢（编辑器缓冲区从磁盘加载），
+   原结论来自测试方法错误。细节见 `windows/docs/verification-record.md` 的
+   "PR #1 第二轮评审整改"一节。
 
 ## 6. 关键设计决策（接手者不要轻易推翻）
 
@@ -134,7 +147,7 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 7. **删除/重建/导出/换库前 `flushSaveAll`**，失败即中止并提示（`flushAllOrToast`）。
    `deleteFromList` 先保存草稿再 `TrashNote`，返回 bool；失败不弹撤销 Toast。
 8. **`saveNote` 异步落盘**（窗口模式 `go` + `onUIThread` 回执；无窗口测试走同步分支，
-   同一落盘函数）。防抖定时器是**真实时钟** `time.AfterFunc`（见第 7 节测试陷阱）。
+   同一落盘函数）。自动保存定时器是**真实时钟** `time.AfterFunc`（见第 7 节测试陷阱）。
 9. **窗口尺寸**按 `mygo.Screen.PrimaryDisplay().WorkArea` 收缩（默认 1360×860 在 225% 缩放的
    2560×1600 屏上会溢出），启动后 `clampWindowToScreen` 校正越界恢复位置。
 10. **侧栏胶囊**：同 pass 捕获选中项 `ui.Element` + `Draw` 里 `Valid()` 守卫（过期帧跳过一次
@@ -143,10 +156,13 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
     **保留用户原稿**、只显示行内提示（`app.titleWarn`），回车后才按清洗结果提交。
     不要改回"逐字改名 + 把 ` (1)` 后缀回填输入框"——旧实现会把输入 `abcdef` 变成
     `abcdef (1)`、把 `a:b` 中途替换成 `a_b` 并让光标跳走（`TestTitleConflictKeepsDraftAndWarns`）。
-12. **保存失败不自动重试**：`saveState == saveError` 时 `scheduleSave` 不排定时器、`autosave`
-    不改回 dirty；用户点"保存失败"徽章显式重试（`saveNowForce`）。不要恢复"每 2 秒重试"——
+12. **保存失败不自动重试已失败的那一次**：`saveState == saveError` 时 `scheduleSave` 不排定时器；
+    用户点"保存失败"徽章显式重试（`saveNowForce`）。不要恢复"每 2 秒重试"——
     同 ID Toast 会被反复重置而永久驻留，还会无限读盘（`TestSaveErrorStopsAutoRetry`）。
-    关窗落盘失败只拦一次（`closeBlocked`），第二次放行。
+    但用户在失败后**又继续输入**时必须重新启用自动保存（`saveErrorVersion` 比对缓冲区版本号）；
+    外部修改冲突例外：须用户显式确认强制覆盖，不自动重试（FR-EDIT-06）。
+    关窗落盘失败时弹确认框（「重试保存」/「放弃并退出」），用户做出选择前一直拦住，
+    不要改回"只拦一次、第二次放行"——那会直接丢稿（`TestN3_CloseWithFailedSaveKeepsBlocking`）。
 13. **装载以磁盘为准**：`loadWorkspace` 发现磁盘哈希 ≠ `meta.ContentSha256` 时校准哈希
     （`Revision` 不变），否则关闭期间被外部改过的笔记重启后一保存就误报外部修改。
     同一相对路径多条 ACTIVE 元数据用 `pickActiveMeta` 确定性择优（sha 命中 → Revision →
@@ -168,6 +184,25 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
     `shredEffect` 必须 `Painter.Clip` 在行盒子内（否则碎片会被后续行压住成残影）；
     碎纸中的行要不透明底色（`t.Surface`），否则分片与下方文字叠成噪点。
     ReduceMotion 下走 `deleteNoteNow` 直接删除；切页/搜索态/不可见时立即结算。
+18. **列表行共享同一个无 Delay 的 Transition**（评审 W01）：`rowTransition()` 不带行号，
+    所有行用同一条动画曲线。要保留"新建笔记后下方行整体下移"的动画，就**不能**给各行加
+    递增 `Delay`——起点错开会让中间帧两行重叠（实测约 7 DIP）。
+    `properties()` 在 `Position`/`Size`/`Colors` 都未显式声明时补间全部属性，位置随之补间，
+    这正是下移动画的来源（`TestW01_ShiftedRowsDoNotOverlap`）。
+19. **保存乱序保护用"写入序号"不用"基线版本号"**（评审 W03）：`SaveContentSeq` 携带
+    编辑器里的内容先后序号，落盘时若本篇已落盘过更大序号即返回 `ErrStaleRevision`。
+    不用基线版本号是因为两份内容可能基于同一基线，无法区分新旧。
+    序号在 `noteEditor.saveSeq` 上分配，每次发起落盘 +1。
+20. **弹窗内的快捷键要单独注册**（评审 N5）：MyGo 的 `Modal` 弹窗会让窗口级快捷键整体失效
+    （`c.Shortcut` 在弹窗外一律返回 false）。Ctrl+S 在 `confirmDialog` 的 `panel` 上
+    用 `panel.OnShortcut` 重新注册；Ctrl+N/Ctrl+E 仍由 `handleShortcuts` 在弹窗时禁用。
+21. **附件作用域限于 `notes/` 与 `attachments/`**（评审 W11）：不要把工作区根加回候选路径，
+    否则 `![](secret.txt)` 能读到根下任意文件（含 `.meta/` 里的元数据）。
+    引用路径可以是工作区相对（`attachments/x.png`）或相对 `attachments/` 本身（`x.png`），两种都认。
+22. **读文件在领域层**（评审 W12）：`Vault.ReadNoteAsset` 负责解析路径并读字节，
+    视图层（`view_notes.go`）不直接调 `os.ReadFile`（见本目录 `AGENTS.md` 的分层约定）。
+23. **多级标签父节点计数是整棵子树去重后的笔记数**（评审 W14）：
+    `#复习计划/第一章` 的父节点 `#复习计划` 不再显示 0。同一篇笔记在同一子树里只算一次。
 
 ## 7. 测试与调试工具链
 
@@ -177,7 +212,7 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 - **Tester 陷阱**（务必知道，否则测试结论会错）：
   - **`Find` 的标签矩形在滚动列表重排后会过期**（官方文档明示：可能返回没显示过的元素）。
     涉及位置的断言先稳定列表（Advance+Frame）或直接调状态方法。
-  - **防抖/搜索定时器是真实时钟**，虚拟 `Advance` 驱动不了——需 `time.Sleep` 真实等待。
+  - **自动保存/搜索定时器是真实时钟**，虚拟 `Advance` 驱动不了——需 `time.Sleep` 真实等待。
   - **进出场动画在虚拟时钟下会冻结在起始姿态**（Enter 起始 Opacity=0 的帧永远不可见）。
     截图/断言前先 `Advance` 走完动画。退场残影同理。
   - 阶段性状态污染：一个 Tester 内点击会改共享 `app` 状态，跨场景测试要显式复位。

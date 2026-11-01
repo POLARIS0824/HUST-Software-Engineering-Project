@@ -34,13 +34,25 @@ var (
 	hoverEase = ui.Animation{Duration: 130 * time.Millisecond, Ease: ui.EaseOut}
 )
 
-// rowTransition 是笔记列表行的进出场：原地淡入淡出（含按行错峰），
-// 出场沿主轴收拢。刻意不做位移类动画——ElementTransition 的几何
-// 进出场期间绘制位置与命中盒不一致，点卡片会命中邻居行（自测复现）。
-func rowTransition(i int) ui.ElementTransition {
-	delay := time.Duration(min(i, 8)) * 28 * time.Millisecond
+// rowTransition 是笔记列表行的进出场：原地淡入淡出，出场沿主轴收拢。
+//
+// 关键点：所有行必须使用**同一个** Transition（评审 W01）。
+//
+// MyGo 的 ElementTransition 里，若 Position/Size/Colors 都未显式声明，
+// properties() 会返回"全属性动画"，位置也会被补间——这正是列表重排时
+// 整列整齐下移的来源（新建笔记后其下方的行向下让位）。
+//
+// 但若每行再加一个按序号递增的 Delay，各行的补间起点就错开了：
+// 上方的行先往下走、下方的行还没跟上，中间帧就会出现两行叠在一起
+// （实测相邻行重叠约 7 DIP）。因此这里不给任何 Delay，
+// 让全部行共享同一条动画曲线、整齐同步移动，既保留位移动画又不会重叠。
+//
+// 另外，位移期间绘制位置与命中盒可能不一致，曾导致右键删掉邻居行
+// （见 TestContextMenuHitsAnimatedRow）；因此位移只用于视觉，
+// 点击命中仍以布局位置为准，不要在这里再加几何类进出场。
+func rowTransition() ui.ElementTransition {
 	return ui.ElementTransition{
-		Animation: &ui.Animation{Duration: 230 * time.Millisecond, Ease: ui.CubicBezier(.22, 1, .36, 1), Delay: delay},
+		Animation: &ui.Animation{Duration: 230 * time.Millisecond, Ease: ui.CubicBezier(.22, 1, .36, 1)},
 		Enter:     &ui.Motion{Opacity: 0},
 		Exit:      &ui.Motion{Opacity: 0, Collapse: true},
 	}
@@ -123,11 +135,11 @@ func (a *app) noteList(c *ui.Context) {
 			components.Text(c, "没有匹配「"+a.query+"」的笔记").TextColor(t.TextMuted)
 		}
 		ui.Scroll(c).Grow(1).FillWidth().Children(func() {
-			for i, hit := range a.hits {
+			for _, hit := range a.hits {
 				hit := hit
 				kc := c.Key(hit.NoteID)
 				row := ui.Column(kc).Key("hit:"+hit.NoteID).Gap(2).Padding(8, 10).Radius(t.Radius).FillWidth()
-				row.Transition(rowTransition(i))
+				row.Transition(rowTransition())
 				row.Background(row.AnimateColor("bg", hoverBg(t, row.Hovered()), hoverEase)).Children(func() {
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 						components.Text(c, hit.Title).Bold().Wrap()
@@ -160,11 +172,11 @@ func (a *app) noteList(c *ui.Context) {
 		return
 	}
 	ui.Scroll(c).Grow(1).FillWidth().Children(func() {
-		for i, n := range notes {
+		for _, n := range notes {
 			n := n
 			kc := c.Key(n.ID)
 			row := ui.Column(kc).Key("note:"+n.ID).Gap(2).Padding(8, 10).Radius(t.Radius).FillWidth()
-			row.Transition(rowTransition(i))
+			row.Transition(rowTransition())
 			// 正在删除的行：Effect 会把这一行（含子树）渲染成位图，
 			// 再由 shredEffect 切成竖条下落（见 shred.go）。
 			// 其余行照常绘制，不受影响。
@@ -381,11 +393,29 @@ func (a *app) saveBadge(c *ui.Context) {
 	}
 }
 
-// autosave 检测未落盘修改并安排防抖保存，同时节流更新字数统计。
-// 保存失败后不再自动排定重试，等用户显式点徽章（FR-EDIT-06）。
+// autosave 检测未落盘修改并安排节流保存，同时节流更新字数统计。
+//
+// 保存失败（saveError）后不自动重试已失败的那一次（FR-EDIT-06），
+// 但用户在失败之后**又继续输入**时必须重新启用自动保存（评审 N3）：
+// 旧实现把 saveError 当成终态，用户再敲一个字也不会自动保存，
+// 只能自己点徽章，表现为"改了东西却一直不保存"。
+// 判据是「失败之后缓冲区又变了」——用失败时的缓冲区版本号比对，
+// 失败后不再改动则不会陷入无限重试。
 func (a *app) autosave(c *ui.Context, ed *noteEditor) {
 	buf := ed.state.Buffer
-	if buf.Version() != ed.saved && a.saveState != saveSaving && a.saveState != saveError {
+	switch {
+	case a.saveState == saveError:
+		// 外部修改冲突只有用户确认强制覆盖才能解决（FR-EDIT-06），
+		// 自动重试必然再次失败，不重新启用。
+		if a.saveErrorExternal {
+			break
+		}
+		if buf.Version() != a.saveErrorVersion {
+			// 失败后又有新输入：回到 dirty，重新排定保存。
+			a.saveState = saveDirty
+			a.scheduleSave()
+		}
+	case a.saveState != saveSaving && buf.Version() != ed.saved:
 		a.saveState = saveDirty
 		a.scheduleSave()
 	}
@@ -474,15 +504,14 @@ func (a *app) confirmCreateFromLink(c *ui.Context, target string) {
 
 // loadImage 为阅读页加载本地图片：相对笔记目录或 notes/ 根，
 // 校验不越出工作区（NFR-SEC-03），远程图片不加载。
+//
+// 读文件交给领域层（评审 W12）：视图层不直接操作文件系统，
+// 路径解析、越界校验与字节读取都在 vault 里。
 func (a *app) loadImage(u string) (ui.ImageSource, error) {
 	if strings.Contains(u, "://") || strings.HasPrefix(u, "data:") {
 		return nil, os.ErrNotExist
 	}
-	abs, err := a.vault.NoteAssetPath(a.currentID, u)
-	if err != nil {
-		return nil, err
-	}
-	data, err := os.ReadFile(abs)
+	data, err := a.vault.ReadNoteAsset(a.currentID, u)
 	if err != nil {
 		return nil, err
 	}
@@ -551,6 +580,14 @@ func (a *app) exportNoteFlow(id string) {
 
 // itoa 是 strconv.Itoa 的短别名，视图里大量使用。
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// errText 把领域错误转成可展示的文案；err 为 nil 时返回空串。
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
 
 // hoverBg 返回卡片悬停时的底色目标：悬停轻微着色，离开回到透明，
 // 配合 AnimateColor 形成渐变而非硬切。

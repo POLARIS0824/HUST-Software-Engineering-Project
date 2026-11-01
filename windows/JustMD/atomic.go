@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 )
 
@@ -48,11 +49,18 @@ func atomicWriteFile(path string, data []byte) error {
 	return nil
 }
 
-// syncDir 尽力刷新目录项；Windows 不支持对目录 fsync，静默忽略。
+// syncDir 尽力刷新目录项，让新文件/改名在断电后可见。
+//
+// Windows 不支持对目录调用 fsync（会返回 "incorrect function"），
+// 因此在 Windows 上直接跳过——目录项的持久化由 NTFS 自身保证，
+// 显式 fsync 只会产生无意义的错误。
 func syncDir(dir string) {
+	if runtime.GOOS == "windows" {
+		return
+	}
 	if d, err := os.Open(dir); err == nil {
-		d.Sync()
-		d.Close()
+		_ = d.Sync()
+		_ = d.Close()
 	}
 }
 

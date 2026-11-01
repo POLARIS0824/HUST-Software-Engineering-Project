@@ -34,6 +34,16 @@ type noteEditor struct {
 	// writing 在异步落盘进行中非 nil，关闭即表示写完。同步 flush 前先等它，
 	// 否则"旧快照的异步保存"可能晚于 flush 落盘，把新内容覆盖回旧内容。
 	writing chan struct{}
+	// saveSeq 是本篇保存请求的序号（评审 W03）：每次发起落盘就 +1，
+	// 序号越大表示内容越新。落盘时携带它，领域层据此拒绝迟到的旧快照，
+	// 避免异步保存与同步 flush 乱序时静默覆盖新内容。
+	saveSeq int64
+}
+
+// nextSaveSeq 为本次保存请求分配序号。
+func (ed *noteEditor) nextSaveSeq() int64 {
+	ed.saveSeq++
+	return ed.saveSeq
 }
 
 // waitWriting 等待该笔记在飞的异步保存结束（没有则立即返回）。
@@ -83,9 +93,21 @@ type app struct {
 	readerSrc  string // 阅读页 Markdown 快照（进入阅读模式时生成，避免逐帧重算）
 	saveState  string
 	saveTimer  *time.Timer
-	// closeBlocked 记录"因保存失败阻止过一次关窗"：只拦一次，
-	// 用户第二次关窗放行，避免磁盘持续故障时窗口关不掉。
-	closeBlocked bool
+	// saveErrorVersion 记录保存失败时编辑器的缓冲区版本号：用来判断
+	// 用户在失败之后是否又继续输入（评审 N3）。版本号变了才重新启用
+	// 自动保存，避免失败后原地不动时陷入无限重试。
+	saveErrorVersion uint64
+	// saveErrorExternal 记录上一次失败是否是"笔记被其它程序修改"：
+	// 这类冲突只有用户显式确认强制覆盖才能解决（FR-EDIT-06），
+	// 自动重试必然再次失败，只会反复读盘并刷屏提示，不重新启用。
+	saveErrorExternal bool
+	// closePending 记录"因保存失败正在等待用户决定是否退出"：在用户
+	// 做出选择（重试保存 / 放弃并退出）之前，一律拦住关窗，
+	// 杜绝"点两下关闭就丢稿"的路径（评审 N3）。
+	closePending bool
+	// closeAbandoned 记录用户已明确选择"放弃未保存的改动并退出"：
+	// 之后的关窗请求不再拦截。
+	closeAbandoned bool
 	// shred 是正在播放的删除动画（碎纸机）。动画期间笔记仍在库里，
 	// 播完才真正移入回收站——见 shred.go 的设计说明。
 	shred        *shredAnim
@@ -114,6 +136,13 @@ type confirmState struct {
 	message string
 	danger  bool
 	onOK    func()
+	// onCancel 是点「取消」时的回调。为 nil 时「取消」只关闭弹窗。
+	// 用于"保存失败请确认是否退出"这类场景：取消 = 重试保存而非放弃。
+	onCancel func()
+	// okLabel / cancelLabel 覆盖按钮文案（默认「确定」/「取消」）。
+	// "保存失败请确认是否退出"需要明确区分"重试保存"与"放弃并退出"。
+	okLabel     string
+	cancelLabel string
 }
 
 func newApp(vault *Vault) *app {
@@ -224,6 +253,20 @@ func (a *app) openNote(id string) {
 	}
 	doc, err := a.vault.OpenNote(id)
 	if err != nil || doc.Trashed {
+		// 打不开时不能静默返回（评审 W02）：用户看到的是"点了没反应"。
+		// 若正文文件已被外部删除，这是一条僵尸笔记——提示并从列表移除，
+		// 让用户能继续操作；否则给出具体原因。
+		if !a.vault.NoteFileExists(id) {
+			title, dropErr := a.vault.DropVanishedNote(id)
+			if dropErr == nil {
+				delete(a.editors, id)
+				a.refreshLists()
+				a.refreshReaderSnapshot()
+				a.pendingToast = "「" + title + "」的文件已被外部删除，已从列表移除"
+				return
+			}
+		}
+		a.pendingToast = "打开笔记失败：" + errText(err)
 		return
 	}
 	a.currentID = doc.ID
@@ -298,8 +341,12 @@ func (a *app) renameCurrent(title string) error {
 		a.titleEdit = doc.Title
 	}
 	a.reloadEditors(report.Affected)
-	if len(report.Skipped) > 0 {
-		a.pendingToast = "有 " + itoa(len(report.Skipped)) + " 篇笔记已被其它程序修改，其中的引用未同步更新"
+	// 两种未同步的原因要分开提示（评审 N2）：旧实现一律说"已被其它程序修改"，
+	// 用户看到提示却找不到哪一篇被改了。
+	if len(report.External) > 0 {
+		a.pendingToast = "有 " + itoa(len(report.External)) + " 篇笔记已被其它程序修改，其中的引用未同步更新"
+	} else if len(report.Dirty) > 0 {
+		a.pendingToast = "有 " + itoa(len(report.Dirty)) + " 篇笔记有未保存的修改，其中的引用未同步更新"
 	}
 	if a.mode == "read" {
 		// 级联改写可能已变更本篇正文，刷新阅读快照。
@@ -372,9 +419,15 @@ func (a *app) commitRename(title string) {
 
 // ---- 自动保存（FR-EDIT-04/05/06、BR-04/05）------------------------------------
 
-// scheduleSave 为未落盘的修改安排 2 秒防抖保存（每次新输入重置）。
-// 保存失败（saveError）后**不再自动重试**：旧实现每 2 秒重试一次，
+// scheduleSave 为未落盘的修改安排 2 秒自动保存（节流：变脏后每 2 秒落盘一次）。
+//
+// 这里刻意**不做防抖**（停止输入后再等 2 秒才落盘）：防抖的经典缺陷是用户
+// 持续不停输入时定时器被永远重置、永远不保存，写长文可能几十分钟不落盘。
+// 节流让丢失窗口恒定在 2 秒以内，对笔记类应用比减少 I/O 更重要。
+//
+// 保存失败（saveError）后**不再自动重试已失败的那一次**：旧实现每 2 秒重试一次，
 // 外部修改/磁盘故障时会无限读盘并把同一条 Toast 反复重置、永久驻留。
+// 但用户在失败之后又继续输入时会重新启用自动保存（见 autosave）。
 // 失败后由用户点徽章显式重试（FR-EDIT-06）。
 func (a *app) scheduleSave() {
 	if a.saveTimer != nil || a.saveState == saveSaving || a.saveState == saveError || a.currentID == "" {
@@ -422,6 +475,7 @@ func (a *app) saveNote(id string, force bool) bool {
 		return false
 	}
 	snap := ed.state.Buffer.Snapshot()
+	seq := ed.nextSaveSeq()
 	if a.currentID == id {
 		a.saveState = saveSaving
 	}
@@ -429,9 +483,9 @@ func (a *app) saveNote(id string, force bool) bool {
 		var receipt SaveReceipt
 		var err error
 		if force {
-			receipt, err = a.vault.ForceSaveContent(id, snap.String())
+			receipt, err = a.vault.ForceSaveContentSeq(id, snap.String(), seq)
 		} else {
-			receipt, err = a.vault.SaveContent(id, snap.String())
+			receipt, err = a.vault.SaveContentSeq(id, snap.String(), seq)
 		}
 		a.onUIThread(func() { a.applySaveResult(id, snap.Version(), receipt, err) })
 	}
@@ -464,7 +518,8 @@ func (a *app) flushSaveNote(id string) bool {
 		return true
 	}
 	snap := ed.state.Buffer.Snapshot()
-	receipt, err := a.vault.SaveContent(id, snap.String())
+	seq := ed.nextSaveSeq()
+	receipt, err := a.vault.SaveContentSeq(id, snap.String(), seq)
 	a.applySaveResult(id, snap.Version(), receipt, err)
 	return err == nil
 }
@@ -503,23 +558,57 @@ func (a *app) flushAllOrToast() bool {
 }
 
 // onCloseRequest 关窗前同步落盘全部草稿（FR-EDIT-05）。
-// 保存失败时拦一次关窗并提示：旧实现忽略返回值，磁盘满/外部修改时
-// 用户会以为已保存却丢了草稿。只拦一次，避免持续故障时关不掉窗口。
+// 保存失败时拦住关窗并让用户决定（评审 N3）：
+//
+//	旧实现只拦一次，用户再点一次关闭就放行 → 草稿直接丢失。
+//	现在失败时弹出确认框，用户可以「重试保存」或明确「放弃并退出」；
+//	在用户做出选择之前一律拦住，不存在"点两下就丢稿"的路径。
 func (a *app) onCloseRequest(e *mygo.CloseEvent) {
-	if a.flushSaveAll() {
-		a.closeBlocked = false
+	// 用户已明确选择"放弃未保存的改动并退出"：放行。
+	if a.closeAbandoned {
 		return
 	}
-	if a.closeBlocked {
-		return // 用户已知情并再次关窗：放行，不再强留
+	if a.flushSaveAll() {
+		a.closePending = false
+		a.confirm.open = false
+		a.confirm.onOK = nil
+		return
 	}
-	a.closeBlocked = true
+	// 已经在等用户选择：继续拦，直到用户明确「放弃并退出」。
 	if e != nil {
 		e.PreventDefault()
 	}
-	a.pendingToast = "有草稿保存失败，已取消关闭：请点「保存失败」重试后再退出"
+	if a.closePending {
+		return
+	}
+	a.closePending = true
+	a.confirm = confirmState{
+		open:        true,
+		title:       "草稿尚未保存",
+		message:     "有草稿保存失败（磁盘写入出错，或笔记已被其它程序修改）。你可以重试保存，或放弃未保存的改动并退出——放弃后这些内容将无法找回。",
+		danger:      true,
+		okLabel:     "放弃并退出",
+		cancelLabel: "重试保存",
+		// 「重试保存」= 留在应用里，用户可以修好磁盘再试。
+		onCancel: func() {
+			a.closePending = false
+			// 立刻再试一次保存；成功则下次关窗即可正常退出。
+			a.flushSaveAll()
+			if a.win != nil {
+				a.win.Update(func() {})
+			}
+		},
+		// 「放弃并退出」= 用户明确选择丢弃未保存内容。
+		onOK: func() {
+			a.closePending = false
+			a.closeAbandoned = true
+			if a.win != nil {
+				a.win.Close()
+			}
+		},
+	}
 	if a.win != nil {
-		a.win.Update(func() {}) // 触发一帧，让 Toast 显示出来
+		a.win.Update(func() {}) // 触发一帧，让确认框显示出来
 	}
 }
 
@@ -602,12 +691,26 @@ func (a *app) applySaveResult(id string, ver uint64, receipt SaveReceipt, err er
 	if err != nil {
 		if a.currentID == id {
 			a.saveState = saveError
+			// 记住失败时的版本号：用户之后又输入才重新启用自动保存（评审 N3）。
+			a.saveErrorVersion = ed.state.Buffer.Version()
+			// 外部修改冲突必须由用户显式确认强制覆盖，自动重试必然再失败。
+			a.saveErrorExternal = err == ErrExternalEdit
 		}
 		// 业务化提示（NFR-USE-04）：外部修改给出可操作指引，其余直接给领域措辞。
 		// 只在出错这一次提示，不做后台重试，避免提示无限刷屏。
-		if err == ErrExternalEdit {
+		switch err {
+		case ErrExternalEdit:
 			a.pendingToast = "笔记已被其它程序修改：点「保存失败」可强制覆盖"
-		} else {
+		case ErrStaleRevision:
+			// 迟到的旧快照被领域层拦下：磁盘上已经是更新的内容，
+			// 不是失败，也不需要用户处理——把徽章恢复到"已保存"即可。
+			a.pendingToast = "已忽略一次迟到的旧保存（磁盘上已是更新内容）"
+			if a.currentID == id {
+				a.saveState = saveSaved
+				ed.saved = ed.state.Buffer.Version()
+				ed.state.Buffer.MarkSaved()
+			}
+		default:
 			a.pendingToast = err.Error()
 		}
 		return
@@ -640,10 +743,12 @@ func (a *app) loadBacklinks(id string) {
 	a.backlinks = a.vault.GetBacklinks(id)
 }
 
+// setView 切换视图。切换前先落盘当前草稿（评审 W06）：
+// 旧实现对回收站页跳过落盘，用户切到回收站后编辑器仍留着未保存的内容，
+// 若此时关窗或崩溃就会丢稿。落盘是无害的：回收站页并不编辑正文，
+// 同步写一次不会影响任何视图状态。
 func (a *app) setView(v string) {
-	if v != viewTrash {
-		a.flushSave()
-	}
+	a.flushSave()
 	a.view = v
 	a.refreshLists()
 }
@@ -685,6 +790,23 @@ func (a *app) scheduleSearch() {
 // deleteFromList 先保存草稿并确认成功，再移入回收站（评审 #2：避免丢稿）。
 // 返回是否实际执行了删除。
 func (a *app) deleteFromList(id string) bool {
+	// 正文文件已被外部删除（评审 W02）：没有草稿可保存，也没有内容可移入
+	// 回收站，直接把这条僵尸笔记从索引里清掉——不能因为文件不在了
+	// 就让用户被一条删不掉的记录卡住。
+	if !a.vault.NoteFileExists(id) {
+		title, err := a.vault.DropVanishedNote(id)
+		if err == nil {
+			delete(a.editors, id)
+			if a.currentID == id {
+				a.currentID = ""
+				a.backlinks = nil
+			}
+			a.refreshLists()
+			a.refreshReaderSnapshot()
+			a.pendingToast = "「" + title + "」的文件已被外部删除，已从列表移除"
+			return true
+		}
+	}
 	if !a.flushSaveNote(id) {
 		a.pendingToast = "保存失败，已中止删除"
 		return false
@@ -705,7 +827,7 @@ func (a *app) deleteFromList(id string) bool {
 }
 
 // reloadEditors 在磁盘正文被本应用改写（改名级联、导入覆盖）后刷新编辑器缓存：
-// 缓存里还是旧正文，用户再输入一个字，2 秒防抖就会把整篇旧正文写回磁盘，
+// 缓存里还是旧正文，用户再输入一个字，2 秒自动保存就会把整篇旧正文写回磁盘，
 // 静默覆盖刚写入的新内容（链接回退、导入内容丢失）。
 // 只在缓存无未保存修改时重载；有草稿的保留，交给保存时的外部修改检测拦下。
 func (a *app) reloadEditors(ids []string) {

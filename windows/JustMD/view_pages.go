@@ -142,16 +142,36 @@ func (a *app) confirmDialog(c *ui.Context) {
 	}
 	components.Dialog(c, &a.confirm.open, components.DialogOptions{Label: a.confirm.title}, func(panel ui.Element) {
 		t := c.Theme()
+		// 弹窗内仍可 Ctrl+S 保存（评审 N5）：MyGo 的 Modal 弹窗会让窗口级
+		// 快捷键失效（c.Shortcut 在弹窗外一律返回 false），所以这里在弹窗
+		// 作用域内重新注册一次。保存是无害且期望中的操作——尤其在
+		// "草稿保存失败，请确认是否退出"的弹窗上，Ctrl+S 正是用户想
+		// 重试保存的快捷键。
+		panel.OnShortcut(ui.Ctrl, ui.KeyS, func() {
+			a.flushSave()
+		})
 		ui.Column(c).Gap(t.Space(3)).Padding(t.Space(4)).MaxWidth(420).Children(func() {
 			components.Text(c, a.confirm.title).FontSize(17).Bold()
 			components.Text(c, a.confirm.message).TextColor(t.TextMuted).Wrap()
 			ui.Row(c).Gap(t.Space(2)).AlignItems(ui.Center).Children(func() {
 				ui.Spacer(c).Grow(1)
-				if components.Button(c, "取消", components.ButtonGhost).Clicked() {
-					a.confirm.open = false
-					a.confirm.onOK = nil
+				cancelLabel := a.confirm.cancelLabel
+				if cancelLabel == "" {
+					cancelLabel = "取消"
 				}
-				ok := components.Button(c, "确定", components.ButtonPrimary)
+				if components.Button(c, cancelLabel, components.ButtonGhost).Clicked() {
+					a.confirm.open = false
+					if fn := a.confirm.onCancel; fn != nil {
+						fn()
+					}
+					a.confirm.onOK = nil
+					a.confirm.onCancel = nil
+				}
+				okLabel := a.confirm.okLabel
+				if okLabel == "" {
+					okLabel = "确定"
+				}
+				ok := components.Button(c, okLabel, components.ButtonPrimary)
 				if a.confirm.danger {
 					ok.TextColor(t.Danger)
 				}
@@ -161,6 +181,7 @@ func (a *app) confirmDialog(c *ui.Context) {
 						fn()
 					}
 					a.confirm.onOK = nil
+					a.confirm.onCancel = nil
 				}
 			})
 		})
