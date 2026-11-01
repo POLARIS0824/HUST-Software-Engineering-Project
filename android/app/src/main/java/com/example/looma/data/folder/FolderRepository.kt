@@ -4,39 +4,13 @@ import com.example.looma.data.vault.VaultRepository
 import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.VaultFolder
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.nio.file.FileAlreadyExistsException
 import java.nio.file.Files
 
-/** Only manages physical directories. Markdown files are handled by NoteFileStore. */
+/** Only manages physical directories. Reading the folder tree happens in NoteFileStore's single scan. */
 class FolderRepository(private val vaultRepository: VaultRepository) {
-
-    suspend fun listFolders(): List<VaultFolder> = withContext(Dispatchers.IO) {
-        val vault = vaultRepository.requireCurrentVault()
-        val root = File(vault.rootPath).canonicalFile
-        val result = mutableListOf<VaultFolder>()
-
-        root.walkTopDown()
-            .maxDepth(40)
-            .onEnter { directory ->
-                val canonical = runCatching { directory.canonicalFile }.getOrNull()
-                canonical != null && canonical.toPath().startsWith(root.toPath()) &&
-                        (directory == root || !directory.name.startsWith('.'))
-            }
-            .forEach { file ->
-                coroutineContext.ensureActive()
-                if (file == root || !file.isDirectory) return@forEach
-                result += VaultFolder(
-                    vaultId = vault.id,
-                    path = FolderPath(file.relativeTo(root).invariantSeparatorsPath),
-                    name = file.name,
-                )
-            }
-
-        result.sortedBy { it.path.relativePath.lowercase() }
-    }
 
     suspend fun createFolder(parent: FolderPath, name: String): VaultFolder =
         withContext(Dispatchers.IO) {

@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.looma.data.note.NoteListEntry
 import com.example.looma.data.note.NoteRepository
 import com.example.looma.data.vault.VaultRepository
+import com.example.looma.domain.model.FolderPath
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +20,7 @@ import kotlinx.coroutines.launch
 /**
  * 只负责“文件 / 仓库 → [HomeUiState]”。
  *
+ * - 一次扫描得到笔记与目录，之后浏览、排序、搜索都只在这份内存快照上做
  * - 排序与搜索在 ViewModel 里算好，UI 不做业务判断
  * - 不持有导航回调：新建成功后写 [HomeUiState.createdNote]，由 HomeRoute 消费
  * - 首次加载交给 HomeRoute 的 ON_RESUME 生命周期事件，不在 init 里再扫一次
@@ -30,6 +32,7 @@ class HomeViewModel(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
     private var refreshJob: Job? = null
+    private var index: HomeVaultIndex = HomeVaultIndex.Empty
 
     /** 重新扫描笔记库；同一时刻只保留最近一次请求 */
     fun refresh() {
@@ -40,11 +43,16 @@ class HomeViewModel(
                 val vault = vaultRepository.requireCurrentVault()
                 val result = noteRepository.listNotes()
                 val notes = result.items.map { it.toHomeItem() }
+                index = HomeVaultIndex.build(result.folders, notes)
                 _uiState.update { current ->
+                    val path = current.files.path
+                        .takeIf(index::contains)
+                        ?: FolderPath.Root
                     current.copy(
                         vaultName = vault.name,
                         notes = notes.orderedBy(current.sort),
                         searchResults = notes.matching(current.query).orderedBy(current.sort),
+                        files = index.files(path, current.sort),
                         isLoading = false,
                         errorMessage = result.unreadableCount
                             .takeIf { count -> count > 0 }
@@ -54,16 +62,31 @@ class HomeViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
+                index = HomeVaultIndex.Empty
                 _uiState.update {
                     it.copy(
                         notes = emptyList(),
                         searchResults = emptyList(),
+                        files = HomeFilesState(),
                         isLoading = false,
                         errorMessage = e.localizedMessage ?: "加载笔记失败",
                     )
                 }
             }
         }
+    }
+
+    /** 打开文件夹；未知路径直接忽略，避免把状态带到快照之外 */
+    fun openFolder(path: FolderPath) {
+        if (!index.contains(path)) return
+        _uiState.update { it.copy(files = index.files(path, it.sort)) }
+    }
+
+    /** 返回上一级；已经在根目录时什么也不做，交给系统返回键 */
+    fun navigateUp() {
+        val current = _uiState.value
+        if (current.files.isAtRoot) return
+        openFolder(current.files.path.parentFolder())
     }
 
     fun setQuery(value: String) {
@@ -83,6 +106,7 @@ class HomeViewModel(
             sort = sort,
             notes = it.notes.orderedBy(sort),
             searchResults = it.searchResults.orderedBy(sort),
+            files = index.files(it.files.path, sort),
         )
     }
 

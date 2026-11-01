@@ -1,5 +1,6 @@
 package com.example.looma.feature.home
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,6 +23,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -30,8 +32,10 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.looma.R
+import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.NoteId
-import com.example.looma.feature.home.components.HomeNoteGrid
+import com.example.looma.feature.home.components.HomeBreadcrumb
+import com.example.looma.feature.home.components.HomeFilesGrid
 import com.example.looma.feature.home.components.HomeSearchBar
 import com.example.looma.ui.components.LoomaIcon
 
@@ -61,12 +65,18 @@ fun HomeRoute(
         }
     }
 
+    // 只在文件夹内接管返回键；根目录交给 NavDisplay，行为和以前一致。
+    // 搜索展开时它自己的返回处理在 HomeScreen 内更晚注册，会先消费返回。
+    BackHandler(enabled = state.isBrowsing) { viewModel.navigateUp() }
+
     HomeScreen(
         state = state,
         onQueryChange = viewModel::setQuery,
         onToggleLayout = viewModel::toggleLayout,
         onToggleSort = viewModel::toggleSort,
         onNoteClick = onOpenNote,
+        onFolderClick = viewModel::openFolder,
+        onNavigateUp = viewModel::navigateUp,
         onCreateNoteClick = viewModel::createNote,
         onMenuClick = onMenuClick,
         onAssistantClick = onAssistantClick,
@@ -85,6 +95,8 @@ fun HomeScreen(
     onToggleLayout: () -> Unit,
     onToggleSort: () -> Unit,
     onNoteClick: (NoteId) -> Unit,
+    onFolderClick: (FolderPath) -> Unit,
+    onNavigateUp: () -> Unit,
     onCreateNoteClick: () -> Unit,
     onMenuClick: () -> Unit,
     onAssistantClick: () -> Unit,
@@ -121,6 +133,8 @@ fun HomeScreen(
             state = state,
             contentPadding = innerPadding,
             onNoteClick = onNoteClick,
+            onFolderClick = onFolderClick,
+            onNavigateUp = onNavigateUp,
             onRetryClick = onRetryClick,
         )
     }
@@ -131,6 +145,8 @@ private fun HomeContent(
     state: HomeUiState,
     contentPadding: PaddingValues,
     onNoteClick: (NoteId) -> Unit,
+    onFolderClick: (FolderPath) -> Unit,
+    onNavigateUp: () -> Unit,
     onRetryClick: () -> Unit,
 ) {
     Column(Modifier.fillMaxSize().padding(contentPadding)) {
@@ -143,18 +159,26 @@ private fun HomeContent(
                 CircularProgressIndicator()
             }
 
-            state.notes.isEmpty() -> HomeCentered {
+            state.files.isAtRoot && state.files.isEmpty -> HomeCentered {
                 Text(
                     text = "还没有笔记，点击 + 新建",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
 
-            else -> HomeNoteGrid(
-                notes = state.notes,
-                isGridMode = state.isGridMode,
-                onNoteClick = onNoteClick,
-            )
+            else -> key(state.files.path) {
+                Column(Modifier.fillMaxSize()) {
+                    if (!state.files.isAtRoot) {
+                        HomeBreadcrumb(crumbs = state.files.crumbs, onBack = onNavigateUp)
+                    }
+                    HomeFilesGrid(
+                        files = state.files,
+                        isGridMode = state.isGridMode,
+                        onFolderClick = onFolderClick,
+                        onNoteClick = onNoteClick,
+                    )
+                }
+            }
         }
     }
 }

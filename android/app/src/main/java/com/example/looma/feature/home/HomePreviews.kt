@@ -11,9 +11,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
+import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.model.NotePath
 import com.example.looma.domain.model.NoteSummary
+import com.example.looma.domain.model.VaultFolder
 import com.example.looma.domain.model.VaultId
 import com.example.looma.feature.home.components.HomeSearchResults
 import com.example.looma.ui.theme.LoomaTheme
@@ -27,6 +29,7 @@ private fun previewState(
     query: String = "",
     isGridMode: Boolean = true,
     notes: List<HomeNoteItem> = previewNotes(),
+    path: FolderPath = FolderPath.Root,
 ): HomeUiState = HomeUiState(
     vaultName = "Looma",
     notes = notes.orderedBy(HomeSort.LAST_MODIFIED),
@@ -34,18 +37,32 @@ private fun previewState(
     query = query,
     isGridMode = isGridMode,
     isLoading = false,
+    files = previewIndex(notes).files(path, HomeSort.LAST_MODIFIED),
 )
+
+private fun previewIndex(notes: List<HomeNoteItem>): HomeVaultIndex {
+    val vaultId = VaultId("preview-vault")
+    return HomeVaultIndex.build(
+        folders = listOf(
+            VaultFolder(vaultId, FolderPath("笔记"), "笔记"),
+            VaultFolder(vaultId, FolderPath("档案"), "档案"),
+            VaultFolder(vaultId, FolderPath("档案/项目周报"), "项目周报"),
+        ),
+        notes = notes,
+    )
+}
 
 private fun previewNotes(): List<HomeNoteItem> {
     fun note(
         name: String,
         title: String,
         excerpt: String,
+        path: String = "$name.md",
         tags: Set<String> = emptySet(),
         checklist: List<HomeChecklistItem> = emptyList(),
     ) = HomeNoteItem(
         summary = NoteSummary(
-            id = NoteId(VaultId("preview-vault"), NotePath("$name.md")),
+            id = NoteId(VaultId("preview-vault"), NotePath(path)),
             title = title,
             excerpt = excerpt,
             modifiedAt = Instant.parse("2026-10-31T12:00:00Z"),
@@ -56,6 +73,12 @@ private fun previewNotes(): List<HomeNoteItem> {
     )
     return listOf(
         note("test", "测试", "现在看看怎么样 这个 UI"),
+        note(
+            "transport",
+            "Transport Layer",
+            "TCP 面向连接的协议。传输数据之前，先建立连接，提供可靠、有序的字节流。",
+            path = "笔记/Transport Layer.md",
+        ),
         note(
             "git",
             "Git 忽略清单",
@@ -108,6 +131,14 @@ private fun HomeEmptyPreview() {
     LoomaTheme(dynamicColor = false) { HomeScreenPreview(previewState(notes = emptyList())) }
 }
 
+@Preview(name = "首页 · 文件夹内", showBackground = true, widthDp = 393, heightDp = 820)
+@Composable
+private fun HomeFolderPreview() {
+    LoomaTheme(dynamicColor = false) {
+        HomeScreenPreview(previewState(path = FolderPath("笔记")))
+    }
+}
+
 @Preview(name = "搜索结果", showBackground = true, widthDp = 393, heightDp = 820)
 @Composable
 private fun HomeSearchResultsPreview() {
@@ -138,6 +169,8 @@ private fun HomeScreenPreview(state: HomeUiState) {
         onToggleLayout = {},
         onToggleSort = {},
         onNoteClick = {},
+        onFolderClick = {},
+        onNavigateUp = {},
         onCreateNoteClick = {},
         onMenuClick = {},
         onAssistantClick = {},

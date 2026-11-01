@@ -2,10 +2,12 @@ package com.example.looma.data.note
 
 import android.util.AtomicFile
 import com.example.looma.data.vault.VaultRepository
+import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.model.NotePath
 import com.example.looma.domain.model.TrashedNote
 import com.example.looma.domain.model.Vault
+import com.example.looma.domain.model.VaultFolder
 import java.io.File
 import java.io.FileNotFoundException
 import java.io.IOException
@@ -28,6 +30,7 @@ internal data class StoredMarkdown(
 
 internal data class NoteFileScan(
     val notes: List<StoredMarkdown>,
+    val folders: List<VaultFolder>,
     val unreadableCount: Int,
 )
 
@@ -39,6 +42,7 @@ internal class NoteFileStore(
         val vault = vaultRepository.requireCurrentVault()
         val root = rootDir(vault)
         val items = mutableListOf<StoredMarkdown>()
+        val folders = mutableListOf<VaultFolder>()
         var unreadable = 0
 
         for (file in root.walkTopDown().maxDepth(MAX_DEPTH).onEnter { directory ->
@@ -46,6 +50,17 @@ internal class NoteFileStore(
             inside && (directory == root || !directory.name.startsWith('.'))
         }) {
             coroutineContext.ensureActive()
+            if (file.isDirectory) {
+                val inside = runCatching { isInside(root, file) }.getOrDefault(false)
+                if (file != root && inside && !file.name.startsWith('.')) {
+                    folders += VaultFolder(
+                        vaultId = vault.id,
+                        path = FolderPath(file.relativeTo(root).invariantSeparatorsPath),
+                        name = file.name,
+                    )
+                }
+                continue
+            }
             if (!file.isFile || !file.extension.equals("md", ignoreCase = true)) continue
             try {
                 if (!isInside(root, file)) throw IOException("文件超出 Vault")
@@ -56,7 +71,11 @@ internal class NoteFileStore(
                 unreadable++
             }
         }
-        NoteFileScan(items, unreadable)
+        NoteFileScan(
+            notes = items,
+            folders = folders.sortedBy { it.path.relativePath.lowercase() },
+            unreadableCount = unreadable,
+        )
     }
 
     suspend fun readNote(id: NoteId): StoredMarkdown = withContext(Dispatchers.IO) {

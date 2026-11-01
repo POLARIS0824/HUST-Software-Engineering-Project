@@ -49,7 +49,11 @@ data class HomeUiState(
     val errorMessage: String? = null,
     /** 一次性事件：新建成功后待打开的笔记，消费后置空 */
     val createdNote: NoteId? = null,
-)
+    /** 文件视图：当前浏览路径、面包屑、最近笔记与当前层的文件夹 / 笔记 */
+    val files: HomeFilesState = HomeFilesState(),
+) {
+    val isBrowsing: Boolean get() = !files.isAtRoot
+}
 
 internal fun List<HomeNoteItem>.matching(query: String): List<HomeNoteItem> {
     val keyword = query.trim()

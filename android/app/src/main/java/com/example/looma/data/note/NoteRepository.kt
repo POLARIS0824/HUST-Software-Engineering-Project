@@ -46,6 +46,7 @@ class NoteRepository(vaultRepository: VaultRepository) {
 
         NoteListResult(
             items = items.sortedByDescending { it.summary.modifiedAt },
+            folders = scan.folders,
             unreadableCount = unreadable,
         )
     }
