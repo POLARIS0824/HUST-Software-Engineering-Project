@@ -1,0 +1,54 @@
+# JustMD Windows 版基本构建与测试（PR #1 评审建议补充 CI）。
+# 仅当 windows/ 或本文件变更时触发，不影响 android/ 的开发流程。
+name: windows-ci
+
+on:
+  push:
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows-ci.yml"
+  pull_request:
+    paths:
+      - "windows/**"
+      - ".github/workflows/windows-ci.yml"
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      # Windows runner 默认 core.autocrlf=true 会把工作区行尾转成 CRLF，
+      # 导致 gofmt 误报；固定为不做行尾转换，与仓库中的 LF 一致。
+      - name: 固定 LF 行尾
+        working-directory: ${{ github.workspace }}
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: windows/JustMD/go.mod
+          cache-dependency-path: windows/JustMD/go.sum
+
+      - name: gofmt
+        working-directory: windows/JustMD
+        shell: bash
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then
+            echo "以下文件未经 gofmt 格式化："
+            echo "$out"
+            exit 1
+          fi
+
+      - name: go vet
+        working-directory: windows/JustMD
+        run: go vet ./...
+
+      - name: go test（无 cgo）
+        working-directory: windows/JustMD
+        shell: bash
+        run: CGO_ENABLED=0 go test ./...
+
+      - name: mygo vet
+        working-directory: windows/JustMD
+        run: go tool mygo vet .
