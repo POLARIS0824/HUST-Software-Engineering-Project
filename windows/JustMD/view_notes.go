@@ -104,7 +104,20 @@ func (a *app) sortBar(c *ui.Context) {
 // noteList 是笔记卡片列表；检索态显示检索结果（FR-SEARCH-02/05）。
 func (a *app) noteList(c *ui.Context) {
 	t := c.Theme()
+	// 删除动画（碎纸机）：按帧推进，播完立即结算；未播完则续一帧。
+	if a.shred != nil {
+		a.shred.begin(c.Now())
+		if a.shred.progress(c.Now()) >= 1 {
+			a.finishShred(c)
+		} else {
+			c.After(16 * time.Millisecond)
+		}
+	}
 	if a.query != "" && strings.TrimSpace(a.query) != "" {
+		// 检索态没有可播放动画的行：直接结算，删除语义不受影响。
+		if a.shred != nil {
+			a.finishShred(c)
+		}
 		ui.Textf(c, "检索结果 %d", len(a.hits)).FontSize(12).TextColor(t.TextMuted)
 		if len(a.hits) == 0 && !a.searching {
 			components.Text(c, "没有匹配「"+a.query+"」的笔记").TextColor(t.TextMuted)
@@ -135,6 +148,11 @@ func (a *app) noteList(c *ui.Context) {
 	}
 
 	notes := a.visibleNotes()
+	// 动画中的笔记因标签过滤/未就绪等原因不在列表里时无法播放：直接结算。
+	if a.shred != nil && !noteInList(notes, a.shred.note.ID) {
+		a.finishShred(c)
+		notes = a.visibleNotes()
+	}
 	if len(notes) == 0 {
 		ui.Column(c).Fill().Center().Children(func() {
 			components.Text(c, "还没有笔记，点击左侧「＋ 新建笔记」开始记录").TextColor(t.TextMuted)
@@ -147,7 +165,20 @@ func (a *app) noteList(c *ui.Context) {
 			kc := c.Key(n.ID)
 			row := ui.Column(kc).Key("note:"+n.ID).Gap(2).Padding(8, 10).Radius(t.Radius).FillWidth()
 			row.Transition(rowTransition(i))
-			row.Background(row.AnimateColor("bg", hoverBg(t, row.Hovered()), hoverEase)).Children(func() {
+			// 正在删除的行：Effect 会把这一行（含子树）渲染成位图，
+			// 再由 shredEffect 切成竖条下落（见 shred.go）。
+			// 其余行照常绘制，不受影响。
+			shredding := a.shredProgress(c, n.ID)
+			if shredding >= 0 {
+				row.Effect(&shredEffect{t: shredding, strips: shredStrips, seed: a.shred.seed})
+			}
+			// 碎纸中的行用不透明底色：碎片是"纸片"，透明底会让下落的分片
+			// 与下方文字叠在一起像残影；Effect 渲染时也需要不透明底才不做灰阶抗锯齿。
+			bg := row.AnimateColor("bg", hoverBg(t, row.Hovered()), hoverEase)
+			if shredding >= 0 {
+				bg = t.Surface
+			}
+			el := row.Background(bg).Children(func() {
 				components.Text(c, n.Title).Bold().Wrap()
 				if n.Summary != "" {
 					components.Text(c, n.Summary).FontSize(12).TextColor(t.TextMuted).Wrap()
@@ -164,7 +195,11 @@ func (a *app) noteList(c *ui.Context) {
 						}
 					})
 				}
-			}).OnClick(func() {
+			})
+			if shredding >= 0 {
+				continue // 正在碎掉的行不再响应点击/右键
+			}
+			el.OnClick(func() {
 				a.openNote(n.ID)
 			}).ContextMenu(func(m *ui.Menu) {
 				if m.Item("移入回收站").Chosen() {
@@ -175,21 +210,27 @@ func (a *app) noteList(c *ui.Context) {
 	})
 }
 
-// trashWithUndo 删除并给出 5 秒撤销窗口（BR-11、AC-NOTE-02）。
-func (a *app) trashWithUndo(c *ui.Context, id, title string) {
-	wasCurrent := a.currentID == id
-	if !a.deleteFromList(id) {
-		return // 删除未发生（如保存失败），不弹误导性提示
+// noteInList 判断笔记是否在可见列表里（删除动画需要行本身来播放）。
+func noteInList(notes []NoteSummary, id string) bool {
+	for _, n := range notes {
+		if n.ID == id {
+			return true
+		}
 	}
-	c.ToastAction("已将「"+title+"」移入回收站", "撤销", func() {
-		if err := a.restoreFromTrash(id); err != nil {
-			return // 恢复失败已由 restoreFromTrash 给出提示，不能让撤销键静默无效
-		}
-		if wasCurrent {
-			a.openNote(id) // 撤销后回到刚才正在编辑的笔记
-		}
-		c.Toast("已撤销删除")
-	})
+	return false
+}
+
+// trashWithUndo 删除笔记：先播放"碎纸机"动画，播完再真正移入回收站，
+// 并给出 5 秒以上撤销窗口（BR-11、AC-NOTE-02）。
+// 动画只影响视觉：删除语义、撤销、快捷键与错误提示都不变；
+// 系统要求"减少动态效果"时直接删除（无障碍）。
+func (a *app) trashWithUndo(c *ui.Context, id, title string) {
+	n := NoteSummary{ID: id, Title: title}
+	if c.Preferences().ReduceMotion {
+		a.deleteNoteNow(c, n)
+		return
+	}
+	a.startShred(c, n)
 }
 
 // editorArea 是右侧编辑/阅读区（FR-EDIT-01/03）。

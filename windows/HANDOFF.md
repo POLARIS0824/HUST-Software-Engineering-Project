@@ -37,7 +37,7 @@ Onevra 组件库（小组指定，队友要求"不要用 webview"）。两轮迭
 ```bash
 cd windows/JustMD
 go run .                      # 开发运行（注意：mygo dev 会被杀毒软件锁 exe）
-CGO_ENABLED=0 go test ./...   # 全部测试（必须无 cgo，124 个用例，约 9 秒）
+CGO_ENABLED=0 go test ./...   # 全部测试（必须无 cgo，128 个用例，约 11 秒）
 go vet . && go tool mygo vet .
 gofmt -l .                    # 必须无输出
 go build -o justmd-test.exe . # 构建可运行程序（本地测试用，勿提交）
@@ -71,6 +71,7 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 | `view.go` | 侧栏（`leftView` 含**滑动胶囊** `drawNavPill`）、`contentView` 路由、快捷键、overlays |
 | `view_notes.go` | 主页面：列表行 `rowTransition`、编辑器/阅读 `paneSwap`、反链面板宽度弹簧、自绘编辑/阅读分段控件 |
 | `view_pages.go` | 回收站、设置页、确认弹窗、导入冲突弹窗 |
+| `shred.go` | 删除笔记的"碎纸机"动画：`shredAnim`（进度/时长）+ `shredEffect`（`ui.Effect`，把行渲染成位图后按竖条切片下落/旋转/淡出） |
 | `*_test.go` | 领域测试 + `view_test` 回归 + `usersim*` 用户流程模拟 |
 
 ## 5. 本阶段已完成的工作（2026-10-30 ~ 11-01）
@@ -107,6 +108,10 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
    标签过滤残留与越界匹配、阅读页过期快照点出 UUID 垃圾笔记、"导入整个文件夹"不可达、
    导入结果不报跳过/失败、标签围栏误判、导出包 manifest 与附件递归。
    细节与证据见 `windows/docs/verification-record.md` 的"缺陷修复轮"一节。
+7. **删除笔记的碎纸机动画**（2026-11-01，分帧证据 `docs/ui-delete-shred-2026-11-01.png`）：
+   删除时把列表行按竖条切片、错峰下落旋转淡出，播完才真正移入回收站。用 MyGo 的
+   `Element.Effect` + `Painter.ImageRegion/Transform/Clip` 实现，不截屏、不加浮层；
+   系统"减少动态效果"时直接删除。代码在 `shred.go`，决策见第 6 节第 17 条。
 
 ## 6. 关键设计决策（接手者不要轻易推翻）
 
@@ -156,6 +161,13 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
     文件夹导入走 `PrepareImportFolder`（`Directory:true`），与文件导入共用 `buildImportPlan`。
 16. **异步保存与同步 flush 的次序**：`flushSaveNote` 先等该篇的 `writing` 通道关闭再落盘，
     `applySaveResult` 忽略过期回执（`ver < ed.saved`）。否则在飞的旧快照可能晚于 flush 落盘。
+17. **删除动画"先播完再删"**：碎纸动画期间笔记仍在库里，动画结束才 `deleteFromList`，
+    这样被切的位图就是这一行自己的真实渲染（`Element.Effect` 提供），不需要截屏/浮层定位；
+    中途被杀只是"没删成"，不会出现界面说删了、磁盘还在。不要改成"先删再动画"：
+    行没了就没有素材，只能重绘一份假的行或做绝对定位浮层，复杂且容易错位。
+    `shredEffect` 必须 `Painter.Clip` 在行盒子内（否则碎片会被后续行压住成残影）；
+    碎纸中的行要不透明底色（`t.Surface`），否则分片与下方文字叠成噪点。
+    ReduceMotion 下走 `deleteNoteNow` 直接删除；切页/搜索态/不可见时立即结算。
 
 ## 7. 测试与调试工具链
 
@@ -182,7 +194,7 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 ## 8. 验证状态（诚实版）
 
 **已验证**（细节见 `windows/docs/verification-record.md`）：
-- `gofmt`/`go vet`/`go tool mygo vet`/`CGO_ENABLED=0 go test ./...` 全绿（124 用例，
+- `gofmt`/`go vet`/`go tool mygo vet`/`CGO_ENABLED=0 go test ./...` 全绿（128 用例，
   总语句覆盖 75.8%）；上一轮 CI（windows-latest）全绿，本轮改动需 push 后再看 CI 结果。
 - 领域层：解析/检索/导入导出（含 GBK 端到端、ZIP 包体真实执行）/崩溃对账/标签树/
   冲突检测/装载自愈（外部修改校准、重复元数据择优、孤儿回收站条目）等单测覆盖。
@@ -192,6 +204,10 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 - 实机截图：主界面/阅读页/设置页/标签树/动画分帧（`docs/*.png`）。
 - **实机数据安全路径**：外部工具改正文 → 重启应用 → 继续输入并等自动保存 → 外部内容与新
   输入同时保留、徽章"已保存"（验证决策 13 的校准与保存链路）。
+- **删除碎纸机动画**：`ui.Tester` 分帧（`docs/ui-delete-shred-2026-11-01.png`）确认切片、
+  错峰下落、淡出；用例覆盖"动画期间不删→播完入回收站→撤销恢复"、ReduceMotion 直接删除、
+  切页立即结算、碎纸中段像素与静止画面不同。窗口模式的观感仍需人工确认（无头渲染与 GPU 绘制
+  的采样略有差异）。
 
 **明确没做/没验证**（也是下一步）：
 - 真实中文 IME 专项（常规中文输入与 IME 组合输入标题实测正常，未做系统性用例）、

@@ -239,7 +239,8 @@ func TestUserSim(t *testing.T) {
 		t.Fatalf("选择移入回收站: %v (菜单 %v)", err, menu)
 	}
 	m.Frame()
-	m.Advance(200 * time.Millisecond)
+	// 删除先播放碎纸动画（约 0.56s），推进虚拟时钟后才真正移入回收站。
+	m.Advance(700 * time.Millisecond)
 	m.Frame()
 	simShot(t, "6-trashed", m)
 	if a.vault.GetWorkspace().TrashCount == 0 {

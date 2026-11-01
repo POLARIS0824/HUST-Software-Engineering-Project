@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/ui"
 	"github.com/egoist/mygo/ui/editor"
 	"github.com/oneo-me/onevra/source/shells/sidebar"
 )
@@ -85,6 +86,9 @@ type app struct {
 	// closeBlocked 记录"因保存失败阻止过一次关窗"：只拦一次，
 	// 用户第二次关窗放行，避免磁盘持续故障时窗口关不掉。
 	closeBlocked bool
+	// shred 是正在播放的删除动画（碎纸机）。动画期间笔记仍在库里，
+	// 播完才真正移入回收站——见 shred.go 的设计说明。
+	shred        *shredAnim
 	statsVersion uint64
 
 	// 反链面板。
@@ -530,6 +534,58 @@ func (a *app) restoreFromTrash(id string) error {
 	a.refreshLists()
 	a.refreshReaderSnapshot()
 	return nil
+}
+
+// ---- 删除动画（碎纸机，见 shred.go）------------------------------------------
+
+// startShred 开始删除某篇笔记的碎纸动画；已有一场动画则先立即结算。
+// 动画期间不删除：真正删除在 finishShred 里执行，行本身就是动画的素材。
+func (a *app) startShred(c *ui.Context, n NoteSummary) {
+	if a.shred != nil {
+		// 连续删除：上一场先结算，避免两篇笔记都卡在"待删除"。
+		a.finishShred(c)
+	}
+	a.shred = &shredAnim{note: n, dur: shredDuration, seed: uint32(time.Now().UnixNano())}
+}
+
+// shredProgress 返回指定笔记的删除动画进度；不在动画中返回 -1。
+// 首次调用时记录起点（Tester 的虚拟时钟也由此对齐）。
+func (a *app) shredProgress(c *ui.Context, id string) float32 {
+	if a.shred == nil || a.shred.note.ID != id {
+		return -1
+	}
+	a.shred.begin(c.Now())
+	return a.shred.progress(c.Now())
+}
+
+// finishShred 结束删除动画并真正移入回收站（成功后给出 5 秒以上撤销窗口）。
+func (a *app) finishShred(c *ui.Context) {
+	s := a.shred
+	if s == nil {
+		return
+	}
+	a.shred = nil
+	a.deleteNoteNow(c, s.note)
+}
+
+// deleteNoteNow 立即把笔记移入回收站并给出撤销 Toast（不播放动画）。
+// 系统要求"减少动态效果"（Preferences.ReduceMotion）时走这条路径，
+// 无障碍场景下不做碎纸动画。
+func (a *app) deleteNoteNow(c *ui.Context, n NoteSummary) {
+	wasCurrent := a.currentID == n.ID
+	if !a.deleteFromList(n.ID) {
+		return // 删除未发生（保存失败/领域错误），deleteFromList 已给出提示
+	}
+	title, id := n.Title, n.ID
+	c.ToastAction("已将「"+title+"」移入回收站", "撤销", func() {
+		if err := a.restoreFromTrash(id); err != nil {
+			return // 恢复失败已由 restoreFromTrash 提示，不能让撤销键静默无效
+		}
+		if wasCurrent {
+			a.openNote(id)
+		}
+		c.Toast("已撤销删除")
+	})
 }
 
 // applySaveResult 把落盘回执应用回界面状态（主线程）。

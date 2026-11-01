@@ -283,6 +283,9 @@ func TestContextMenuHitsAnimatedRow(t *testing.T) {
 		t.Fatalf("选择菜单项: %v", err)
 	}
 	m.Frame()
+	// 删除先播放碎纸动画（约 0.56s），推进虚拟时钟后才真正移入回收站。
+	m.Advance(700 * time.Millisecond)
+	m.Frame()
 	data, _ := a.vault.OpenNote(second.ID)
 	if !data.Trashed {
 		t.Fatal("应删除被右键的「快切甲」，而不是邻居行")

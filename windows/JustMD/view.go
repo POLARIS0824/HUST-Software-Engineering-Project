@@ -175,6 +175,10 @@ func (a *app) tagTree(c *ui.Context, sel *ui.Element) {
 // contentView 是 Shell 主内容区：按 a.view 路由到页面。
 func (a *app) contentView(c *ui.Context) {
 	a.handleShortcuts(c)
+	// 删除动画只在笔记页有素材；切到回收站/设置时立刻结算，不留半个删除。
+	if a.shred != nil && a.view != viewNotes {
+		a.finishShred(c)
+	}
 	switch a.view {
 	case viewTrash:
 		a.trashView(c)
