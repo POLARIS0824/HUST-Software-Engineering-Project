@@ -178,3 +178,79 @@ func TestExtractLinksPositionsCoverWholeLink(t *testing.T) {
 		t.Errorf("别名解析错误: %+v", links[0])
 	}
 }
+
+// ---- 代码区识别回归（基线 4.5/4.6）：缩进代码块 / 引用块围栏 / 实际围栏串 ------
+
+func TestExtractTagsIndentedCodeBlock(t *testing.T) {
+	// 行首 ≥4 空格或 Tab 是缩进代码块，里面的 #include 不是正文标签。
+	md := "正文\n\n    #include <iostream>\n    int main() {}\n\n\t#也是代码\n\n#真标签"
+	tags := extractTags(md)
+	if len(tags) != 1 || tags[0].Name != "真标签" {
+		t.Fatalf("缩进代码块中的 #include 不应成为标签，实际 %+v", tags)
+	}
+	// 缩进代码块中的双链同样不解析。
+	links := extractLinks("正文\n\n    参考 [[代码内]]\n\n真链接 [[外部]]")
+	if len(links) != 1 || links[0].Target != "外部" {
+		t.Fatalf("缩进代码块中的双链不应解析，实际 %+v", links)
+	}
+}
+
+func TestExtractTagsInBlockquoteFence(t *testing.T) {
+	// 引用块里的围栏代码块必须先剥离 ">" 前缀再配对。
+	md := "> ```c\n> #include <stdio.h>\n> ```\n\n> 引用里的 #标签 与 [[链接]]"
+	tags := extractTags(md)
+	if len(tags) != 1 || tags[0].Name != "标签" {
+		t.Fatalf("引用块代码里的 #include 不应成为标签，实际 %+v", tags)
+	}
+	links := extractLinks(md)
+	if len(links) != 1 || links[0].Target != "链接" {
+		t.Fatalf("引用块正文里的双链应被解析，实际 %+v", links)
+	}
+	// 剥离 "> " 后必须把位置映射回原文下标。
+	runes := []rune(md)
+	if got := string(runes[links[0].Start:links[0].End]); got != "[[链接]]" {
+		t.Fatalf("引用块内双链的 rune 区间映射错误，得到 %q", got)
+	}
+}
+
+func TestExtractTagsBlockquoteIndentedCode(t *testing.T) {
+	md := ">     #include <iostream>\n\n> 正常标签 #标签"
+	tags := extractTags(md)
+	if len(tags) != 1 || tags[0].Name != "标签" {
+		t.Fatalf("引用块里的缩进代码不应成为标签，实际 %+v", tags)
+	}
+}
+
+func TestExtractTagsLongerFence(t *testing.T) {
+	// 四反引号围栏应包住三反引号，不能让内层三反引号提前关闭。
+	md := "````markdown\n```\n#伪造标签\n```\n````\n\n#真标签"
+	tags := extractTags(md)
+	if len(tags) != 1 || tags[0].Name != "真标签" {
+		t.Fatalf("四反引号围栏未正确配对，实际 %+v", tags)
+	}
+}
+
+func TestFenceCloseRequiresNoInfoString(t *testing.T) {
+	// "````markdown" 带信息串，不是外层 ``` 的关闭行。
+	md := "```\n````markdown\n#伪造\n````\n#真标签"
+	tags := extractTags(md)
+	if len(tags) != 1 || tags[0].Name != "真标签" {
+		t.Fatalf("带信息串的围栏行被误判为关闭，实际 %+v", tags)
+	}
+}
+
+func TestExtractTagsTildeFence(t *testing.T) {
+	md := "~~~text\n#伪标签\n~~~\n\n#真标签"
+	tags := extractTags(md)
+	if len(tags) != 1 || tags[0].Name != "真标签" {
+		t.Fatalf("~~~ 围栏未正确识别，实际 %+v", tags)
+	}
+}
+
+func TestExtractTagsThreeSpaceIndentStillProse(t *testing.T) {
+	// 只有 3 个空格缩进的行仍是正文（缩进代码块阈值是 4）。
+	tags := extractTags("   #三空格仍是正文")
+	if len(tags) != 1 || tags[0].Name != "三空格仍是正文" {
+		t.Fatalf("3 空格缩进不应触发缩进代码块，实际 %+v", tags)
+	}
+}

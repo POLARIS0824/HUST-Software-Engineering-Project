@@ -85,9 +85,9 @@ func main() {
 			go a.dropFilesFlow(paths)
 		})
 		// 关窗前把未落盘草稿全部同步落盘：防抖窗口内的输入
-		// 不会因为关闭而丢失。
-		shell.Window().OnClose(func(*mygo.CloseEvent) {
-			a.flushSaveAll()
+		// 不会因为关闭而丢失；保存失败时拦一次并提示（FR-EDIT-05/06）。
+		shell.Window().OnClose(func(e *mygo.CloseEvent) {
+			a.onCloseRequest(e)
 		})
 		clampWindowToScreen(shell.Window())
 		a.onUIThread(a.bootstrap)

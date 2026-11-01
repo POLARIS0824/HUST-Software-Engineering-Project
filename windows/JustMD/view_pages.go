@@ -29,9 +29,11 @@ func (a *app) trashView(c *ui.Context) {
 						components.Text(c, "原路径："+n.RelativePath).FontSize(12).TextColor(t.TextMuted)
 					})
 					if components.Button(c, "恢复", components.ButtonOutline).Clicked() {
-						a.vault.RestoreFromTrash(n.ID)
-						a.refreshLists()
-						c.Toast("已恢复笔记")
+						// 恢复失败（回收站文件被外部删除、目标路径被占用等）
+						// 不能再弹"已恢复笔记"：提示由 restoreFromTrash 给出。
+						if a.restoreFromTrash(n.ID) == nil {
+							c.Toast("已恢复笔记")
+						}
 					}
 					del := components.Button(c, "彻底删除", components.ButtonSecondary)
 					del.TextColor(t.Danger)
@@ -100,9 +102,16 @@ func (a *app) settingsView(c *ui.Context) {
 			})
 
 			group("导入", "从外部导入 .md 文件或整个文件夹（兼容 GBK 编码，自动转 UTF-8；同名文件逐一询问处理方式）。", func() {
-				if components.Button(c, "导入 Markdown…", components.ButtonSecondary).Clicked() {
-					go a.importFlow()
-				}
+				ui.Row(c).Gap(t.Space(2)).Children(func() {
+					if components.Button(c, "导入 Markdown 文件…", components.ButtonSecondary).Clicked() {
+						go a.importFlow()
+					}
+					// 系统文件对话框一次只能选文件或选目录：文件夹导入单独入口，
+					// 否则"导入整个文件夹"只是文案承诺（对话框里选不中目录）。
+					if components.Button(c, "导入文件夹…", components.ButtonSecondary).Clicked() {
+						go a.importFolderFlow()
+					}
+				})
 			})
 
 			group("导出", "把完整知识库打包为标准 ZIP 归档（notes/ + attachments/ + manifest.json 校验清单），可在其他设备或其他软件中打开。", func() {

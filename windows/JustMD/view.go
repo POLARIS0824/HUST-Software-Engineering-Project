@@ -187,7 +187,12 @@ func (a *app) contentView(c *ui.Context) {
 }
 
 // handleShortcuts 处理全局快捷键（角色 2：外接键盘诉求）。
+// 确认弹窗/导入冲突弹窗打开时不响应：旧实现里在弹窗上按 Ctrl+N 会在
+// 弹窗背后新建笔记，关闭弹窗后用户面对的是另一篇，状态容易错乱。
 func (a *app) handleShortcuts(c *ui.Context) {
+	if a.confirm.open || a.importPlan != nil || a.importDialogOpen {
+		return
+	}
 	if c.Shortcut(ui.Ctrl, ui.KeyN) {
 		a.createNote()
 	}
@@ -196,7 +201,7 @@ func (a *app) handleShortcuts(c *ui.Context) {
 	}
 	if c.Shortcut(ui.Ctrl, ui.KeyE) {
 		if a.mode == "edit" {
-			a.enterReadMode()
+			a.enterReadMode() // 生成阅读快照前先落盘（与分段控件一致）
 		} else {
 			a.mode = "edit"
 		}

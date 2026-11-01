@@ -1,6 +1,6 @@
 # JustMD Windows 版交接文档
 
-> 2026-11-01 更新，取代同路径 2026-10-30 版（其验证状态与代码描述已过时）。
+> 2026-11-01 晚更新（在当晚"缺陷修复轮"之后），取代同路径早前版本。
 > 读完本文 + 根目录 `AGENTS.md` + `windows/AGENTS.md` 即可继续开发，不需要翻聊天记录。
 
 ## 1. 项目背景（30 秒版）
@@ -37,7 +37,7 @@ Onevra 组件库（小组指定，队友要求"不要用 webview"）。两轮迭
 ```bash
 cd windows/JustMD
 go run .                      # 开发运行（注意：mygo dev 会被杀毒软件锁 exe）
-CGO_ENABLED=0 go test ./...   # 全部测试（必须无 cgo，约 90 个用例）
+CGO_ENABLED=0 go test ./...   # 全部测试（必须无 cgo，124 个用例，约 9 秒）
 go vet . && go tool mygo vet .
 gofmt -l .                    # 必须无输出
 go build -o justmd-test.exe . # 构建可运行程序（本地测试用，勿提交）
@@ -52,22 +52,22 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 
 | 文件 | 内容 |
 |---|---|
-| `vault.go` | 核心服务 `Vault`：装载/CRUD/级联重命名/回收站/反链/`RenderReaderSource`/`ListTags`。互斥锁保护，可后台调用 |
-| `parser.go` | 标签提取（多级 `#a/b`、大小写折叠）、双链提取、字数、摘要 |
+| `vault.go` | 核心服务 `Vault`：装载/CRUD/级联重命名（`RenameNoteReported` 返回受影响/跳过报告）/回收站/反链/`RenderReaderSource`/`ListTags`。互斥锁保护，可后台调用 |
+| `parser.go` | 标签提取（多级 `#a/b`、大小写折叠、围栏/缩进代码块排除）、双链提取、字数、摘要 |
 | `index.go` | 内存索引 + 双链解析；`recomputeLinks`（标题集合变化）与 `resolveNoteLinks`（仅单篇）分开 |
 | `search.go` | 全文检索（多关键词 AND、rune 高亮） |
 | `meta.go` | 开放 JSON 元数据 + pending 崩溃恢复日志 |
 | `atomic.go` | 原子写、规范化、sha256、`safeRelPath`、`uniqueRelPath` |
 | `sanitize.go` | 文件名清洗 |
-| `portability.go` | 导入（GBK/冲突三选一/路径二次校验）、ZIP 导出、装载与崩溃对账、拖放导入 |
+| `portability.go` | 导入（`decodeImportedText` 唯一解码入口 / 文件夹导入 / 冲突三选一 / 路径二次校验）、`writeVaultZip` ZIP 导出、装载与崩溃对账（哈希校准、元数据择优）、拖放导入（目录递归、附件查重） |
 | `errors.go` | 领域错误（中文业务化措辞） |
 
 ### UI 层（MyGo 原生 + Onevra）
 
 | 文件 | 内容 |
 |---|---|
-| `main.go` | 入口：菜单/快捷键、`OnFileDrop` 拖放、`OnClose` 退出前 `flushSaveAll`、`clampWindowToScreen`、`sidebar.NewShell` |
-| `app.go` | 全部界面状态 + 动作。**约定：app 方法只跑主线程**；后台流程 `onUIThread` 回写 |
+| `main.go` | 入口：菜单/快捷键、`OnFileDrop` 拖放、`OnClose`（保存失败拦一次，`app.onCloseRequest`）、`clampWindowToScreen`、`sidebar.NewShell` |
+| `app.go` | 全部界面状态 + 动作。**约定：app 方法只跑主线程**；后台流程 `onUIThread` 回写。含标题草稿策略（`applyTitleDraft`）、保存状态机（失败不自动重试）、编辑器缓存重载（`reloadEditors`）、导入摘要 |
 | `view.go` | 侧栏（`leftView` 含**滑动胶囊** `drawNavPill`）、`contentView` 路由、快捷键、overlays |
 | `view_notes.go` | 主页面：列表行 `rowTransition`、编辑器/阅读 `paneSwap`、反链面板宽度弹簧、自绘编辑/阅读分段控件 |
 | `view_pages.go` | 回收站、设置页、确认弹窗、导入冲突弹窗 |
@@ -96,6 +96,17 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 5. **上游缺陷绕行**：Onevra `components.Tabs` 的 `slideBehind` 在 paint-only 帧持有过期
    `Element`（`ui: element from pass N used in pass N+1`），动画一开就崩——已替换为**自绘
    分段控件**（`modeSwitch`），勿改回。
+6. **缺陷修复轮**（2026-11-01 晚，回应用户"还是有些问题"的反馈）：三路只读审计
+   （领域存储/导入导出、界面 MyGo 语义、需求符合性）→ 逐条用 `ui.Tester` 或领域测试复现
+   → 修复 → 实机复验。新增 37 个回归用例（共 124 个）。修掉的主要问题：
+   GBK 导入乱码（解码结果被丢弃，落盘重读原始字节）、重启后首次保存误报"已被其他程序修改"
+   （装载不校准 `ContentSha256`）、改名级联在写 pending 前改盘且用内存旧正文回写（失败留断链、
+   外部修改被覆盖）、级联/覆盖导入后编辑器缓存不失效（再输入一字就把旧正文写回磁盘）、
+   拖放导入不重算链接（双链全未解析、点击建出重复笔记）、同名附件静默覆盖、
+   保存失败每 2 秒无限重试、关窗落盘失败无提示、回收站恢复失败仍报成功、
+   标签过滤残留与越界匹配、阅读页过期快照点出 UUID 垃圾笔记、"导入整个文件夹"不可达、
+   导入结果不报跳过/失败、标签围栏误判、导出包 manifest 与附件递归。
+   细节与证据见 `windows/docs/verification-record.md` 的"缺陷修复轮"一节。
 
 ## 6. 关键设计决策（接手者不要轻易推翻）
 
@@ -123,6 +134,28 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
    2560×1600 屏上会溢出），启动后 `clampWindowToScreen` 校正越界恢复位置。
 10. **侧栏胶囊**：同 pass 捕获选中项 `ui.Element` + `Draw` 里 `Valid()` 守卫（过期帧跳过一次
     定位）+ `Jump` 首帧落位。不要用 `ui.Handle.Bind`（见决策 3 的换绑 panic）。
+11. **标题草稿策略**（缺陷修复轮）：合法且不冲突才逐字改名；撞名或含文件名非法字符时
+    **保留用户原稿**、只显示行内提示（`app.titleWarn`），回车后才按清洗结果提交。
+    不要改回"逐字改名 + 把 ` (1)` 后缀回填输入框"——旧实现会把输入 `abcdef` 变成
+    `abcdef (1)`、把 `a:b` 中途替换成 `a_b` 并让光标跳走（`TestTitleConflictKeepsDraftAndWarns`）。
+12. **保存失败不自动重试**：`saveState == saveError` 时 `scheduleSave` 不排定时器、`autosave`
+    不改回 dirty；用户点"保存失败"徽章显式重试（`saveNowForce`）。不要恢复"每 2 秒重试"——
+    同 ID Toast 会被反复重置而永久驻留，还会无限读盘（`TestSaveErrorStopsAutoRetry`）。
+    关窗落盘失败只拦一次（`closeBlocked`），第二次放行。
+13. **装载以磁盘为准**：`loadWorkspace` 发现磁盘哈希 ≠ `meta.ContentSha256` 时校准哈希
+    （`Revision` 不变），否则关闭期间被外部改过的笔记重启后一保存就误报外部修改。
+    同一相对路径多条 ACTIVE 元数据用 `pickActiveMeta` 确定性择优（sha 命中 → Revision →
+    NoteID），不要改回 `map` 直接覆盖（noteID 会在重启间跳变）。孤儿 ACTIVE 元数据保留但
+    不得绑定到其它路径；`.trash/` 缺元数据的 `.md` 补建 RECOVERED 元数据。
+14. **改名级联的顺序与报告**：先 `writePending` → 逐篇**读盘并校验哈希**才改写（磁盘与内存
+    不一致计入 `RenameReport.Skipped` 跳过）→ `os.Rename` → 提交 meta；失败按快照回滚。
+    `RenameReport.Affected` 必须被界面消费：这些笔记的编辑器缓存要重载
+    （`app.reloadEditors`），否则用户再输入一个字就把旧正文写回磁盘、覆盖级联结果。
+15. **导入的唯一落盘入口是 `decodeImportedText`**（BOM/CRLF 归一、GBK→UTF-8、拒绝二进制）；
+    拖放导入末尾补 `recomputeLinks()`；附件命名必须查重（`uniqueAttachmentName`）。
+    文件夹导入走 `PrepareImportFolder`（`Directory:true`），与文件导入共用 `buildImportPlan`。
+16. **异步保存与同步 flush 的次序**：`flushSaveNote` 先等该篇的 `writing` 通道关闭再落盘，
+    `applySaveResult` 忽略过期回执（`ver < ed.saved`）。否则在飞的旧快照可能晚于 flush 落盘。
 
 ## 7. 测试与调试工具链
 
@@ -136,6 +169,9 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
   - **进出场动画在虚拟时钟下会冻结在起始姿态**（Enter 起始 Opacity=0 的帧永远不可见）。
     截图/断言前先 `Advance` 走完动画。退场残影同理。
   - 阶段性状态污染：一个 Tester 内点击会改共享 `app` 状态，跨场景测试要显式复位。
+  - **装载会校准磁盘哈希**（决策 13）：测试里"模拟外部修改"要改磁盘后**重新装载**才算
+    外部修改；只改磁盘不改元数据时，下一次 `loadWorkspace` 会把哈希校准为磁盘内容。
+    级联相关断言用 `RenameNoteReported` 的报告，不要猜受影响集合。
 - **实机截图**：`SetWindowPos(HWND_TOPMOST, SWP_NOMOVE|SWP_NOSIZE)` → `CopyFromScreen` → 恢复。
   注意：`PrintWindow`/`GetDC` 对 GPU 绘制窗口是黑的；非 DPI 感知进程的坐标会错乱
   （先 `SetProcessDPIAware`）。
@@ -146,26 +182,34 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 ## 8. 验证状态（诚实版）
 
 **已验证**（细节见 `windows/docs/verification-record.md`）：
-- `gofmt`/`go vet`/`go tool mygo vet`/`CGO_ENABLED=0 go test ./...` 全绿（90 用例）；
-  CI（windows-latest）全绿。
-- 领域层：解析/检索/导入导出/崩溃对账/标签树/冲突检测等单测覆盖。
-- 用户流程模拟（三轮）：新建/改名/删空/换篇/搜索/回收站撤销与彻底删除/阅读双链一键创建/
-  标签过滤/撤销重做/拖放导入/IME 组合/排序/批量清空。
+- `gofmt`/`go vet`/`go tool mygo vet`/`CGO_ENABLED=0 go test ./...` 全绿（124 用例，
+  总语句覆盖 75.8%）；上一轮 CI（windows-latest）全绿，本轮改动需 push 后再看 CI 结果。
+- 领域层：解析/检索/导入导出（含 GBK 端到端、ZIP 包体真实执行）/崩溃对账/标签树/
+  冲突检测/装载自愈（外部修改校准、重复元数据择优、孤儿回收站条目）等单测覆盖。
+- 用户流程模拟（三轮）+ 缺陷修复轮回归：新建/改名/删空/换篇/搜索/回收站撤销与彻底删除/
+  阅读双链一键创建/标签过滤/撤销重做/拖放导入（含目录与附件查重）/IME 组合/排序/批量清空/
+  标题冲突与非法字符/保存失败状态机/级联后编辑器缓存重载/导入摘要。
 - 实机截图：主界面/阅读页/设置页/标签树/动画分帧（`docs/*.png`）。
+- **实机数据安全路径**：外部工具改正文 → 重启应用 → 继续输入并等自动保存 → 外部内容与新
+  输入同时保留、徽章"已保存"（验证决策 13 的校准与保存链路）。
 
 **明确没做/没验证**（也是下一步）：
-- 真实中文 IME 专项、5000 篇性能压测、真实掉电恢复、Narrator 无障碍、NSIS 分发。
+- 真实中文 IME 专项（常规中文输入与 IME 组合输入标题实测正常，未做系统性用例）、
+  5000 篇性能压测、真实掉电恢复、Narrator 无障碍、NSIS 分发。
 - 拖放导入**实机**验收（vault 有单测，`Window.OnFileDrop` 已接线，未做从资源管理器拖入的截图）。
+- 原生系统对话框路径（导入文件/导入文件夹/覆盖导入/导出 ZIP）：计划构建与写包体已单测，
+  对话框本身无法无头测试，未做逐项实机截图。
 - 阅读页内检索命中滚动定位（FR-SEARCH-04 的 native 降级）。
-- 异步保存/异步检索在**窗口模式**的长时实机验证（无窗口测试走同步分支）。
-- 用户反馈过"还是有些问题"但未给细节——交接后若用户再报，优先发截图定位；
+- 异步保存/异步检索在**窗口模式**的长时实机验证（本轮已验证自动保存与外部修改合并，
+  未做长时压测）。
+- 用户反馈"还是有些问题"已在缺陷修复轮逐条定位（见第 5 节第 6 条）；若再报，优先要截图。
   已知测试工作区（`%APPDATA%\JustMD` 指向 `E:\Download\软件工程\JustMD-TestWorkspace`）
   里有用户测试留下的垃圾笔记（"("、"未"、"未命名笔记 (2)" 等），可提醒清理。
 
 ## 9. 本机遗留物
 
 - `windows/JustMD/justmd-test.exe` — 本地构建产物（**未跟踪、勿提交**；进程可能还在运行，
-  `Stop-Process -Name justmd-test` 后重建）。
+  `Stop-Process -Name justmd-test` 后重建）。缺陷修复轮用它做过实机复验，结束后已停进程。
 - `E:\Download\软件工程\tools\` — ffmpeg 静态构建（~110MB，可删）。
 - `E:\Download\软件工程\*.png` — 历次调试截图（可删）。
 - `windows/JustMD/.mygo/` — 已 gitignore 的历史残留。

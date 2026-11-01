@@ -248,34 +248,99 @@ func stripInlineMarks(s string) string {
 	return repl.Replace(out)
 }
 
-// forEachProseSegment 把正文按"普通段落"切片回调，跳过围栏代码块与行内代码。
-// segStartRune 是该段在全文中的起始 rune 下标。
+// forEachProseSegment 把正文按"普通段落"切片回调，跳过围栏代码块、缩进代码块
+// 与行内代码。segStartRune 是该段在全文中的起始 rune 下标。
+// 围栏识别遵循 CommonMark 的关键约束（旧实现逐条漏掉，导致代码里的 #include
+// 之类被当成正文标签/双链）：
+//   - 围栏可以出现在引用块内（"> ```"），比较前先剥离 ">" 前缀；
+//   - 围栏长度 ≥3，并按实际围栏串（长度+字符）配对关闭：四反引号围栏不会被
+//     内层的三反引号提前关闭；
+//   - 行首 ≥4 个空格或 Tab 是缩进代码块，其内容不是正文。
 func forEachProseSegment(markdown string, fn func(seg string, segStartRune int)) {
 	lines := strings.SplitAfter(markdown, "\n")
-	inFence := false
-	fenceMark := ""
+	var fenceChar byte
+	fenceLen := 0 // >0 表示当前在围栏代码块内
 	runeBase := 0
 
 	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if !inFence {
-			if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
-				inFence = true
-				fenceMark = trimmed[:3]
-				runeBase += utf8.RuneCountInString(line)
-				continue
-			}
-		} else {
-			if fenceMark != "" && strings.HasPrefix(trimmed, fenceMark) {
-				inFence = false
+		content := strings.TrimSuffix(line, "\n")
+		content = strings.TrimSuffix(content, "\r")
+		stripped := stripQuoteMarkers(content)
+
+		if fenceLen > 0 {
+			// 关闭围栏：同字符、长度不短于开启串、且其后不得有信息串。
+			if ch, n, tail := fenceInfo(stripped); ch == fenceChar && n >= fenceLen && strings.TrimSpace(tail) == "" {
+				fenceChar, fenceLen = 0, 0
 			}
 			runeBase += utf8.RuneCountInString(line)
 			continue
 		}
-		// 行内代码按 span 切开，span 之间的普通文本回调。
-		forEachOutsideInlineCode(line, runeBase, fn)
+		if ch, n, _ := fenceInfo(stripped); n >= 3 {
+			fenceChar, fenceLen = ch, n
+			runeBase += utf8.RuneCountInString(line)
+			continue
+		}
+		if isIndentedCodeLine(stripped) {
+			runeBase += utf8.RuneCountInString(line)
+			continue
+		}
+		// 普通行（可能带引用前缀）：剥离引用后按行内代码切开；补上引用前缀的
+		// rune 数，保证回调拿到的 segStartRune 仍是全文下标。
+		prefixRunes := utf8.RuneCountInString(content) - utf8.RuneCountInString(stripped)
+		forEachOutsideInlineCode(stripped, runeBase+prefixRunes, fn)
 		runeBase += utf8.RuneCountInString(line)
 	}
+}
+
+// stripQuoteMarkers 去掉行首（允许最多 3 个空格缩进）的连续引用标记 ">"，
+// 例如 "> > ```" → "```"；不是引用行时原样返回。
+func stripQuoteMarkers(line string) string {
+	s := line
+	for {
+		i := 0
+		for i < len(s) && i < 3 && s[i] == ' ' {
+			i++
+		}
+		if i >= len(s) || s[i] != '>' {
+			return s
+		}
+		i++
+		if i < len(s) && (s[i] == ' ' || s[i] == '\t') {
+			i++
+		}
+		s = s[i:]
+	}
+}
+
+// fenceInfo 解析行首围栏：围栏字符（'`' 或 '~'）、连续长度（0 表示不是围栏）
+// 以及围栏字符之后的剩余文本（用于区分关闭围栏与带信息串的开启围栏）。
+// CommonMark 允许围栏前有最多 3 个空格缩进。
+func fenceInfo(line string) (byte, int, string) {
+	i := 0
+	for i < len(line) && i < 3 && line[i] == ' ' {
+		i++
+	}
+	if i >= len(line) || (line[i] != '`' && line[i] != '~') {
+		return 0, 0, ""
+	}
+	ch := line[i]
+	j := i
+	for j < len(line) && line[j] == ch {
+		j++
+	}
+	return ch, j - i, line[j:]
+}
+
+// isIndentedCodeLine 判断缩进代码块行：行首 Tab 或 ≥4 个空格
+// （引用前缀已由 stripQuoteMarkers 剥离）。
+func isIndentedCodeLine(line string) bool {
+	if line == "" {
+		return false
+	}
+	if line[0] == '\t' {
+		return true
+	}
+	return strings.HasPrefix(line, "    ")
 }
 
 // forEachOutsideInlineCode 对一行中位于反引号 span 之外的部分回调。

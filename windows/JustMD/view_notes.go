@@ -182,10 +182,9 @@ func (a *app) trashWithUndo(c *ui.Context, id, title string) {
 		return // 删除未发生（如保存失败），不弹误导性提示
 	}
 	c.ToastAction("已将「"+title+"」移入回收站", "撤销", func() {
-		if _, err := a.vault.RestoreFromTrash(id); err != nil {
-			return
+		if err := a.restoreFromTrash(id); err != nil {
+			return // 恢复失败已由 restoreFromTrash 给出提示，不能让撤销键静默无效
 		}
-		a.refreshLists()
 		if wasCurrent {
 			a.openNote(id) // 撤销后回到刚才正在编辑的笔记
 		}
@@ -214,21 +213,16 @@ func (a *app) editorArea(c *ui.Context) {
 				a.focusTitle = false
 			}
 			if input.Changed() || input.Submitted() {
-				trimmed := strings.TrimSpace(a.titleEdit)
-				switch {
-				case trimmed == "":
-					if input.Submitted() {
-						// 空标题被领域拒绝（ErrTitleEmpty）：提交时回填原标题。
-						a.titleEdit = a.currentTitle
-					}
-					// 删空过程保持草稿态，不改名、不回弹。
-				case trimmed != a.currentTitle:
-					a.renameCurrent(trimmed)
-				}
+				// 标题草稿的即时处理：合法且不冲突才改名，非法字符/同名
+				// 只提示不替换输入内容（旧实现会把字中途改掉、后缀塞回输入框）。
+				a.applyTitleDraft(input.Submitted())
 			}
 			a.saveBadge(c)
 			a.modeSwitch(c)
 		})
+		if a.titleWarn != "" {
+			components.Text(c, "⚠ "+a.titleWarn).FontSize(11).TextColor(t.Warning).Wrap()
+		}
 		ui.Row(c).Gap(t.Space(1)).AlignItems(ui.Center).Children(func() {
 			ui.Spacer(c).Grow(1)
 			if components.IconButton(c, lucide.Download(), "导出本篇", components.IconButtonPlain).Clicked() {
@@ -347,12 +341,11 @@ func (a *app) saveBadge(c *ui.Context) {
 }
 
 // autosave 检测未落盘修改并安排防抖保存，同时节流更新字数统计。
+// 保存失败后不再自动排定重试，等用户显式点徽章（FR-EDIT-06）。
 func (a *app) autosave(c *ui.Context, ed *noteEditor) {
 	buf := ed.state.Buffer
-	if buf.Version() != ed.saved {
-		if a.saveState != saveSaving && a.saveState != saveError {
-			a.saveState = saveDirty
-		}
+	if buf.Version() != ed.saved && a.saveState != saveSaving && a.saveState != saveError {
+		a.saveState = saveDirty
 		a.scheduleSave()
 	}
 	if buf.Version() != a.statsVersion {
@@ -376,7 +369,13 @@ func (a *app) statsBar(c *ui.Context, ed *noteEditor) {
 		}
 		parts = append(parts, "约 "+itoa(s.ReadingTimeMinute)+" 分钟阅读")
 		components.Text(c, strings.Join(parts, " · ")).FontSize(12).TextColor(t.TextMuted).Grow(1)
-		components.Text(c, "反向链接 ("+itoa(len(a.backlinks))+")").FontSize(12).TextColor(t.Accent)
+		// 反链计数用强调色显示，做成可点：旧实现只是一段彩色文字，
+		// 看着像链接却点不动，用户只能去猜右上角的图标。
+		components.Text(c, "反向链接 ("+itoa(len(a.backlinks))+")").FontSize(12).TextColor(t.Accent).
+			OnClick(func() {
+				a.showBacklinks = !a.showBacklinks
+				a.loadBacklinks(a.currentID)
+			})
 	})
 }
 
@@ -405,9 +404,9 @@ func (a *app) onReaderLink(c *ui.Context, raw string) {
 			a.openNote(id)
 			return
 		}
-		if target, err := url.PathUnescape(id); err == nil {
-			a.confirmCreateFromLink(c, target)
-		}
+		// 快照生成后目标被删除/移入回收站：只提示，不能把 noteID 当标题
+		// 走"创建笔记"，否则会建出一篇以 UUID 命名的垃圾笔记。
+		a.pendingToast = "目标笔记已删除或已移入回收站"
 	case strings.HasPrefix(raw, readerSchemeOpen):
 		target, err := url.PathUnescape(strings.TrimPrefix(raw, readerSchemeOpen))
 		if err != nil {

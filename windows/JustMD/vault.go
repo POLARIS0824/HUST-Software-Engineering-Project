@@ -506,12 +506,17 @@ func (v *Vault) saveContent(id string, markdown string, force bool) (SaveReceipt
 		return SaveReceipt{}, ErrSaveFailed
 	}
 	if err := atomicWriteFile(abs, []byte(content)); err != nil {
+		// 正文一个字节都没变，这条 pending 意图已无意义：清理掉，
+		// 免得残留日志让下次启动的对账做无用功。
+		clearPending(pendingDir, op.OperationID)
 		return SaveReceipt{}, ErrSaveFailed
 	}
 	n.meta.Revision++
 	n.meta.ContentSha256 = sha
 	n.meta.UpdatedAtUtc = nowMs()
 	if err := saveNoteMeta(metaDir, n.meta); err != nil {
+		// 正文已落盘、元数据未提交：必须保留 pending，下次启动
+		// loadWorkspace 会按 NewSha 幂等补完元数据（设计 6.2）。
 		return SaveReceipt{}, ErrSaveFailed
 	}
 	clearPending(pendingDir, op.OperationID)
@@ -530,21 +535,54 @@ func (v *Vault) saveContent(id string, markdown string, force bool) (SaveReceipt
 	}, nil
 }
 
+// RenameReport 是一次重命名对其它笔记的级联影响（FR-LINK-08 自动策略）。
+// Affected 记录正文已被自动改写并重新落盘/重建索引的来源笔记 ID——界面要用
+// 这些 ID 丢弃已缓存的编辑器 buffer，否则编辑器里仍显示 [[旧标题]]；
+// Skipped 记录因磁盘已被外部修改（或读盘失败）而保持原文、需要用户手动
+// 处理的来源笔记 ID。
+type RenameReport struct {
+	Affected []string `json:"affected"`
+	Skipped  []string `json:"skipped"`
+}
+
+// emptyRenameReport 返回可直接 JSON 序列化的空报告（nil 切片会序列化成 null）。
+func emptyRenameReport() RenameReport {
+	return RenameReport{Affected: []string{}, Skipped: []string{}}
+}
+
 // RenameNote 重命名笔记并级联重命名底层文件（FR-NOTE-04），
 // 同时自动更新其他笔记中已解析指向本笔记的 [[旧标题]]（FR-LINK-08 的自动策略）。
+// 保持原签名，内部委托 RenameNoteReported；需要级联报告的调用方用后者。
 func (v *Vault) RenameNote(id string, newTitle string) (NoteDocument, error) {
+	doc, _, err := v.RenameNoteReported(id, newTitle)
+	return doc, err
+}
+
+// RenameNoteReported 是 RenameNote 的带报告版本（FR-LINK-08、设计 6.2）。
+//
+// 落盘顺序（审计缺陷 1 的修复）：
+//  1. 先写 pending 意图：崩溃恢复靠它把"打算改成哪个文件名"补完，同时它也是
+//     级联改写的前置闸门——pending 写失败就提前返回，其它笔记一个字都不会被改到。
+//  2. 级联改写其它笔记（逐篇读盘 + 哈希校验，见 cascadeUpdateLinks）。
+//  3. 正文文件 os.Rename。
+//  4. 保存本笔记 meta、清理 pending、重命名后重建索引与链接解析。
+//
+// 任一步之后失败都会回滚已级联改写的正文与元数据，避免留下
+// "[[新标题]] 指向不存在的笔记" 的破损链接与消失的反链。
+func (v *Vault) RenameNoteReported(id string, newTitle string) (NoteDocument, RenameReport, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	n, ok := v.notes[id]
 	if !ok {
-		return NoteDocument{}, ErrNoteNotFound
+		return NoteDocument{}, emptyRenameReport(), ErrNoteNotFound
 	}
 	cleaned, _ := sanitizeTitle(newTitle)
 	if cleaned == "" {
-		return NoteDocument{}, ErrTitleEmpty
+		return NoteDocument{}, emptyRenameReport(), ErrTitleEmpty
 	}
 	if cleaned == n.title {
-		return v.openNoteLocked(id)
+		doc, err := v.openNoteLocked(id)
+		return doc, emptyRenameReport(), err
 	}
 
 	oldTitle := n.title
@@ -567,92 +605,181 @@ func (v *Vault) RenameNote(id string, newTitle string) (NoteDocument, error) {
 	// 冲突时 uniqueRelPath 追加了序号，实际标题以最终文件名为准。
 	actualTitle := titleOfRelPath(newRel)
 
-	// 先按重命名前的解析结果级联改写其他笔记中的 [[旧标题]]（FR-LINK-08），
-	// 再执行文件重命名与索引重建。
-	v.cascadeUpdateLinks(id, oldTitle, actualTitle)
-
 	metaDir, pendingDir := v.metaDirs()
 	op := &PendingOp{
 		OperationID: newID(), NoteID: id, Kind: "rename",
 		OldRelPath: n.meta.RelativePath, NewRelPath: newRel,
 		NewSha: n.meta.ContentSha256, ExpectedRevision: n.meta.Revision,
 	}
+	// 为什么先写 pending：旧实现先级联改正文、后写 pending，pending 失败时
+	// 直接返回，磁盘上的 [[旧标题]] 已被改成新标题，链接全部变成 UNRESOLVED、
+	// 反链消失且无从回滚（审计实测）。先写意图可把这个窗口关掉。
 	if err := writePending(pendingDir, op); err != nil {
-		return NoteDocument{}, ErrSaveFailed
+		return NoteDocument{}, emptyRenameReport(), ErrSaveFailed
 	}
-	oldAbs := filepath.Join(v.notesDir(), filepath.FromSlash(n.meta.RelativePath))
+
+	report := emptyRenameReport()
+	changes, err := v.cascadeUpdateLinks(id, oldTitle, actualTitle, &report)
+	if err != nil {
+		v.rollbackCascade(changes)
+		clearPending(pendingDir, op.OperationID)
+		return NoteDocument{}, emptyRenameReport(), err
+	}
+	// rollbackAll 是后续步骤失败的统一善后：恢复级联正文 + 清掉 pending。
+	rollbackAll := func() {
+		v.rollbackCascade(changes)
+		clearPending(pendingDir, op.OperationID)
+	}
+
+	oldRel := n.meta.RelativePath
+	oldAbs := filepath.Join(v.notesDir(), filepath.FromSlash(oldRel))
 	newAbs := filepath.Join(v.notesDir(), filepath.FromSlash(newRel))
 	if err := os.MkdirAll(filepath.Dir(newAbs), 0o755); err != nil {
-		return NoteDocument{}, ErrSaveFailed
+		rollbackAll()
+		return NoteDocument{}, emptyRenameReport(), ErrSaveFailed
 	}
 	if err := os.Rename(oldAbs, newAbs); err != nil {
-		return NoteDocument{}, ErrSaveFailed
+		rollbackAll()
+		return NoteDocument{}, emptyRenameReport(), ErrSaveFailed
 	}
 	n.meta.RelativePath = newRel
 	// 改名不顶起更新时间：否则在标题框逐字输入时卡片按"更新时间"
 	// 排序会不停跳到列表顶部（自测复现）。正文更新才计入更新时间。
 	if err := saveNoteMeta(metaDir, n.meta); err != nil {
-		return NoteDocument{}, ErrSaveFailed
+		// 元数据没提交成功：先把文件改回原名，再回滚级联改写，
+		// 让磁盘与索引都回到"什么也没发生"的状态。
+		n.meta.RelativePath = oldRel
+		os.Rename(newAbs, oldAbs)
+		rollbackAll()
+		return NoteDocument{}, emptyRenameReport(), ErrSaveFailed
 	}
 	clearPending(pendingDir, op.OperationID)
 
 	// 重建本笔记的标题索引并重算全部链接解析。
 	v.reindexOne(n, v.readBody(n.meta))
 	v.recomputeLinks()
-	return v.openNoteLocked(id)
+	doc, err := v.openNoteLocked(id)
+	// 排序让界面按稳定顺序刷新，避免 map 遍历顺序带来的抖动。
+	sort.Strings(report.Affected)
+	sort.Strings(report.Skipped)
+	return doc, report, err
+}
+
+// cascadeChange 是一次级联改写的回滚快照：正文与元数据都要能恢复原样。
+type cascadeChange struct {
+	noteID  string
+	relPath string   // 改写时笔记所在路径（重命名回滚时仍是旧路径）
+	oldBody string   // 改写前的磁盘正文（已归一化）
+	meta    NoteMeta // 改写前的元数据副本
 }
 
 // cascadeUpdateLinks 把其他笔记中解析指向 targetID 的 [[旧标题]] 原子改写为新标题。
-func (v *Vault) cascadeUpdateLinks(targetID, oldTitle, newTitle string) int {
+// 返回已改写的回滚快照（调用方在后续步骤失败时据此恢复），以及首个致命错误。
+//
+// 外部修改保护（审计缺陷 2）：旧实现直接用内存 other.body 整篇回写磁盘，
+// 若该笔记在本次会话中被外部程序改过，用户新写的内容会被静默覆盖（实测整段消失）。
+// 因此逐篇先读盘，只有「磁盘正文哈希 == 元数据记录的 ContentSha256」且
+// 「磁盘正文与内存正文一致」时才改写；否则计入 Skipped 跳过，把控制权交还用户。
+func (v *Vault) cascadeUpdateLinks(targetID, oldTitle, newTitle string, report *RenameReport) ([]cascadeChange, error) {
 	oldLower := foldString(oldTitle)
-	count := 0
-	for _, other := range v.notes {
-		runes := []rune(other.body)
-		// 从后往前改写，保持前面的区间有效。
-		type rewrite struct {
+	metaDir, _ := v.metaDirs()
+	changes := []cascadeChange{}
+	for id, other := range v.notes {
+		// 从内存索引里挑出「已解析指向 targetID、写法仍是旧标题」的链接。
+		// 抽取位置按 rune 计，下面在磁盘正文的 rune 上从后往前改写。
+		type linkRewrite struct {
 			start, end int
 			text       string
 		}
-		var rewrites []rewrite
+		var rewrites []linkRewrite
 		for i, l := range other.links {
-			if other.resolvedIDs[i] != targetID || other.linkStates[i] != linkResolved {
+			if other.linkStates[i] != linkResolved || other.resolvedIDs[i] != targetID {
 				continue
 			}
 			if l.TargetLower != oldLower {
 				continue
 			}
-			inner := l.Target
+			inner := newTitle
 			if l.Alias != "" {
 				inner = newTitle + "|" + l.Alias
-			} else {
-				inner = newTitle
 			}
-			rewrites = append(rewrites, rewrite{l.Start, l.End, "[[" + inner + "]]"})
+			rewrites = append(rewrites, linkRewrite{l.Start, l.End, "[[" + inner + "]]"})
 		}
 		if len(rewrites) == 0 {
 			continue
 		}
+
+		abs := filepath.Join(v.notesDir(), filepath.FromSlash(other.meta.RelativePath))
+		disk, err := os.ReadFile(abs)
+		if err != nil {
+			// 读不到磁盘正文就无法确认内存索引仍然有效，宁可跳过也不猜测。
+			report.Skipped = append(report.Skipped, id)
+			continue
+		}
+		diskBody := string(normalizeContent(disk))
+		if sha256Hex([]byte(diskBody)) != other.meta.ContentSha256 || diskBody != other.body {
+			// 磁盘已被外部修改（或元数据哈希尚未校准）：自动改写会覆盖用户的
+			// 新内容，跳过；旧链接保持原样，用户可自行修正。
+			report.Skipped = append(report.Skipped, id)
+			continue
+		}
+
+		runes := []rune(diskBody)
 		for i := len(rewrites) - 1; i >= 0; i-- {
 			rw := rewrites[i]
-			if rw.start > len(runes) || rw.end > len(runes) {
+			if rw.start < 0 || rw.end > len(runes) || rw.start >= rw.end {
 				continue
 			}
 			runes = append(runes[:rw.start], append([]rune(rw.text), runes[rw.end:]...)...)
 		}
 		newBody := string(runes)
-		if err := atomicWriteFile(filepath.Join(v.notesDir(), filepath.FromSlash(other.meta.RelativePath)), []byte(newBody)); err != nil {
+		if newBody == diskBody {
 			continue
 		}
+
+		snapshot := cascadeChange{noteID: id, relPath: other.meta.RelativePath, oldBody: diskBody, meta: *other.meta}
+		if err := atomicWriteFile(abs, []byte(newBody)); err != nil {
+			return changes, ErrSaveFailed
+		}
+		// 正文已落盘：同步元数据的修订号/哈希/更新时间，避免后续保存把这次
+		// 自动改写误判成外部修改（评审 #7）。
 		other.meta.Revision++
 		other.meta.UpdatedAtUtc = nowMs()
 		other.meta.ContentSha256 = sha256Hex([]byte(newBody))
-		metaDir, _ := v.metaDirs()
-		saveNoteMeta(metaDir, other.meta)
+		if err := saveNoteMeta(metaDir, other.meta); err != nil {
+			// 元数据提交失败：把这一篇的正文也退回去，保持磁盘自洽。
+			atomicWriteFile(abs, []byte(diskBody))
+			*other.meta = snapshot.meta
+			return changes, ErrSaveFailed
+		}
 		v.reindexOne(other, newBody)
 		v.resolveNoteLinks(other)
-		count++
+		changes = append(changes, snapshot)
+		report.Affected = append(report.Affected, id)
 	}
-	return count
+	return changes, nil
+}
+
+// rollbackCascade 尽力把已级联改写的笔记恢复成改写前的正文与元数据。
+// 已在错误路径上，单条失败不向外传播；结束时全量重算链接，
+// 保证链接状态与恢复后的标题集合一致（不会留下破损链接）。
+func (v *Vault) rollbackCascade(changes []cascadeChange) {
+	if len(changes) == 0 {
+		return
+	}
+	metaDir, _ := v.metaDirs()
+	for i := len(changes) - 1; i >= 0; i-- {
+		ch := changes[i]
+		n, ok := v.notes[ch.noteID]
+		if !ok {
+			continue
+		}
+		atomicWriteFile(filepath.Join(v.notesDir(), filepath.FromSlash(ch.relPath)), []byte(ch.oldBody))
+		*n.meta = ch.meta
+		saveNoteMeta(metaDir, n.meta)
+		v.reindexOne(n, ch.oldBody)
+	}
+	v.recomputeLinks()
 }
 
 // TrashNote 将笔记移入回收站（BR-11）。撤销与恢复共用 RestoreFromTrash。

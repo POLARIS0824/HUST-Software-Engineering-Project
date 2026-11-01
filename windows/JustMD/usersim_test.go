@@ -93,25 +93,38 @@ func TestUserSim(t *testing.T) {
 	if a.titleEdit != "重命名A" {
 		t.Fatalf("空提交后应回填原标题, 得到 %q", a.titleEdit)
 	}
-	// 非法字符清洗。
+	// 非法字符：输入过程中只给提示、不改写用户输入，回车提交后按清洗结果改名。
 	m.Key(ui.Ctrl, ui.KeyA)
 	m.Type(`CON: 测试?`)
 	m.Frame()
-	if strings.ContainsAny(a.currentTitle, `:?`) {
-		t.Fatalf("非法字符应被清洗: %q", a.currentTitle)
+	if a.titleEdit != `CON: 测试?` {
+		t.Fatalf("输入过程中不应替换用户输入: %q", a.titleEdit)
 	}
-	// 与另一篇同名 → 冲突后缀，输入框应如实显示。
+	if a.titleWarn == "" {
+		t.Fatal("非法字符应给出行内提示")
+	}
+	m.Key(0, ui.KeyEnter)
+	m.Frame()
+	if strings.ContainsAny(a.currentTitle, `:?`) {
+		t.Fatalf("提交后非法字符应被清洗: %q", a.currentTitle)
+	}
+	// 与另一篇同名：不改名、也不把「 (1)」后缀塞回输入框，只给提示。
 	second := mustCreateForApp(t, a, "同名目标")
-	_ = second
+	a.refreshLists()
+	beforeTitle := a.currentTitle
 	m.Key(ui.Ctrl, ui.KeyA)
 	m.Type("同名目标")
 	m.Frame()
-	if a.currentTitle == "" || !strings.Contains(a.currentTitle, "同名目标") {
-		t.Fatalf("冲突改名后标题异常: %q", a.currentTitle)
+	if a.currentTitle != beforeTitle {
+		t.Fatalf("同名冲突不应改名: %q → %q", beforeTitle, a.currentTitle)
 	}
-	if a.currentTitle != "同名目标" && !strings.Contains(a.currentTitle, "(") {
-		t.Fatalf("同名冲突应加后缀: %q", a.currentTitle)
+	if a.titleEdit != "同名目标" {
+		t.Fatalf("同名冲突不得改写输入缓冲: %q", a.titleEdit)
 	}
+	if a.titleWarn == "" {
+		t.Fatal("同名冲突应给出行内提示")
+	}
+	_ = second
 	simShot(t, "2-rename", m)
 
 	// ---- 3. 换篇保留草稿 ----

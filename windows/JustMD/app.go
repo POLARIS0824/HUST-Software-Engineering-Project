@@ -30,6 +30,17 @@ const (
 type noteEditor struct {
 	state *editor.State
 	saved uint64 // 已落盘的 Buffer.Version
+	// writing 在异步落盘进行中非 nil，关闭即表示写完。同步 flush 前先等它，
+	// 否则"旧快照的异步保存"可能晚于 flush 落盘，把新内容覆盖回旧内容。
+	writing chan struct{}
+}
+
+// waitWriting 等待该笔记在飞的异步保存结束（没有则立即返回）。
+func (ed *noteEditor) waitWriting() {
+	if ed.writing != nil {
+		<-ed.writing
+		ed.writing = nil
+	}
 }
 
 // app 持有全部界面状态；视图方法每帧从它重建界面。
@@ -63,13 +74,17 @@ type app struct {
 	// 变量：删空后改名会被 ErrTitleEmpty 拒绝，旧字符随绑定值回弹，
 	// 表现为"最后一个字符删不掉"。空值是合法草稿：不改名、不回弹，
 	// 提交（Enter）或换篇时回填真实标题。
-	titleEdit    string
-	focusTitle   bool // 新建笔记后把焦点交给标题框，键入即命名
-	editors      map[string]*noteEditor
-	mode         string // "edit" / "read"
-	readerSrc    string // 阅读页 Markdown 快照（进入阅读模式时生成，避免逐帧重算）
-	saveState    string
-	saveTimer    *time.Timer
+	titleEdit  string
+	titleWarn  string // 标题草稿的行内提示（非法字符/同名冲突），空表示无
+	focusTitle bool   // 新建笔记后把焦点交给标题框，键入即命名
+	editors    map[string]*noteEditor
+	mode       string // "edit" / "read"
+	readerSrc  string // 阅读页 Markdown 快照（进入阅读模式时生成，避免逐帧重算）
+	saveState  string
+	saveTimer  *time.Timer
+	// closeBlocked 记录"因保存失败阻止过一次关窗"：只拦一次，
+	// 用户第二次关窗放行，避免磁盘持续故障时窗口关不掉。
+	closeBlocked bool
 	statsVersion uint64
 
 	// 反链面板。
@@ -137,9 +152,45 @@ func (a *app) refreshLists() {
 	a.notes = a.vault.ListNotes(a.sort)
 	a.trash = a.vault.ListTrash()
 	a.tags = a.vault.ListTags()
+	a.dropMissingTagFilter()
+}
+
+// dropMissingTagFilter 清掉已不存在的标签过滤：删掉最后一篇带该标签的笔记后，
+// 旧实现保留过滤条件，列表显示"还没有笔记"，侧栏也没有任何选中项，
+// 用户无法判断是过滤残留还是数据没了。
+func (a *app) dropMissingTagFilter() {
+	if a.tagFilter == "" {
+		return
+	}
+	if tagPathExists(a.tags, a.tagFilter) {
+		return
+	}
+	a.tagFilter = ""
+}
+
+// tagPathExists 在标签树里查找路径。
+func tagPathExists(nodes []TagNode, path string) bool {
+	for _, n := range nodes {
+		if n.Path == path || tagPathExists(n.Children, path) {
+			return true
+		}
+	}
+	return false
+}
+
+// refreshReaderSnapshot 在笔记集合变化后重算阅读快照：
+// 快照里的已解析双链指向 noteID，目标被删除/回收后仍会保留旧链接，
+// 点进去会提示"尚未创建"并建出以 noteID 命名的垃圾笔记。
+func (a *app) refreshReaderSnapshot() {
+	if a.mode != "read" || a.currentID == "" {
+		return
+	}
+	a.readerSrc = a.vault.RenderReaderSource(a.currentID)
 }
 
 // visibleNotes 返回按标签过滤后的列表。
+// 匹配按层级边界：选中「a」命中「a」与「a/b」，但不命中「ab」
+// （前缀匹配会把无关标签算进来，徽章数与列表条数对不上）。
 func (a *app) visibleNotes() []NoteSummary {
 	if a.tagFilter == "" {
 		return a.notes
@@ -147,7 +198,8 @@ func (a *app) visibleNotes() []NoteSummary {
 	out := []NoteSummary{}
 	for _, n := range a.notes {
 		for _, t := range n.Tags {
-			if strings.HasPrefix(strings.ToLower(t), a.tagFilter) {
+			lower := strings.ToLower(t)
+			if lower == a.tagFilter || strings.HasPrefix(lower, a.tagFilter+"/") {
 				out = append(out, n)
 				break
 			}
@@ -175,6 +227,7 @@ func (a *app) openNote(id string) {
 	a.currentRel = doc.RelativePath
 	a.currentStats = doc.Stats
 	a.titleEdit = doc.Title
+	a.titleWarn = ""
 	a.focusTitle = false
 	a.statsVersion = 0
 	a.mode = "edit"
@@ -223,35 +276,107 @@ func (a *app) createNote() {
 }
 
 // renameCurrent 重命名当前笔记（FR-NOTE-04，级联文件与引用）。
-func (a *app) renameCurrent(title string) {
+// 返回错误供界面给出业务化提示（NFR-USE-04），不静默失败。
+// 级联会改写其它笔记的磁盘正文：用 RenameReport.Affected 让这些笔记的
+// 编辑器缓存重新从磁盘加载，否则缓存里的旧正文会在下次保存时覆盖级联结果。
+func (a *app) renameCurrent(title string) error {
 	if a.currentID == "" {
-		return
+		return ErrNoteNotFound
 	}
-	doc, err := a.vault.RenameNote(a.currentID, title)
+	doc, report, err := a.vault.RenameNoteReported(a.currentID, title)
 	if err != nil {
-		return
+		return err
 	}
 	a.currentTitle = doc.Title
 	a.currentRel = doc.RelativePath
 	if doc.Title != title {
-		// 冲突加了后缀等情形：输入框如实显示最终标题。
+		// 领域层可能归一化标题（截断等）：输入框如实显示最终标题。
 		a.titleEdit = doc.Title
+	}
+	a.reloadEditors(report.Affected)
+	if len(report.Skipped) > 0 {
+		a.pendingToast = "有 " + itoa(len(report.Skipped)) + " 篇笔记已被其它程序修改，其中的引用未同步更新"
 	}
 	if a.mode == "read" {
 		// 级联改写可能已变更本篇正文，刷新阅读快照。
 		a.readerSrc = a.vault.RenderReaderSource(a.currentID)
 	}
 	a.refreshLists()
+	return nil
+}
+
+// titleTaken 判断是否已有别的笔记使用该标题（大小写不敏感，FR-NOTE-04）。
+func (a *app) titleTaken(title string) bool {
+	lower := strings.ToLower(strings.TrimSpace(title))
+	if lower == "" {
+		return false
+	}
+	for _, n := range a.notes {
+		if n.ID != a.currentID && strings.ToLower(n.Title) == lower {
+			return true
+		}
+	}
+	return false
+}
+
+// applyTitleDraft 处理标题输入框的即时编辑（FR-NOTE-01/04）。
+//
+// 规则：合法且不冲突的标题立即改名（文件与引用同步）；含非法字符或与
+// 其它笔记同名时，**保留用户原稿**、只给行内提示，提交（Enter）后再
+// 用清洗后的标题改名。这样输入框里的字不会被中途替换（旧实现会把
+// "a:b" 直接变成 "a_b"、把冲突后缀 " (1)" 塞回输入框并让光标跳走）。
+func (a *app) applyTitleDraft(submitted bool) {
+	trimmed := strings.TrimSpace(a.titleEdit)
+	if trimmed == "" {
+		// 空标题是合法草稿（决策 1）：提交时回填原标题，删除过程中不回弹。
+		a.titleWarn = ""
+		if submitted {
+			a.titleEdit = a.currentTitle
+		}
+		return
+	}
+	cleaned, changed := sanitizeTitle(trimmed)
+	if changed {
+		a.titleWarn = "文件名不能包含 \\ / : * ? \" < > | 等字符，回车后自动替换为下划线"
+		if submitted {
+			a.titleEdit = cleaned
+			if cleaned != a.currentTitle && !a.titleTaken(cleaned) {
+				a.commitRename(cleaned)
+			}
+		}
+		return
+	}
+	if a.titleTaken(cleaned) {
+		a.titleWarn = "已有同名笔记，请换一个标题"
+		return
+	}
+	if cleaned != a.currentTitle {
+		a.commitRename(cleaned)
+		return
+	}
+	a.titleWarn = ""
+}
+
+// commitRename 执行改名并把领域错误转成行内提示。
+func (a *app) commitRename(title string) {
+	if err := a.renameCurrent(title); err != nil {
+		a.titleWarn = err.Error()
+		return
+	}
+	a.titleWarn = ""
 }
 
 // ---- 自动保存（FR-EDIT-04/05/06、BR-04/05）------------------------------------
 
 // scheduleSave 为未落盘的修改安排 2 秒防抖保存（每次新输入重置）。
+// 保存失败（saveError）后**不再自动重试**：旧实现每 2 秒重试一次，
+// 外部修改/磁盘故障时会无限读盘并把同一条 Toast 反复重置、永久驻留。
+// 失败后由用户点徽章显式重试（FR-EDIT-06）。
 func (a *app) scheduleSave() {
-	if a.saveTimer != nil || a.saveState == saveSaving || a.currentID == "" {
+	if a.saveTimer != nil || a.saveState == saveSaving || a.saveState == saveError || a.currentID == "" {
 		return
 	}
-	if st := a.saveState; st != saveDirty && st != saveError {
+	if a.saveState != saveDirty {
 		return
 	}
 	a.saveTimer = time.AfterFunc(2*time.Second, func() {
@@ -309,19 +434,29 @@ func (a *app) saveNote(id string, force bool) bool {
 	if a.win == nil {
 		run()
 	} else {
-		go run()
+		done := make(chan struct{})
+		ed.writing = done
+		go func() {
+			defer close(done)
+			run()
+		}()
 	}
 	return true
 }
 
 // flushSaveNote 同步保存指定笔记的未落盘草稿，返回是否成功（无草稿也算成功）。
 // 用于换篇、删除、导出/重建/换库前的一致性保障（评审 #2/#3）。
+// 先等该篇在飞的异步保存结束，保证最后落盘的是最新内容。
 func (a *app) flushSaveNote(id string) bool {
 	if id == "" {
 		return true
 	}
 	ed := a.editors[id]
-	if ed == nil || ed.state.Buffer.Version() == ed.saved {
+	if ed == nil {
+		return true
+	}
+	ed.waitWriting()
+	if ed.state.Buffer.Version() == ed.saved {
 		return true
 	}
 	snap := ed.state.Buffer.Snapshot()
@@ -363,18 +498,61 @@ func (a *app) flushAllOrToast() bool {
 	return false
 }
 
+// onCloseRequest 关窗前同步落盘全部草稿（FR-EDIT-05）。
+// 保存失败时拦一次关窗并提示：旧实现忽略返回值，磁盘满/外部修改时
+// 用户会以为已保存却丢了草稿。只拦一次，避免持续故障时关不掉窗口。
+func (a *app) onCloseRequest(e *mygo.CloseEvent) {
+	if a.flushSaveAll() {
+		a.closeBlocked = false
+		return
+	}
+	if a.closeBlocked {
+		return // 用户已知情并再次关窗：放行，不再强留
+	}
+	a.closeBlocked = true
+	if e != nil {
+		e.PreventDefault()
+	}
+	a.pendingToast = "有草稿保存失败，已取消关闭：请点「保存失败」重试后再退出"
+	if a.win != nil {
+		a.win.Update(func() {}) // 触发一帧，让 Toast 显示出来
+	}
+}
+
+// restoreFromTrash 还原回收站笔记（FR-NOTE-07）。
+// 失败时给出业务化提示并返回错误：旧实现丢弃错误仍弹"已恢复笔记"，
+// 用户会以为数据回来了，其实还在回收站。
+func (a *app) restoreFromTrash(id string) error {
+	if _, err := a.vault.RestoreFromTrash(id); err != nil {
+		a.pendingToast = "恢复失败：" + err.Error()
+		return err
+	}
+	a.refreshLists()
+	a.refreshReaderSnapshot()
+	return nil
+}
+
 // applySaveResult 把落盘回执应用回界面状态（主线程）。
 func (a *app) applySaveResult(id string, ver uint64, receipt SaveReceipt, err error) {
 	ed := a.editors[id]
 	if ed == nil {
 		return
 	}
+	// 过期回执：此前已有更新的版本落盘（例如 flush 抢先写入），
+	// 不能再拿旧回执改状态，否则会把"已保存"标回旧内容。
+	if err == nil && ver < ed.saved {
+		return
+	}
 	if err != nil {
 		if a.currentID == id {
 			a.saveState = saveError
 		}
+		// 业务化提示（NFR-USE-04）：外部修改给出可操作指引，其余直接给领域措辞。
+		// 只在出错这一次提示，不做后台重试，避免提示无限刷屏。
 		if err == ErrExternalEdit {
-			a.pendingToast = "笔记已被其他程序修改：点击「保存失败」强制覆盖"
+			a.pendingToast = "笔记已被其它程序修改：点「保存失败」可强制覆盖"
+		} else {
+			a.pendingToast = err.Error()
 		}
 		return
 	}
@@ -456,6 +634,8 @@ func (a *app) deleteFromList(id string) bool {
 		return false
 	}
 	if _, err := a.vault.TrashNote(id); err != nil {
+		// 删除失败必须明确反馈（FR-UI-02），不能点了像没点。
+		a.pendingToast = "移入回收站失败：" + err.Error()
 		return false
 	}
 	if a.currentID == id {
@@ -464,7 +644,37 @@ func (a *app) deleteFromList(id string) bool {
 	}
 	delete(a.editors, id)
 	a.refreshLists()
+	a.refreshReaderSnapshot()
 	return true
+}
+
+// reloadEditors 在磁盘正文被本应用改写（改名级联、导入覆盖）后刷新编辑器缓存：
+// 缓存里还是旧正文，用户再输入一个字，2 秒防抖就会把整篇旧正文写回磁盘，
+// 静默覆盖刚写入的新内容（链接回退、导入内容丢失）。
+// 只在缓存无未保存修改时重载；有草稿的保留，交给保存时的外部修改检测拦下。
+func (a *app) reloadEditors(ids []string) {
+	reloadCurrent := false
+	for _, id := range ids {
+		ed := a.editors[id]
+		if ed == nil {
+			continue
+		}
+		if ed.state.Buffer.Version() != ed.saved {
+			continue // 有草稿：不丢用户的输入
+		}
+		delete(a.editors, id)
+		if a.currentID == id {
+			reloadCurrent = true
+		}
+	}
+	if reloadCurrent {
+		mode := a.mode
+		a.openNote(a.currentID)
+		a.mode = mode
+		if mode == "read" {
+			a.readerSrc = a.vault.RenderReaderSource(a.currentID)
+		}
+	}
 }
 
 // ---- 后台流程（导入/导出/重建/换库）---------------------------------------------
@@ -478,13 +688,28 @@ func (a *app) busyEnd() { a.busy = "" }
 func (a *app) importFlow() {
 	a.onUIThread(func() { a.busyStart("正在准备导入…") })
 	plan, err := a.vault.PrepareImport(a.win)
+	a.finishImportPrepare(plan, err)
+}
+
+// importFolderFlow 导入整个文件夹（保留层级，FR-DATA-01）。
+// 系统对话框一次只能选文件或选目录，因此单独入口，避免"文案说支持文件夹、
+// 对话框却选不中目录"的旧缺陷。
+func (a *app) importFolderFlow() {
+	a.onUIThread(func() { a.busyStart("正在准备导入…") })
+	plan, err := a.vault.PrepareImportFolder(a.win)
+	a.finishImportPrepare(plan, err)
+}
+
+// finishImportPrepare 把导入计划的准备结果接回界面（主线程）。
+func (a *app) finishImportPrepare(plan ImportPlan, err error) {
 	a.onUIThread(func() {
 		a.busyEnd()
 		if err != nil {
+			a.pendingToast = "导入失败：" + err.Error()
 			return
 		}
 		if len(plan.Files) == 0 {
-			return
+			return // 用户取消对话框，或目录里没有 .md：保持安静，不弹噪音提示
 		}
 		hasConflict := false
 		for _, f := range plan.Files {
@@ -521,25 +746,72 @@ func (a *app) applyImport(plan ImportPlan, actions map[string]string) {
 		a.onUIThread(func() {
 			a.busyEnd()
 			if err != nil {
+				a.pendingToast = "导入失败：" + err.Error()
 				return
 			}
 			a.refreshLists()
-			ok := 0
+			// 覆盖导入会改写已存在笔记的磁盘正文：必须让它们的编辑器缓存
+			// 重新从磁盘加载，否则用户再输入一个字就把旧正文写回去。
+			overwritten := []string{}
 			for _, r := range results {
-				if r.Status == "imported" || r.Status == "renamed" || r.Status == "overwritten" {
-					ok++
+				if r.Status == "overwritten" && r.NoteID != "" {
+					overwritten = append(overwritten, r.NoteID)
 				}
 			}
-			a.pendingToast = "导入完成：" + strconv.Itoa(ok) + " 篇"
+			a.reloadEditors(overwritten)
+			a.refreshReaderSnapshot()
+			a.pendingToast = importSummary(results)
 		})
 	}()
+}
+
+// importSummary 汇总导入结果：成功数之外必须报出跳过与失败的数量和文件名，
+// 否则损坏文件/用户选择跳过的文件会静默消失（AC-DATA-02、FR-DATA-06）。
+func importSummary(results []ImportResult) string {
+	ok, skipped, failed := 0, 0, 0
+	names := []string{}
+	for _, r := range results {
+		switch r.Status {
+		case "imported", "renamed", "overwritten":
+			ok++
+		case "skipped":
+			skipped++
+			if len(names) < 3 {
+				names = append(names, r.FileName)
+			}
+		default:
+			failed++
+			if len(names) < 3 {
+				names = append(names, r.FileName)
+			}
+		}
+	}
+	msg := "导入完成：成功 " + itoa(ok) + " 篇"
+	if skipped > 0 {
+		msg += "，跳过 " + itoa(skipped) + " 个"
+	}
+	if failed > 0 {
+		msg += "，失败 " + itoa(failed) + " 个"
+	}
+	if len(names) > 0 {
+		detail := strings.Join(names, "、")
+		if more := skipped + failed - len(names); more > 0 {
+			detail += " 等"
+		}
+		msg += "（" + detail + "）"
+	}
+	return msg
 }
 
 // exportVaultFlow 打包完整知识库（FR-DATA-03）。
 func (a *app) exportVaultFlow() {
 	path, err := a.vault.ExportVault(a.win)
-	if err != nil || path == "" {
+	if err != nil {
+		a.onUIThread(func() { a.pendingToast = "导出失败：" + err.Error() })
 		return
+	}
+	if path == "" {
+		return // 用户取消保存对话框
 	}
 	a.onUIThread(func() {
 		a.pendingToast = "已导出到 " + path
@@ -551,10 +823,12 @@ func (a *app) rebuildFlow() {
 	result, err := a.vault.RebuildIndex()
 	a.onUIThread(func() {
 		if err != nil {
+			a.pendingToast = "重建索引失败：" + err.Error()
 			return
 		}
 		a.editors = map[string]*noteEditor{}
 		a.currentID = ""
+		a.readerSrc = ""
 		a.refreshLists()
 		a.pendingToast = "索引重建完成：" + strconv.Itoa(result.NoteCount) + " 篇，耗时 " + strconv.FormatInt(result.DurationMs, 10) + " ms"
 	})
@@ -564,17 +838,21 @@ func (a *app) rebuildFlow() {
 func (a *app) chooseWorkspaceFlow() {
 	info, err := a.vault.ChooseWorkspace(a.win)
 	if err != nil {
+		a.onUIThread(func() { a.pendingToast = "切换知识库失败：" + err.Error() })
 		return
 	}
 	a.onUIThread(func() {
-		if info.Ready {
-			a.editors = map[string]*noteEditor{}
-			a.currentID = ""
-			a.view = viewNotes
-			a.refreshLists()
-			if len(a.notes) > 0 {
-				a.openNote(a.notes[0].ID)
-			}
+		if !info.Ready {
+			a.pendingToast = "未选择知识库文件夹"
+			return
+		}
+		a.editors = map[string]*noteEditor{}
+		a.currentID = ""
+		a.readerSrc = ""
+		a.view = viewNotes
+		a.refreshLists()
+		if len(a.notes) > 0 {
+			a.openNote(a.notes[0].ID)
 		}
 	})
 }
