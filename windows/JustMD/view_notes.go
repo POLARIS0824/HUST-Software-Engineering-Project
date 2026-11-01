@@ -15,24 +15,54 @@ import (
 	"github.com/oneo-me/onevra/source/shells/sidebar"
 )
 
+// 列表/面板/内容的动画曲线：弹簧用于布局形变（可打断、保速度），
+// 缓出曲线用于轻量进出场；参考 Neverland 演示的节奏。
+var (
+	// panelMotion 是反链面板宽度的弹簧：每一帧按动画宽度重新布局，
+	// 编辑区 Grow(1) 精确互补，任何中间帧都不会重叠。
+	panelMotion = ui.Animation{Spring: ui.SpringOptions{Duration: 380 * time.Millisecond, Bounce: 0.1}}
+	paneSwap    = ui.ElementTransition{
+		Animation: &ui.Animation{Duration: 170 * time.Millisecond, Ease: ui.CubicBezier(.22, 1, .36, 1)},
+		Enter:     &ui.Motion{Y: 10, Opacity: 0},
+		Exit:      &ui.Motion{Opacity: 0},
+	}
+	fadeSwap = ui.ElementTransition{
+		Animation: &ui.Animation{Duration: 150 * time.Millisecond, Ease: ui.EaseOut},
+		Enter:     &ui.Motion{Opacity: 0},
+		Exit:      &ui.Motion{Opacity: 0},
+	}
+	hoverEase = ui.Animation{Duration: 130 * time.Millisecond, Ease: ui.EaseOut}
+)
+
+// rowTransition 是笔记列表行的进出场：淡入上移、淡出收拢；
+// 排序重排时平滑滑动；同批入场按行号错峰（Delay）。
+func rowTransition(i int) ui.ElementTransition {
+	delay := time.Duration(min(i, 8)) * 28 * time.Millisecond
+	return ui.ElementTransition{
+		Animation: &ui.Animation{Duration: 230 * time.Millisecond, Ease: ui.CubicBezier(.22, 1, .36, 1), Delay: delay},
+		Position:  true,
+		Enter:     &ui.Motion{Y: 10, Opacity: 0},
+		Exit:      &ui.Motion{Opacity: 0, Collapse: true},
+	}
+}
+
 // notesView 是主页面：搜索与笔记列表 | 编辑器或阅读页 | 反链面板。
 func (a *app) notesView(c *ui.Context) {
 	t := c.Theme()
-	ui.Row(c).Fill().AlignItems(ui.Stretch).Children(func() {
+	ui.Row(c).Key("page-notes").Transition(pageEnter).Fill().AlignItems(ui.Stretch).Children(func() {
 		// 中栏：搜索 + 排序 + 列表。顶部让出浮动标题栏高度。
 		ui.Column(c).Width(300).Shrink(0).Gap(t.Space(2)).Padding(sidebar.HeaderHeight(c), t.Space(2), t.Space(2), t.Space(2)).Background(t.Surface).Children(func() {
 			a.searchBar(c)
 			a.sortBar(c)
 			a.noteList(c)
 		})
-		// 右侧：编辑器/阅读 + 可选反链。
+		// 右侧：编辑器/阅读 + 反链面板。面板宽度是弹簧动画值，
+		// 编辑区 Grow(1) 每帧精确互补（Neverland 式面板收展）。
 		if a.currentID != "" {
-			ui.Column(c).Grow(1).MinWidth(0).Children(func() {
+			ui.Column(c).Key("editor-col").Grow(1).MinWidth(0).Children(func() {
 				a.editorArea(c)
 			})
-			if a.showBacklinks {
-				a.backlinksView(c)
-			}
+			a.backlinksView(c)
 		} else {
 			a.emptyState(c)
 		}
@@ -80,10 +110,12 @@ func (a *app) noteList(c *ui.Context) {
 			components.Text(c, "没有匹配「"+a.query+"」的笔记").TextColor(t.TextMuted)
 		}
 		ui.Scroll(c).Grow(1).FillWidth().Children(func() {
-			for _, hit := range a.hits {
+			for i, hit := range a.hits {
 				hit := hit
 				kc := c.Key(hit.NoteID)
-				ui.Column(kc).Gap(2).Padding(8, 10).Radius(t.Radius).FillWidth().Children(func() {
+				row := ui.Column(kc).Key("hit:"+hit.NoteID).Gap(2).Padding(8, 10).Radius(t.Radius).FillWidth()
+				row.Transition(rowTransition(i))
+				row.Background(row.AnimateColor("bg", hoverBg(t, row.Hovered()), hoverEase)).Children(func() {
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 						components.Text(c, hit.Title).Bold().Wrap()
 						field := map[string]string{"title": "标题", "fileName": "文件名", "body": "正文"}[hit.MatchedField]
@@ -94,7 +126,7 @@ func (a *app) noteList(c *ui.Context) {
 					} else {
 						components.Text(c, hit.Snippet).FontSize(12).TextColor(t.TextMuted).Wrap()
 					}
-				}).Background(t.SurfaceHover).OnClick(func() {
+				}).OnClick(func() {
 					a.openNote(hit.NoteID)
 				})
 			}
@@ -110,10 +142,12 @@ func (a *app) noteList(c *ui.Context) {
 		return
 	}
 	ui.Scroll(c).Grow(1).FillWidth().Children(func() {
-		for _, n := range notes {
+		for i, n := range notes {
 			n := n
 			kc := c.Key(n.ID)
-			ui.Column(kc).Gap(2).Padding(8, 10).Radius(t.Radius).FillWidth().Children(func() {
+			row := ui.Column(kc).Key("note:"+n.ID).Gap(2).Padding(8, 10).Radius(t.Radius).FillWidth()
+			row.Transition(rowTransition(i))
+			row.Background(row.AnimateColor("bg", hoverBg(t, row.Hovered()), hoverEase)).Children(func() {
 				components.Text(c, n.Title).Bold().Wrap()
 				if n.Summary != "" {
 					components.Text(c, n.Summary).FontSize(12).TextColor(t.TextMuted).Wrap()
@@ -161,12 +195,26 @@ func (a *app) editorArea(c *ui.Context) {
 	// 标题与工具行。顶部让出浮动标题栏高度（窗口按钮悬浮于此）。
 	ui.Column(c).Grow(1).MinWidth(0).Gap(t.Space(2)).Padding(sidebar.HeaderHeight(c), t.Space(3), t.Space(2), t.Space(2)).Children(func() {
 		ui.Row(c).Gap(t.Space(2)).AlignItems(ui.Center).Children(func() {
-			title := a.currentTitle
-			input := components.TextBox(c, &title, components.TextBoxOptions{}).
+			// 标题编辑缓冲持久保存（app.titleEdit）。绑定到每帧重建的局部
+			// 变量会在"删空→改名被拒"时触发框架的值回同步，把旧字符弹回
+			// 输入框——表现为"最后一个字符删不掉"。草稿允许为空，失焦时回填。
+			if !a.titleFocused && a.titleEdit != a.currentTitle {
+				a.titleEdit = a.currentTitle
+			}
+			input := components.TextBox(c, &a.titleEdit, components.TextBoxOptions{}).
 				Label("笔记标题").Placeholder("标题").Grow(1)
-			if input.Submitted() || input.Changed() {
-				if strings.TrimSpace(title) != a.currentTitle {
-					a.renameCurrent(title)
+			a.titleFocused = input.Focused()
+			if input.Changed() || input.Submitted() {
+				trimmed := strings.TrimSpace(a.titleEdit)
+				switch {
+				case trimmed == "":
+					if input.Submitted() {
+						// 空标题被领域拒绝（ErrTitleEmpty）：提交时回填原标题。
+						a.titleEdit = a.currentTitle
+					}
+					// 删空过程保持草稿态，不改名、不回弹。
+				case trimmed != a.currentTitle:
+					a.renameCurrent(trimmed)
 				}
 			}
 			a.saveBadge(c)
@@ -193,30 +241,71 @@ func (a *app) editorArea(c *ui.Context) {
 		})
 
 		// 内容区：源码编辑器或 Markdown 阅读页。
+		// 按 笔记+模式 打键：换篇/切换模式时整块进出场过渡。
 		if a.mode == "edit" {
-			a.autosave(c, ed)
-			editor.View(c, ed.state).Grow(1).FillWidth()
-			a.statsBar(c, ed)
+			ui.Column(c).Key("pane:" + a.currentID + ":edit").Transition(paneSwap).Grow(1).MinWidth(0).Children(func() {
+				a.autosave(c, ed)
+				editor.View(c, ed.state).Grow(1).FillWidth()
+				a.statsBar(c, ed)
+			})
 		} else {
-			a.readerView(c)
+			ui.Column(c).Key("pane:" + a.currentID + ":read").Transition(paneSwap).Grow(1).MinWidth(0).Children(func() {
+				a.readerView(c)
+			})
 		}
 	})
 }
 
 // modeSwitch 切换编辑/阅读（一次点击，OBJ-01）。
+// 自绘分段控件：滑块与侧栏胶囊同款弹簧形变。不用 components.Tabs——
+// 其 slideBehind 在 paint-only 帧持有过期 Element（上游缺陷，动画下会崩）。
 func (a *app) modeSwitch(c *ui.Context) {
-	idx := 0
-	if a.mode == "read" {
-		idx = 1
-	}
-	parts := components.Tabs(c, &idx, components.TabsSegmented, "编辑", "阅读")
-	if parts.List.Changed() {
-		if idx == 1 {
-			a.enterReadMode()
-		} else {
-			a.mode = "edit"
+	t := c.Theme()
+	pill := t.Space(20)
+	var active ui.Element // 同 pass 的选中段；Draw 在布局后读取它的矩形
+	track := ui.Row(c).Key("mode-track").Padding(t.Space(0.5)).Gap(t.Space(0.5)).Radius(pill).
+		Background(t.Text.Alpha(.06)).AlignSelf(ui.Start)
+	track.Draw(func(p *ui.Painter, r ui.Rect) {
+		if !active.Valid() {
+			return
 		}
-	}
+		b := active.LayoutBounds()
+		x := track.AnimateTo("mode-thumb-x", b.X-r.X, navPillMorph)
+		w := track.AnimateTo("mode-thumb-w", b.W, navPillMorph)
+		p.Fill(ui.Rect{X: r.X + x, Y: b.Y, W: w, H: b.H}, t.Surface, pill)
+	})
+	track.Children(func() {
+		for _, seg := range []struct {
+			label string
+			read  bool
+		}{{"编辑", false}, {"阅读", true}} {
+			seg := seg
+			on := (a.mode == "read") == seg.read
+			// 不用 Selected 着色：它的选中面会瞬跳，遮住下方的滑动胶囊。
+			el := ui.ButtonBase(c).Key(seg.label).Label(seg.label).
+				Padding(t.Space(1.5), t.Space(3)).Radius(pill).
+				Background(ui.Color{}).TextColor(t.Text)
+			if !on {
+				el.TextColor(t.Text.Alpha(.55))
+			}
+			el.Children(func() {
+				txt := components.Text(c, seg.label)
+				if on {
+					txt.Bold()
+				}
+			})
+			if on {
+				active = el
+			}
+			if el.Clicked() {
+				if seg.read {
+					a.enterReadMode()
+				} else {
+					a.mode = "edit"
+				}
+			}
+		}
+	})
 }
 
 // enterReadMode 先落盘草稿再生成阅读快照（评审 #8：快照只生成一次，不逐帧重算）。
@@ -352,26 +441,43 @@ func (a *app) loadImage(u string) (ui.ImageSource, error) {
 }
 
 // backlinksView 是反向引用面板（FR-LINK-06/07）。
+// 宽度用弹簧补间（收起→0 / 展开→280），编辑区每帧精确互补；
+// 内容在面板足够宽后淡入，避免窄宽下的挤压换行。
 func (a *app) backlinksView(c *ui.Context) {
 	t := c.Theme()
-	ui.Column(c).Width(280).Shrink(0).Gap(t.Space(2)).Padding(sidebar.HeaderHeight(c), t.Space(2), t.Space(2), t.Space(2)).Background(t.Surface).Children(func() {
-		components.Text(c, "🔗 反向链接（"+itoa(len(a.backlinks))+"）").Bold()
-		if len(a.backlinks) == 0 {
-			components.Text(c, "还没有笔记引用「"+a.currentTitle+"」。").FontSize(12).TextColor(t.TextMuted).Wrap()
-			components.Text(c, "在其他笔记里写下 [[ "+a.currentTitle+" ]] 就会出现在这里。").FontSize(12).TextColor(t.TextMuted).Wrap()
-		}
-		ui.Scroll(c).Grow(1).FillWidth().Children(func() {
-			for _, b := range a.backlinks {
-				b := b
-				kc := c.Key(b.SourceNoteID + itoa(b.Line))
-				ui.Column(kc).Gap(2).Padding(8, 10).Radius(t.Radius).FillWidth().Children(func() {
-					components.Text(c, b.SourceTitle).Bold().Wrap()
-					components.Text(c, b.Snippet).FontSize(12).TextColor(t.TextMuted).Wrap()
-					components.Text(c, "第 "+itoa(b.Line)+" 行").FontSize(11).TextColor(t.TextMuted)
-				}).OnClick(func() {
-					a.openNote(b.SourceNoteID)
-				})
+	panel := ui.Column(c).Key("backlinks").Shrink(0).Gap(t.Space(2)).
+		Padding(sidebar.HeaderHeight(c), t.Space(2), t.Space(2), t.Space(2)).Background(t.Surface)
+	target := float32(0)
+	if a.showBacklinks {
+		target = 280
+	}
+	w := panel.AnimateTo("w", target, panelMotion)
+	panel.Width(w)
+	if w < 150 {
+		return
+	}
+	panel.Children(func() {
+		body := ui.Column(c).Key("backlinks-body").FillWidth().Gap(t.Space(2))
+		body.Transition(fadeSwap)
+		body.Children(func() {
+			components.Text(c, "🔗 反向链接（"+itoa(len(a.backlinks))+"）").Bold()
+			if len(a.backlinks) == 0 {
+				components.Text(c, "还没有笔记引用「"+a.currentTitle+"」。").FontSize(12).TextColor(t.TextMuted).Wrap()
+				components.Text(c, "在其他笔记里写下 [[ "+a.currentTitle+" ]] 就会出现在这里。").FontSize(12).TextColor(t.TextMuted).Wrap()
 			}
+			ui.Scroll(c).Grow(1).FillWidth().Children(func() {
+				for _, b := range a.backlinks {
+					b := b
+					kc := c.Key(b.SourceNoteID + itoa(b.Line))
+					ui.Column(kc).Gap(2).Padding(8, 10).Radius(t.Radius).FillWidth().Children(func() {
+						components.Text(c, b.SourceTitle).Bold().Wrap()
+						components.Text(c, b.Snippet).FontSize(12).TextColor(t.TextMuted).Wrap()
+						components.Text(c, "第 "+itoa(b.Line)+" 行").FontSize(11).TextColor(t.TextMuted)
+					}).OnClick(func() {
+						a.openNote(b.SourceNoteID)
+					})
+				}
+			})
 		})
 	})
 }
@@ -396,6 +502,15 @@ func (a *app) exportNoteFlow(id string) {
 
 // itoa 是 strconv.Itoa 的短别名，视图里大量使用。
 func itoa(n int) string { return strconv.Itoa(n) }
+
+// hoverBg 返回卡片悬停时的底色目标：悬停轻微着色，离开回到透明，
+// 配合 AnimateColor 形成渐变而非硬切。
+func hoverBg(t *ui.Theme, on bool) ui.Color {
+	if on {
+		return t.Text.Alpha(.06)
+	}
+	return ui.Color{}
+}
 
 // highlightSpans 把检索摘要按后端给出的 rune 区间切成富文本片段，
 // 命中部分用主题强调色背景高亮（FR-SEARCH-05）。

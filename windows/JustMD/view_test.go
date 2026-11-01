@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/egoist/mygo/ui"
 )
@@ -211,4 +212,112 @@ func TestOpenNoteFlushesPreviousDraft(t *testing.T) {
 	if body != "换篇前的草稿" {
 		t.Fatalf("换篇时应落盘上一篇草稿: %q", body)
 	}
+}
+
+// TestTitleBoxDeletesToEmptyWithoutBounce 回归"最后一个字符删不掉"：
+// 删空后改名被 ErrTitleEmpty 拒绝，旧字符不得随绑定值回弹进输入框；
+// 空草稿期间保持为空，输入新标题后正常改名。
+func TestTitleBoxDeletesToEmptyWithoutBounce(t *testing.T) {
+	a := newTestApp(t)
+	doc := mustCreateForApp(t, a, "(")
+	mustSaveForApp(t, a, doc.ID, "正文")
+	a.openNote(doc.ID)
+	a.refreshLists()
+
+	m := ui.NewTester(a.contentView, 1200, 700)
+	m.Frame()
+	// 标题输入框在编辑区首行（列表列 300 宽之后）；用坐标点击，
+	// 避免按文本 "(" 命中列表卡片里的同名标题。
+	m.ClickAt(600, 76)
+	m.Frame()
+	m.Key(ui.Ctrl, ui.KeyA)
+	m.TypeKey(0, ui.KeyBackspace, "")
+	m.Frame()
+	if a.titleEdit != "" {
+		t.Fatalf("删空后编辑缓冲应为空，得到 %q", a.titleEdit)
+	}
+	// 后续帧不得把旧字符回弹进输入框（值回同步 bug）。
+	m.Advance(300 * time.Millisecond)
+	m.Frame()
+	m.Frame()
+	if a.titleEdit != "" {
+		t.Fatalf("后续帧不得回弹旧字符: %q", a.titleEdit)
+	}
+	if a.currentTitle != "(" {
+		t.Fatalf("空草稿不应触发改名，原标题应保留: %q", a.currentTitle)
+	}
+	// 输入新标题应正常改名。
+	m.Type("新标题")
+	m.Frame()
+	if a.currentTitle != "新标题" {
+		t.Fatalf("输入新标题后应改名，得到 %q", a.currentTitle)
+	}
+}
+
+// TestAnimationTransitionsSmoke 驱动各动画状态切换并推进虚拟时钟，
+// 断言渲染不崩溃且关键内容可见。本用例曾回归出 Onevra components.Tabs
+// 在 paint-only 帧持有过期 Element 的崩溃；现覆盖侧栏胶囊、反链面板
+// 宽度收展、编辑/阅读换页与页面切换的动画路径。
+func TestAnimationTransitionsSmoke(t *testing.T) {
+	a := newTestApp(t)
+	doc := mustCreateForApp(t, a, "动画冒烟")
+	mustSaveForApp(t, a, doc.ID, "内容 [[动画冒烟]] #标签")
+	a.openNote(doc.ID)
+	a.refreshLists()
+
+	m := ui.NewTester(a.contentView, 1200, 700)
+	m.Frame()
+
+	// 反链面板：展开（宽度弹簧）→ 推进 → 收起。
+	a.showBacklinks = true
+	m.Frame()
+	m.Advance(120 * time.Millisecond)
+	m.Frame()
+	if txt := strings.Join(m.Texts(), "\n"); !strings.Contains(txt, "反向链接") {
+		t.Fatalf("展开后应显示反链面板:\n%s", txt)
+	}
+	a.showBacklinks = false
+	m.Advance(400 * time.Millisecond)
+	m.Frame()
+	m.Advance(500 * time.Millisecond)
+	m.Frame()
+
+	// 编辑 → 阅读 → 编辑（内容进出场换页）。
+	a.mode = "read"
+	a.readerSrc = a.vault.RenderReaderSource(a.currentID)
+	m.Frame()
+	m.Advance(120 * time.Millisecond)
+	m.Frame()
+	m.Advance(400 * time.Millisecond)
+	m.Frame()
+	a.mode = "edit"
+	m.Frame()
+	m.Advance(400 * time.Millisecond)
+	m.Frame()
+
+	// 页面切换（进出场过渡）。
+	a.setView(viewTrash)
+	m.Frame()
+	m.Advance(120 * time.Millisecond)
+	m.Frame()
+	m.Advance(400 * time.Millisecond)
+	m.Frame()
+	if txt := strings.Join(m.Texts(), "\n"); !strings.Contains(txt, "回收站") {
+		t.Fatalf("回收站页应渲染:\n%s", txt)
+	}
+	a.setView(viewNotes)
+	m.Advance(500 * time.Millisecond)
+	m.Frame()
+
+	// 侧栏胶囊：切换选中项并推进弹簧。
+	l := ui.NewTester(a.leftView, 300, 700)
+	l.Frame()
+	if err := l.Click("回收站"); err != nil {
+		t.Fatal(err)
+	}
+	l.Frame()
+	l.Advance(120 * time.Millisecond)
+	l.Frame()
+	l.Advance(500 * time.Millisecond)
+	l.Frame()
 }

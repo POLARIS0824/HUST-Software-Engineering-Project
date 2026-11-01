@@ -59,6 +59,23 @@
 - **窗口尺寸溢出**：写死的 1360×860 在高缩放小屏（逻辑桌面 1138×711）上比屏幕还大；初始尺寸与最小尺寸按 `mygo.Screen` 工作区收缩。
 - 同步修复后 `ui.Tester` 无窗口渲染与实机截图一致，主界面/侧栏无残影与错位。
 
+### 交互动画（2026-11-01，分帧证据 `docs/ui-animation-2026-11-01.png`）
+
+参照 Neverland 演示（同为 MyGo 原生 UI）实现的动效，全部经 `ui.Tester` 虚拟时钟分步截帧确认中间态：
+
+- **侧栏选中胶囊**：在选中项之间弹簧形变（滑动 + 变宽，`AnimateTo` 四通道 + `Jump` 首帧落位），分帧可见胶囊飞行中的拉长形变。
+- **反链面板收展**：面板宽度本身是弹簧动画值，编辑区 `Grow(1)` 每帧精确互补，任何中间帧无重叠；内容在面板足够宽后淡入。
+- **编辑/阅读、换篇、页面切换**：`ElementTransition` 进出场（淡入上移/淡出），分帧可见交叉过渡。
+- **列表行进出场**：`Enter/Exit` + `Position` + 按行 `Delay` 错峰；排序重排平滑滑动；卡片悬停底色渐变（`AnimateColor`）。
+- **自绘编辑/阅读分段控件**：滑块与胶囊同款弹簧。替换掉 Onevra `components.Tabs`——其实现（`slideBehind`）在 paint-only 帧持有过期 `Element`，动画一开就触发 `ui: element from pass N used in pass N+1` 崩溃（这也是此前"阅读"乱码的根源）。回归测试 `TestAnimationTransitionsSmoke` 覆盖上述路径。
+- 尊重系统"减弱动态效果"偏好：框架在 ReduceMotion 下自动改为淡入淡出。
+
+### 标题框删不干净（2026-11-01，实机复现修复）
+
+- **现象**：标题输入框删到只剩最后一个字符就删不掉，旧字符反复回弹。
+- **根因**：标题框绑定到每帧从 `currentTitle` 重建的局部变量；删空后改名被 `ErrTitleEmpty` 拒绝，绑定值与输入缓冲不一致，触发 mygo `textinput` 的值回同步（`applyString`），把旧字符冲回输入框。
+- **修复**：编辑缓冲持久化到 `app.titleEdit`，空值保留为草稿（不改名、不回弹），失焦/换篇/空提交时回填原标题。回归测试 `TestTitleBoxDeletesToEmptyWithoutBounce`（真实点击 + 退格删空 + 多帧观察）。
+
 ## 待验证（对应 Android 版基线，Windows 版尚未覆盖）
 
 - 中文 IME 组合输入的系统性验证（`ui/editor` 原生 IME，未做专门用例；常规中文输入实测正常）。

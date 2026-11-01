@@ -59,6 +59,11 @@ type app struct {
 	currentTitle string
 	currentRel   string
 	currentStats TextStats
+	// titleEdit 是标题输入框的持久编辑缓冲。不能绑定到每帧重建的局部
+	// 变量：删空后改名会被 ErrTitleEmpty 拒绝，旧字符随绑定值回弹，
+	// 表现为"最后一个字符删不掉"。草稿允许为空，失焦/换篇时回填。
+	titleEdit    string
+	titleFocused bool
 	editors      map[string]*noteEditor
 	mode         string // "edit" / "read"
 	readerSrc    string // 阅读页 Markdown 快照（进入阅读模式时生成，避免逐帧重算）
@@ -168,6 +173,8 @@ func (a *app) openNote(id string) {
 	a.currentTitle = doc.Title
 	a.currentRel = doc.RelativePath
 	a.currentStats = doc.Stats
+	a.titleEdit = doc.Title
+	a.titleFocused = false
 	a.statsVersion = 0
 	a.mode = "edit"
 	a.saveState = saveSaved
@@ -221,6 +228,9 @@ func (a *app) renameCurrent(title string) {
 	}
 	a.currentTitle = doc.Title
 	a.currentRel = doc.RelativePath
+	if !a.titleFocused {
+		a.titleEdit = doc.Title
+	}
 	if a.mode == "read" {
 		// 级联改写可能已变更本篇正文，刷新阅读快照。
 		a.readerSrc = a.vault.RenderReaderSource(a.currentID)
