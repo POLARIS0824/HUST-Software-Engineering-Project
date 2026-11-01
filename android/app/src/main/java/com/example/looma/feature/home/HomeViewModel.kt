@@ -36,11 +36,11 @@ class HomeViewModel(
                 val notes = result.items.map { item ->
                     HomeNoteItem(
                         summary = item.summary,
-                        checklist = item.checklist.map {
+                        checklist = item.metadata.checklist.take(5).map {
                             HomeChecklistItem(it.text, it.checked)
                         },
                         coverPath = item.coverPath,
-                        linkLabel = item.firstWikiLink,
+                        linkLabel = item.metadata.firstWikiLink,
                         searchableText = item.searchText,
                     )
                 }
@@ -86,7 +86,6 @@ class HomeViewModel(
         }
     }
 
-    /** 点击新建后真正落盘，然后才回调 NoteId 交给导航层 */
     fun createNote(onCreated: (NoteId) -> Unit) {
         if (_uiState.value.isCreating) return
         viewModelScope.launch {
