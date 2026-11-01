@@ -1,2 +1,5 @@
 reference/
 android/.idea/
+
+# 一次性原型，不入库
+.prototype/
