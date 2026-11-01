@@ -124,6 +124,7 @@ func TestRenameNoteRenamesFile(t *testing.T) {
 	v := newTestVault(t)
 	doc := mustCreate(t, v, "旧标题")
 	mustSave(t, v, doc.ID, "正文内容")
+	before := v.notes[doc.ID].meta.UpdatedAtUtc
 
 	renamed, err := v.RenameNote(doc.ID, "新标题")
 	if err != nil {
@@ -138,6 +139,9 @@ func TestRenameNoteRenamesFile(t *testing.T) {
 	data, _ := os.ReadFile(filepath.Join(v.notesDir(), "新标题.md"))
 	if string(data) != "正文内容" {
 		t.Fatalf("内容丢失: %q", data)
+	}
+	if renamed.UpdatedAtUtc != before {
+		t.Fatal("改名不应顶起更新时间（否则逐字改名时卡片在列表里乱跳）")
 	}
 }
 

@@ -589,7 +589,8 @@ func (v *Vault) RenameNote(id string, newTitle string) (NoteDocument, error) {
 		return NoteDocument{}, ErrSaveFailed
 	}
 	n.meta.RelativePath = newRel
-	n.meta.UpdatedAtUtc = nowMs()
+	// 改名不顶起更新时间：否则在标题框逐字输入时卡片按"更新时间"
+	// 排序会不停跳到列表顶部（自测复现）。正文更新才计入更新时间。
 	if err := saveNoteMeta(metaDir, n.meta); err != nil {
 		return NoteDocument{}, ErrSaveFailed
 	}
