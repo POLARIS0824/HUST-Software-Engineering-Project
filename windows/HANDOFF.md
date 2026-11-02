@@ -125,6 +125,16 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
    另**更正 N1 不成立**：重启后外部改写的内容不会丢（编辑器缓冲区从磁盘加载），
    原结论来自测试方法错误。细节见 `windows/docs/verification-record.md` 的
    "PR #1 第二轮评审整改"一节。
+9. **PR #1 第三轮评审整改**（2026-11-02，评审针对 `fc52fbf` 的 5 个中/高优先级 + 5 个低优先级）：
+   新增 29 个回归用例（共 176 个）。修掉的主要问题：工作区装载失败后 `root` 未清空且
+   `saveContent` 无守卫 → 把笔记写到 `<cwd>/notes/` 下绕过"选择工作区"流程；
+   改名级联崩溃后留下断链（现改为先把改写前正文/元数据快照落盘到 pending，
+   崩溃时按快照回滚）；`uniqueRelPath` 非 ENOENT 错误死循环并持有 `v.mu`；
+   `NoteFileExists` 把权限/掉线等非"不存在"错误误判为"文件已消失"而误清索引；
+   `applySaveResult` 在 `ErrStaleRevision` 时误标"已保存"导致用户未落盘的输入被丢弃。
+   低优先级：`README.MD` 后缀、空标题兜底"未命名笔记"、别名里的 `#` 被误删、
+   标题里的 `[ ]` 生成非法 markdown、标签树无滚动。
+   细节见 `windows/docs/verification-record.md` 的"缺陷修复轮（2026-11-02）"一节。
 
 ## 6. 关键设计决策（接手者不要轻易推翻）
 
@@ -229,8 +239,10 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 ## 8. 验证状态（诚实版）
 
 **已验证**（细节见 `windows/docs/verification-record.md`）：
-- `gofmt`/`go vet`/`go tool mygo vet`/`CGO_ENABLED=0 go test ./...` 全绿（128 用例，
+- `gofmt`/`go vet`/`go tool mygo vet`/`CGO_ENABLED=0 go test ./...` 全绿（176 用例，
   总语句覆盖 75.8%）；上一轮 CI（windows-latest）全绿，本轮改动需 push 后再看 CI 结果。
+- **本轮（2026-11-02）PR #1 第三轮整改的 8 个变更文件逐一做了变异测试**：把修复代码改回缺陷版本，
+  对应回归用例必须 FAIL；改回后必须 PASS——确认 29 个新用例不会出现"测试通过但 bug 还在"的假阳性。
 - 领域层：解析/检索/导入导出（含 GBK 端到端、ZIP 包体真实执行）/崩溃对账/标签树/
   冲突检测/装载自愈（外部修改校准、重复元数据择优、孤儿回收站条目）等单测覆盖。
 - 用户流程模拟（三轮）+ 缺陷修复轮回归：新建/改名/删空/换篇/搜索/回收站撤销与彻底删除/

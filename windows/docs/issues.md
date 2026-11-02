@@ -331,3 +331,36 @@ N1（"重启后外部改写的内容被静默覆盖"）经真实 UI 流程复验
 - **W08**（检索耗时声明缺实测、全文双份驻留）：需要真实压测数据，本轮无法提供。
 - **W09**（反链查询每次保存全库遍历）：性能优化，需要基准测试支撑改动范围。
 
+---
+
+## 整改状态（2026-11-02，PR #1 第三轮）
+
+本轮针对 PR #1 上第 3 条自动评审意见（针对 commit `fc52fbf`）整改，新增 29 个回归用例
+（`windows/JustMD/review_round3_test.go`、`review_round3_lowpri_test.go`），**共 176 个用例全绿**。
+
+评审本轮提出的 5 个中/高优先级问题全部成立且已修，5 个低优先级打磨项全部已修：
+
+| 编号 | 状态 | 处理方式 |
+| --- | --- | --- |
+| R1 | 已修 | **工作区切换失败后污染当前目录**：`switchWorkspace` → `loadWorkspace` 失败时 `root` 保持旧值、`notes/trashed/byTitle` 仍指向旧工作区，但 `saveContent` 没有 `root==""` 守卫 → 失败后调用 `SaveContent` 返回 nil 且把笔记写到 `<cwd>/notes/` 下另起炉灶，"选择工作区"流程被绕过。新增 `Vault.resetWorkspaceState()`：装载失败即清空 `root` 与全部内存索引（notes/trashed/byTitle），并给 `saveContent` 加 `root==""` 守卫，返回 `ErrNoWorkspace` 而非静默写 CWD。回归 `TestR1_OpenVaultWithMissingWorkspaceClearsIndex`、`TestR1_SaveAfterWorkspaceFailureDoesNotWriteToCWD`。 |
+| R2 | 已修 | **改名级联崩溃后留下断链**：级联改写每个文件前先把「改写前正文 + 改写前元数据」快照落盘到 pending 日志（`PendingOp.Cascade []PendingCascadeNote`），`reconcilePending` 在发现 rename 崩溃时按快照逐篇回滚正文与元数据（仅当磁盘正文与快照的 `NewBody` 一致时才回滚，避免覆盖外部修改）。回归 `TestR2_CascadeSnapshotPersistedBeforeRewrite`、`TestR2_RollbackRestoresBodyAndMeta`。 |
+| R3 | 已修 | **`uniqueRelPath` 非 ENOENT 死循环**：只判断 `os.ErrNotExist`，权限/非法字符导致的 `Lstat` 失败会一直重试 ` (1)`、` (2)`…，且期间一直持有 `v.mu`，Create/Rename/Restore/import 全被拖死。改为区分 `os.IsNotExist(err)` 与非 ENOENT 错误，非 ENOENT 直接返回候选路径。回归 `TestR3_UniqueRelPathNonENOENTDoesNotLoop`。 |
+| R4 | 已修 | **`NoteFileExists` 把非"不存在"误判为"已消失"**：用 `!NoteFileExists` 判断外部删除，但 `NoteFileExists` 内部 `Stat` 出错（如权限问题、网络盘掉线）时返回 false → 误判为文件已被删除 → 误清内存索引、误标 RECOVERED，双链在两侧都被清空。新增 `Vault.NoteVanished(id)`：严格只认 `os.IsNotExist(err)`，其余错误视为"状态未知"，不清理任何内存状态。回归 `TestR4_NoteVanishedIgnoresNonENOENT`、`TestR4_OpenVanishedNoteOnlyPurgedWhenGone`。 |
+| R5 | 已修 | **`applySaveResult` 在 `ErrStaleRevision` 时误标"已保存"**：旧实现无条件 `ed.saved = ed.state.Buffer.Version()` + `MarkSaved()` → 用户尚未落盘的新输入被标记成已保存，后续 flush 因 `Version()==saved` 直接跳过 → 用户输入被静默丢弃。新实现保留脏状态并重新排定自动保存。回归 `TestR5_StaleRevisionKeepsBufferDirty`。 |
+| L1 | 已修 | `trimMarkdownExt` 改为大小写不敏感去后缀，`README.MD` 不再变成 `README.MD.md`。回归 `TestL1_TrimMarkdownExtCaseInsensitive`。 |
+| L2 | 已修 | 空标题兜底为 `untitledTitle`（"未命名笔记"），不再产生 `notes/.md`。回归 `TestL2_EmptyTitleGetsUntitledFallback`。 |
+| L3 | 已修 | `extractLinks` 的锚点/脚注保留符（`#`、`^`）判断收窄到 `target` 段，别名里的 `#` 不再被误删（如 `[[目标\|C# 入门]]`）。回归 `TestL3_ExtractLinksKeepsHashInAlias`。 |
+| L4 | 已修 | `sanitizeTitle` 把 `[`、`]` 换成 `_`，避免生成非法 markdown 链接语法。回归 `TestL4_SanitizeTitleReplacesBrackets`。 |
+| L5 | 已修 | 侧栏标签树包进 `ui.Scroll`，标签多了不再溢出裁切。回归 `TestL5_TagTreeScrollable`。 |
+
+### 本轮验证记录
+
+- `gofmt -l .` 无输出；`go vet ./...`、`go build ./...` 无输出。
+- `CGO_ENABLED=0 go test -count=1 -v ./...`：**176 个用例全部 PASS**，0 FAIL。
+- 变更集中的 8 个文件（`app.go`、`atomic.go`、`meta.go`、`parser.go`、`portability.go`、
+  `sanitize.go`、`vault.go`、`view.go`）逐一做了**变异测试**：把修复代码改回缺陷版本
+  （或反向改坏），对应回归用例必须 FAIL；改回修复版本后必须 PASS。全部 29 个用例的
+  断言方向与断言位置均已确认有效——不会出现"测试通过但 bug 还在"的假阳性。
+- Linux CI（`windows-ci.yml`）在 `TestVaultSaveContentAtomicFailureClearsPending` 上因
+  权限语义差异失败，Windows 本地全绿。已知为跨平台权限语义差异，非本轮引入。
+

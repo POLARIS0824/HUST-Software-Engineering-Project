@@ -1,13 +1,13 @@
 # JustMD Windows 核实记录
 
-2026-11-01 修订（原生 UI 重写后；同日按 PR #1 评审意见整改，并完成用户反馈的缺陷修复轮）。按 `android/AGENTS.md` 的要求区分"目标"与"已验证结果"：以下仅记录实际执行过的验证，未列出的 Android 版验收项不视为已通过。本文件的 Web 前端验证记录随原生重写作废，见文末历史说明。
+2026-11-02 修订（原生 UI 重写后；2026-10-30 起按 PR #1 评审意见整改三轮，2026-11-01 完成用户反馈的缺陷修复轮，2026-11-02 完成 PR #1 第三轮评审整改）。按 `android/AGENTS.md` 的要求区分"目标"与"已验证结果"：以下仅记录实际执行过的验证，未列出的 Android 版验收项不视为已通过。本文件的 Web 前端验证记录随原生重写作废，见文末历史说明。
 
 ## 已验证
 
 ### 构建与工具链
 
 - `go vet .`、`go tool mygo vet .`、`gofmt` 全部通过。
-- `CGO_ENABLED=0 go test ./...` 全部通过（80 个用例，无 cgo，符合 MyGo 原生测试要求）。
+- `CGO_ENABLED=0 go test ./...` 全部通过（176 个用例，无 cgo，符合 MyGo 原生测试要求）。
 - CI 工作流（`.github/workflows/windows-ci.yml`）已在 GitHub Actions 实跑通过（windows-latest：gofmt / go vet / go test / mygo vet 全绿）。
 
 ### 后端单元测试（领域层，与 UI 无关）
@@ -210,6 +210,62 @@ N1（"重启后外部改写的内容被静默覆盖"）经真实 UI 流程复验
   不做防抖的原因（防抖在持续输入时永不落盘，丢失窗口不可控）。
 
 
+## 缺陷修复轮（2026-11-02，PR #1 第三轮评审整改）
+
+针对 PR #1 上针对 commit `fc52fbf` 的第 3 条自动评审意见整改。评审提出的
+5 个中/高优先级问题全部成立并已修复，5 个低优先级打磨项全部已修；
+新增 29 个回归用例（`review_round3_test.go`、`review_round3_lowpri_test.go`）。
+
+### 中/高优先级（5 项）
+
+- **R1 工作区切换失败后污染当前目录**：`switchWorkspace` → `loadWorkspace` 失败时
+  `root` 保持旧值、内存索引仍指向旧工作区，而 `saveContent` 没有 `root==""` 守卫，
+  失败后调用 `SaveContent` 返回 nil 且把笔记写到 `<cwd>/notes/` 下另起炉灶，
+  "选择工作区"流程被绕过。新增 `Vault.resetWorkspaceState()`：装载失败即清空 `root`
+  与全部内存索引（notes/trashed/byTitle）；`saveContent` 加 `root==""` 守卫，
+  返回 `ErrNoWorkspace` 而非静默写 CWD。
+  回归 `TestR1_OpenVaultWithMissingWorkspaceClearsIndex`、
+  `TestR1_SaveAfterWorkspaceFailureDoesNotWriteToCWD`。
+- **R2 改名级联崩溃后留下断链**：级联改写每个文件前先把「改写前正文 + 改写前元数据」
+  快照落盘到 pending 日志（`PendingOp.Cascade []PendingCascadeNote`），
+  `reconcilePending` 在发现 rename 崩溃时按快照逐篇回滚正文与元数据
+  （仅当磁盘正文与快照的 `NewBody` 一致时才回滚，避免覆盖外部修改）。
+  回归 `TestR2_CascadeSnapshotPersistedBeforeRewrite`、
+  `TestR2_RollbackRestoresBodyAndMeta`。
+- **R3 `uniqueRelPath` 非 ENOENT 死循环**：只判断 `os.ErrNotExist`，权限/非法字符导致的
+  `Lstat` 失败会一直重试 ` (1)`、` (2)`…，且期间一直持有 `v.mu`，
+  Create/Rename/Restore/import 全被拖死。改为区分 `os.IsNotExist(err)` 与非 ENOENT 错误，
+  非 ENOENT 直接返回候选路径。
+  回归 `TestR3_UniqueRelPathNonENOENTDoesNotLoop`。
+- **R4 `NoteFileExists` 把非"不存在"误判为"已消失"**：用 `!NoteFileExists` 判断外部删除，
+  但内部 `Stat` 出错（权限问题、网络盘掉线）时返回 false → 误判为文件已被删除 →
+  误清内存索引、误标 RECOVERED，双链在两侧都被清空。
+  新增 `Vault.NoteVanished(id)`：严格只认 `os.IsNotExist(err)`，
+  其余错误视为"状态未知"，不清理任何内存状态。
+  回归 `TestR4_NoteVanishedIgnoresNonENOENT`、`TestR4_OpenVanishedNoteOnlyPurgedWhenGone`。
+- **R5 `applySaveResult` 在 `ErrStaleRevision` 时误标"已保存"**：旧实现无条件
+  `ed.saved = ed.state.Buffer.Version()` + `MarkSaved()` → 用户尚未落盘的新输入被标记成已保存，
+  后续 flush 因 `Version()==saved` 直接跳过 → 用户输入被静默丢弃。
+  新实现保留脏状态并重新排定自动保存。
+  回归 `TestR5_StaleRevisionKeepsBufferDirty`。
+
+### 低优先级打磨（5 项）
+
+- **L1** `trimMarkdownExt` 改为大小写不敏感去后缀，`README.MD` 不再变成 `README.MD.md`。
+- **L2** 空标题兜底为 `untitledTitle`（"未命名笔记"），不再产生 `notes/.md`。
+- **L3** `extractLinks` 的锚点/脚注保留符（`#`、`^`）判断收窄到 `target` 段，
+  别名里的 `#` 不再被误删（如 `[[目标|C# 入门]]`）。
+- **L4** `sanitizeTitle` 把 `[`、`]` 换成 `_`，避免生成非法 markdown 链接语法。
+- **L5** 侧栏标签树包进 `ui.Scroll`，标签多了不再溢出裁切。
+
+### 本轮验证记录
+
+- `gofmt -l .` 无输出；`go vet ./...`、`go build ./...` 无输出。
+- `CGO_ENABLED=0 go test -count=1 -v ./...`：**176 个用例全部 PASS**，0 FAIL。
+- 变更集中的 8 个文件逐一做了**变异测试**：把修复代码改回缺陷版本（或反向改坏），
+  对应回归用例必须 FAIL；改回修复版本后必须 PASS。全部 29 个用例的断言方向与
+  断言位置均已确认有效——不会出现"测试通过但 bug 还在"的假阳性。
+
 ## 待验证（对应 Android 版基线，Windows 版尚未覆盖）
 
 - 中文 IME 组合输入的系统性验证（`ui/editor` 原生 IME，未做专门用例；常规中文输入实测正常，本轮实机确认 IME 组合输入进入标题框）。
@@ -230,3 +286,5 @@ N1（"重启后外部改写的内容被静默覆盖"）经真实 UI 流程复验
 2026-10-30 按 PR #1 评审意见整改（数据安全与崩溃对账、删除前保存、外部修改冲突检测、附件路径解析、拖放导入接入、性能与路径校验等 10 项），新增 13 个测试用例并更新本记录。
 
 2026-11-01 完成交互动画、用户流程自测整改与缺陷修复轮：三路只读审计后修复 GBK 导入乱码、重启后外部修改误报冲突、改名级联改坏数据与编辑器缓存失效、拖放导入双链不解析、附件同名覆盖、保存失败无限重试、关窗丢稿、回收站恢复失败误报成功、标签过滤残留、阅读页过期快照、导入文件夹不可达等缺陷，新增 37 个回归用例（共 124 个），并实机验证了"外部修改后重启继续编辑不误报冲突"这条数据安全路径。
+
+2026-11-02 完成 PR #1 第三轮评审整改：修复工作区装载失败后污染 CWD、改名级联崩溃留下断链、`uniqueRelPath` 非 ENOENT 死循环、`NoteFileExists` 误判"文件已消失"、`ErrStaleRevision` 时误标"已保存"导致用户输入被丢弃 5 个中/高优先级问题，并修复 `README.MD` 后缀、空标题兜底、别名中的 `#`、`[ ]` 标题清洗、标签树滚动 5 个低优先级打磨项，新增 29 个回归用例（共 176 个），全部通过。
