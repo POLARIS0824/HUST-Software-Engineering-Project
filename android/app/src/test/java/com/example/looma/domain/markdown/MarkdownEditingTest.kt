@@ -1,6 +1,7 @@
 package com.example.looma.domain.markdown
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MarkdownEditingTest {
@@ -205,6 +206,14 @@ class MarkdownEditingTest {
     fun dividerStartsOnOwnLine() {
         val result = edit(MarkdownCommand.Divider, "abc", 3)
         assertEquals("abc\n\n---\n", result.text)
+    }
+
+    @Test
+    fun dividerAtTheTopDoesNotBecomeFrontMatter() {
+        val result = edit(MarkdownCommand.Divider, "正文", 0)
+
+        assertEquals("\n---\n\n正文", result.text)
+        assertTrue(MarkdownIndex.index(result.text, "兜底").body.contains("正文"))
     }
 
     @Test

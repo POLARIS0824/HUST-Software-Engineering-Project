@@ -338,7 +338,12 @@ object MarkdownEditing {
     }
 
     private fun insertDivider(text: String, from: Int, to: Int): MarkdownEdit {
-        val leading = if (from > 0 && text[from - 1] != '\n') "\n\n" else ""
+        // 开头必须留一行空行，否则 "---" 落在第 1 行，整段会被当成 frontmatter 藏起来
+        val leading = when {
+            from == 0 -> "\n"
+            text[from - 1] != '\n' -> "\n\n"
+            else -> ""
+        }
         val trailing = if (to < text.length && text[to] != '\n') "\n" else ""
         val block = "${leading}---\n$trailing"
         val caret = from + block.length
