@@ -38,8 +38,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
@@ -153,7 +153,7 @@ private fun NoteWorkspace(
     val keyboard = LocalSoftwareKeyboardController.current
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    val context = LocalContext.current
+    val resources = LocalResources.current
 
     // 解析得到就打开，解析不到就报出目标名：跳转与否只由这一处决定
     val onWikiLinkClick: (String) -> Unit = { target ->
@@ -162,7 +162,7 @@ private fun NoteWorkspace(
             onOpenNote(id)
         } else {
             scope.launch {
-                snackbarHostState.showSnackbar(context.getString(R.string.note_link_missing, target))
+                snackbarHostState.showSnackbar(resources.getString(R.string.note_link_missing, target))
             }
         }
     }
