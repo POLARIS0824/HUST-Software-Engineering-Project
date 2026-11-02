@@ -1,0 +1,293 @@
+package com.example.looma.ui.markdown
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.looma.R
+import com.example.looma.ui.theme.LoomaTokens
+import com.mikepenz.markdown.annotator.annotatorSettings
+import com.mikepenz.markdown.annotator.buildMarkdownAnnotatedString
+import com.mikepenz.markdown.compose.components.CurrentComponentsBridge
+import com.mikepenz.markdown.compose.components.MarkdownComponent
+import com.mikepenz.markdown.compose.components.MarkdownComponentModel
+import com.mikepenz.markdown.compose.components.MarkdownComponents
+import com.mikepenz.markdown.compose.components.markdownComponents
+import com.mikepenz.markdown.compose.elements.MarkdownBulletList
+import com.mikepenz.markdown.compose.elements.MarkdownOrderedList
+import com.mikepenz.markdown.compose.elements.MarkdownText
+import com.mikepenz.markdown.m3.markdownColor
+import com.mikepenz.markdown.m3.markdownTypography
+import com.mikepenz.markdown.model.MarkdownColors
+import com.mikepenz.markdown.model.MarkdownPadding
+import com.mikepenz.markdown.model.MarkdownTypography
+import com.mikepenz.markdown.model.markdownPadding
+import org.intellij.markdown.IElementType
+import org.intellij.markdown.MarkdownTokenTypes
+import org.intellij.markdown.ast.findChildOfType
+import org.intellij.markdown.ast.getTextInNode
+
+/**
+ * 渲染库与本项目之间的唯一适配层。
+ *
+ * 字号刻度对齐 Obsidian「Things」主题：正文 16 / 行高 1.5，
+ * 标题按 1.7 / 1.5 / 1.2 / 1.1 / 1 / 0.9 倍缩放，标题不再比正文大两个量级。
+ * 复选框和列表符号都换成固定宽度列，行内首行文字与标记因此对齐。
+ */
+@Immutable
+data class LoomaMarkdownTheme(
+    val colors: MarkdownColors,
+    val typography: MarkdownTypography,
+    val padding: MarkdownPadding,
+)
+
+/** 正文、卡片预览各自传入基准字号，标题比例与间距都从这一个基准推导 */
+@Composable
+fun loomaMarkdownTheme(base: TextStyle, compact: Boolean = false): LoomaMarkdownTheme {
+    val colors = LoomaTokens.colors
+    return LoomaMarkdownTheme(
+        colors = markdownColor(
+            text = colors.title,
+            codeBackground = colors.chip.copy(alpha = 0.6f),
+            inlineCodeBackground = colors.chip.copy(alpha = 0.6f),
+            dividerColor = colors.divider,
+            tableBackground = colors.card,
+            highlightText = colors.onChip,
+            highlightBackground = colors.chip,
+        ),
+        typography = markdownTypography(
+            text = base,
+            paragraph = base,
+            list = base,
+            ordered = base,
+            bullet = base,
+            quote = base.copy(fontStyle = FontStyle.Italic),
+            code = base.copy(fontSize = base.fontSize * 0.9f),
+            inlineCode = base.copy(fontSize = base.fontSize * 0.9f),
+            table = base,
+            h1 = base.scaled(1.7f, FontWeight.Bold),
+            h2 = base.scaled(1.5f, FontWeight.Bold),
+            h3 = base.scaled(1.2f, FontWeight.SemiBold),
+            h4 = base.scaled(1.1f, FontWeight.SemiBold),
+            h5 = base.scaled(1f, FontWeight.SemiBold),
+            h6 = base.scaled(0.9f, FontWeight.SemiBold).copy(color = colors.muted),
+        ),
+        padding = markdownPadding(
+            block = if (compact) 4.dp else 10.dp,
+            list = if (compact) 2.dp else 4.dp,
+            listItemTop = if (compact) 1.dp else 2.dp,
+            listItemBottom = if (compact) 1.dp else 2.dp,
+            listIndent = if (compact) 12.dp else 16.dp,
+            codeBlock = PaddingValues(if (compact) 6.dp else 12.dp),
+            blockQuote = PaddingValues(horizontal = if (compact) 8.dp else 12.dp),
+        ),
+    )
+}
+
+/**
+ * 组件集合。[onCheckboxToggle] 为 null 时复选框只读（卡片预览），
+ * 有回调时点击交回原文坐标，由 feature 层写回文件。
+ *
+ * 不是 @Composable：调用方可以用 remember 缓存，避免滚动时重建组件树。
+ */
+fun loomaMarkdownComponents(
+    theme: LoomaMarkdownTheme,
+    compact: Boolean,
+    dividerColor: Color,
+    onCheckboxToggle: ((position: Int, checked: Boolean) -> Unit)? = null,
+    bodyStart: Int = 0,
+    showImages: Boolean = true,
+): MarkdownComponents {
+    val checkSize = if (compact) 14.dp else 18.dp
+    val checkGap = if (compact) 6.dp else 9.dp
+    // 列表的标记列由渲染库的 markerModifier 控制宽度，所以列宽要把复选框和间距一起算进去
+    val markerColumn = checkSize + checkGap
+    val headingBottom = if (compact) 0.dp else 2.dp
+
+    return markdownComponents(
+        heading1 = heading(theme.typography.h1, MarkdownTokenTypes.ATX_CONTENT, if (compact) 10.dp else 20.dp, headingBottom, null),
+        heading2 = heading(theme.typography.h2, MarkdownTokenTypes.ATX_CONTENT, if (compact) 8.dp else 16.dp, if (compact) 0.dp else 6.dp, if (compact) null else dividerColor),
+        heading3 = heading(theme.typography.h3, MarkdownTokenTypes.ATX_CONTENT, if (compact) 6.dp else 12.dp, headingBottom, null),
+        heading4 = heading(theme.typography.h4, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null),
+        heading5 = heading(theme.typography.h5, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null),
+        heading6 = heading(theme.typography.h6, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null),
+        setextHeading1 = heading(theme.typography.h1, MarkdownTokenTypes.SETEXT_CONTENT, if (compact) 10.dp else 20.dp, headingBottom, null),
+        setextHeading2 = heading(theme.typography.h2, MarkdownTokenTypes.SETEXT_CONTENT, if (compact) 8.dp else 16.dp, if (compact) 0.dp else 6.dp, if (compact) null else dividerColor),
+        unorderedList = { model ->
+            MarkdownBulletList(
+                content = model.content,
+                node = model.node,
+                style = theme.typography.bullet,
+                markerModifier = { Modifier.width(markerColumn) },
+                listModifier = { Modifier.weight(1f) },
+            )
+        },
+        orderedList = { model ->
+            MarkdownOrderedList(
+                content = model.content,
+                node = model.node,
+                style = theme.typography.ordered,
+                markerModifier = { Modifier.width(markerColumn) },
+                listModifier = { Modifier.weight(1f) },
+            )
+        },
+        paragraph = { model -> LoomaMarkdownParagraph(model) },
+        checkbox = { model ->
+            CheckboxMarker(
+                checked = model.isChecked(),
+                lineHeight = lineHeightOf(theme.typography.list),
+                size = checkSize,
+                gap = checkGap,
+                onToggle = onCheckboxToggle?.let { toggle ->
+                    { checked: Boolean -> toggle(bodyStart + model.node.startOffset, checked) }
+                },
+            )
+        },
+        image = if (showImages) CurrentComponentsBridge.image else { _ -> },
+        inlineImage = if (showImages) CurrentComponentsBridge.inlineImage else { _ -> },
+    )
+}
+
+private fun heading(
+    style: TextStyle,
+    contentChildType: IElementType,
+    top: Dp,
+    bottom: Dp,
+    borderColor: Color?,
+): MarkdownComponent = { model ->
+    val settings = annotatorSettings()
+    val annotated = remember(model.content, model.node, settings) {
+        val child = model.node.findChildOfType(contentChildType) ?: model.node
+        buildAnnotatedString {
+            buildMarkdownAnnotatedString(model.content, child, settings)
+        }.withSynthItalic()
+    }
+    MarkdownText(
+        content = annotated,
+        node = model.node,
+        style = style,
+        modifier = Modifier
+            .padding(top = top, bottom = bottom)
+            .then(
+                if (borderColor != null) {
+                    Modifier.drawBehind {
+                        drawLine(
+                            color = borderColor,
+                            start = Offset(0f, size.height),
+                            end = Offset(size.width, size.height),
+                            strokeWidth = 1.dp.toPx(),
+                        )
+                    }
+                } else {
+                    Modifier
+                },
+            ),
+        sourceContent = model.content,
+    )
+}
+
+/** 段落自己构建 AnnotatedString，才能给斜体补上绘制期倾斜 */
+@Composable
+private fun LoomaMarkdownParagraph(model: MarkdownComponentModel) {
+    val settings = annotatorSettings()
+    val annotated = remember(model.content, model.node, settings) {
+        buildAnnotatedString {
+            buildMarkdownAnnotatedString(model.content, model.node, settings)
+        }.withSynthItalic()
+    }
+    MarkdownText(
+        content = annotated,
+        node = model.node,
+        style = model.typography.paragraph,
+        sourceContent = model.content,
+    )
+}
+
+private fun MarkdownComponentModel.isChecked(): Boolean =
+    node.getTextInNode(content).contains("[x]")
+
+/**
+ * 固定宽度的复选框列：高度等于一行正文，方块在其中垂直居中，
+ * 勾选框因此与首行文字对齐；取消勾选时只画描边，勾选时与 Obsidian Things 一样是实心圆角方块。
+ */
+@Composable
+private fun CheckboxMarker(
+    checked: Boolean,
+    lineHeight: Dp,
+    size: Dp,
+    gap: Dp,
+    onToggle: ((Boolean) -> Unit)?,
+) {
+    val colors = MaterialTheme.colorScheme
+    val shape = RoundedCornerShape(percent = 30)
+    Row(
+        modifier = Modifier.heightIn(min = lineHeight),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val boxModifier = Modifier
+            .size(size)
+            .clip(shape)
+            .border(1.5.dp, if (checked) colors.primary else colors.outline, shape)
+            .background(if (checked) colors.primary else Color.Transparent, shape)
+            .then(
+                if (onToggle != null) {
+                    Modifier.toggleable(value = checked, role = Role.Checkbox, onValueChange = onToggle)
+                } else {
+                    Modifier
+                },
+            )
+        Box(boxModifier, contentAlignment = Alignment.Center) {
+            if (checked) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_check),
+                    contentDescription = null,
+                    tint = colors.onPrimary,
+                    modifier = Modifier.size(size * 0.72f),
+                )
+            }
+        }
+        Spacer(Modifier.width(gap))
+    }
+}
+
+@Composable
+private fun lineHeightOf(style: TextStyle): Dp {
+    val resolved = if (style.lineHeight.isSp) style.lineHeight.value else style.fontSize.value * 1.5f
+    return with(LocalDensity.current) { resolved.sp.toDp() }
+}
+
+/** Obsidian Things 的标题比例；行高统一取 1.35 倍字号 */
+private fun TextStyle.scaled(ratio: Float, weight: FontWeight): TextStyle {
+    val size = fontSize.value * ratio
+    return copy(fontSize = size.sp, lineHeight = (size * 1.35f).sp, fontWeight = weight)
+}

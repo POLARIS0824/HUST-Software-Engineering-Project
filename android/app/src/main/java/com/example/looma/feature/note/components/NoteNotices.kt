@@ -34,7 +34,9 @@ internal fun NoteSaveBanner(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = state.saveError ?: stringResource(R.string.editor_conflict),
+                text = stringResource(
+                    if (state.isConflict) R.string.editor_conflict else R.string.editor_save_failed,
+                ),
                 modifier = Modifier.weight(1f),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer,
@@ -65,7 +67,7 @@ internal fun NoteLeaveDialog(
         title = { Text(stringResource(R.string.editor_leave_title)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(state.saveError ?: stringResource(R.string.editor_leave_message))
+                Text(stringResource(R.string.editor_leave_message))
                 TextButton(onClick = onDiscard) {
                     Text(stringResource(R.string.editor_discard_leave))
                 }

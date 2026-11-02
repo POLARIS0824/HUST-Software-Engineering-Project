@@ -7,7 +7,9 @@ import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.looma.data.note.NoteChangedExternallyException
 import com.example.looma.data.note.NoteRepository
+import com.example.looma.data.settings.SettingsRepository
 import com.example.looma.domain.model.NoteId
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -25,6 +27,7 @@ import kotlinx.coroutines.launch
  */
 class NoteViewModel(
     private val repository: NoteRepository,
+    private val settingsRepository: SettingsRepository,
     private val noteId: NoteId,
 ) : ViewModel() {
     private val _uiState = MutableStateFlow(NoteUiState())
@@ -42,9 +45,10 @@ class NoteViewModel(
     fun load() {
         if (_uiState.value.isDirty || loadJob?.isActive == true) return
         loadJob = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, loadError = null) }
+            _uiState.update { it.copy(isLoading = true, loadFailed = false) }
             try {
                 val note = repository.readNote(noteId)
+                val keepEmptyNotes = settingsRepository.settings.first().keepEmptyNotes
                 _uiState.update {
                     it.copy(
                         content = note.content,
@@ -52,16 +56,16 @@ class NoteViewModel(
                         modifiedAt = note.modifiedAt,
                         isLoading = false,
                         saveState = NoteSaveState.Idle,
-                        saveError = null,
+                        saveFailed = false,
+                        loadFailed = false,
                         isConflict = false,
+                        keepEmptyNotes = keepEmptyNotes,
                     )
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiState.update {
-                    it.copy(isLoading = false, loadError = e.localizedMessage ?: "打开笔记失败")
-                }
+                _uiState.update { it.copy(isLoading = false, loadFailed = true) }
             }
         }
     }
@@ -74,7 +78,7 @@ class NoteViewModel(
             it.copy(
                 content = value,
                 saveState = if (it.isConflict) NoteSaveState.Failed else NoteSaveState.Pending,
-                saveError = if (it.isConflict) it.saveError else null,
+                saveFailed = if (it.isConflict) it.saveFailed else false,
             )
         }
         if (current.isConflict) return
@@ -96,7 +100,7 @@ class NoteViewModel(
     fun overwrite() {
         forceNextSave = true
         _uiState.update {
-            it.copy(isConflict = false, saveError = null, saveState = NoteSaveState.Pending)
+            it.copy(isConflict = false, saveFailed = false, saveState = NoteSaveState.Pending)
         }
         retrySave()
     }
@@ -131,6 +135,24 @@ class NoteViewModel(
         }
     }
 
+    /**
+     * 离开笔记的统一入口。
+     *
+     * 干净状态下也要处理「误触新建」：按设置把空白笔记送进回收站，
+     * 因此返回键在会丢弃空笔记时也要接管，而不是直接退栈。
+     */
+    fun requestLeave(onLeave: () -> Unit) {
+        val state = _uiState.value
+        when {
+            state.willDiscardEmpty -> viewModelScope.launch {
+                runCatching { repository.deleteNote(noteId) }
+                onLeave()
+            }
+            state.needsLeaveGuard -> saveThenLeave(onSaved = onLeave)
+            else -> onLeave()
+        }
+    }
+
     fun onLeaveHandled() {
         leaving = false
         _uiState.update { it.copy(leaveBlocked = false) }
@@ -153,7 +175,7 @@ class NoteViewModel(
         val snapshot = _uiState.value
         if (snapshot.content == snapshot.savedContent) return true
 
-        _uiState.update { it.copy(saveState = NoteSaveState.Saving, saveError = null) }
+        _uiState.update { it.copy(saveState = NoteSaveState.Saving, saveFailed = false) }
         return try {
             val updated = repository.saveNote(
                 id = noteId,
@@ -181,16 +203,13 @@ class NoteViewModel(
                 it.copy(
                     saveState = NoteSaveState.Failed,
                     isConflict = true,
-                    saveError = "笔记已在其他应用中修改",
+                    saveFailed = true,
                 )
             }
             false
         } catch (e: Exception) {
             _uiState.update {
-                it.copy(
-                    saveState = NoteSaveState.Failed,
-                    saveError = e.localizedMessage ?: "保存失败",
-                )
+                it.copy(saveState = NoteSaveState.Failed, saveFailed = true)
             }
             false
         }
@@ -201,9 +220,10 @@ class NoteViewModel(
 
         fun factory(
             repository: NoteRepository,
+            settingsRepository: SettingsRepository,
             noteId: NoteId,
         ): ViewModelProvider.Factory = viewModelFactory {
-            initializer { NoteViewModel(repository, noteId) }
+            initializer { NoteViewModel(repository, settingsRepository, noteId) }
         }
     }
 }

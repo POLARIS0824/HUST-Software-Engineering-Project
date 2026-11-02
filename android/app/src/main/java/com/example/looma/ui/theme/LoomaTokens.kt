@@ -45,6 +45,8 @@ data class LoomaTypography(
     val searchText: TextStyle,
     val emptyState: TextStyle,
     val avatar: TextStyle,
+    /** Markdown 阅读正文；标题比例与行距由它推导 */
+    val markdownBody: TextStyle,
 )
 
 fun loomaColors(scheme: ColorScheme): LoomaColors = LoomaColors(
@@ -77,6 +79,7 @@ fun loomaTypography(base: Typography): LoomaTypography = LoomaTypography(
     searchText = base.bodyLarge.metric(size = 16, line = 22),
     emptyState = base.bodySmall.metric(size = 14, line = 20),
     avatar = base.titleMedium.metric(size = 16, line = 20, weight = FontWeight.SemiBold),
+    markdownBody = base.bodyLarge.metric(size = 16, line = 24),
 )
 
 private fun TextStyle.metric(size: Int, line: Int, weight: FontWeight? = null): TextStyle =

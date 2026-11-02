@@ -1,24 +1,19 @@
 package com.example.looma.ui.markdown
 
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.material3.Checkbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import com.example.looma.domain.markdown.MarkdownDocument
-import com.mikepenz.markdown.compose.components.MarkdownComponentModel
-import com.mikepenz.markdown.compose.components.markdownComponents
-import com.mikepenz.markdown.compose.elements.MarkdownCheckBox
-import com.mikepenz.markdown.m3.Markdown
-import com.mikepenz.markdown.m3.markdownColor
-import com.mikepenz.markdown.m3.markdownTypography
+import com.example.looma.ui.theme.LoomaTokens
+import com.mikepenz.markdown.compose.Markdown
 
 /**
- * 全项目唯一调用 Markdown 渲染库的地方。
+ * 全项目渲染笔记正文的唯一入口。
  *
  * 只吃 [MarkdownDocument]，不认识文件、路径和 ViewModel。复选框点击报原文坐标，
- * 由 feature 层决定怎么写回去。换渲染库时只改这个文件。
+ * 由 feature 层决定怎么写回去。样式集中在 [loomaMarkdownTheme]，换渲染库只改这个包。
  */
 @Composable
 fun MarkdownBody(
@@ -27,44 +22,26 @@ fun MarkdownBody(
     modifier: Modifier = Modifier,
 ) {
     val currentToggle = rememberUpdatedState(onCheckboxToggle)
-    val components = remember(document.body, document.bodyStart) {
-        markdownComponents(
-            checkbox = { model ->
-                CheckboxItem(
-                    model = model,
-                    bodyStart = document.bodyStart,
-                    onToggle = { position, checked -> currentToggle.value(position, checked) },
-                )
-            },
+    val theme = loomaMarkdownTheme(base = LoomaTokens.type.markdownBody)
+    val dividerColor = LoomaTokens.colors.divider
+    val components = remember(theme, dividerColor, document.body, document.bodyStart) {
+        loomaMarkdownComponents(
+            theme = theme,
+            compact = false,
+            dividerColor = dividerColor,
+            bodyStart = document.bodyStart,
+            onCheckboxToggle = { position, checked -> currentToggle.value(position, checked) },
         )
     }
 
     Markdown(
         content = document.body,
-        colors = markdownColor(),
-        typography = markdownTypography(),
+        colors = theme.colors,
+        typography = theme.typography,
+        padding = theme.padding,
         components = components,
+        // 勾选复选框会整段重解析；保留上一帧内容，页面不会闪成空白、滚动位置也不会被拉回顶部
+        retainState = true,
         modifier = modifier.fillMaxWidth(),
-    )
-}
-
-@Composable
-private fun CheckboxItem(
-    model: MarkdownComponentModel,
-    bodyStart: Int,
-    onToggle: (position: Int, checked: Boolean) -> Unit,
-) {
-    val position = bodyStart + model.node.startOffset
-    MarkdownCheckBox(
-        content = model.content,
-        node = model.node,
-        style = model.typography.text,
-        checkedIndicator = { checked, indicatorModifier ->
-            Checkbox(
-                checked = checked,
-                onCheckedChange = { onToggle(position, it) },
-                modifier = indicatorModifier,
-            )
-        },
     )
 }

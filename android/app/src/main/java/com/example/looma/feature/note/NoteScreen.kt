@@ -52,6 +52,7 @@ import com.example.looma.feature.note.components.NoteFormatBar
 import com.example.looma.feature.note.components.NoteLeaveDialog
 import com.example.looma.feature.note.components.NoteSaveBanner
 import com.example.looma.feature.note.components.NoteTopBar
+import com.example.looma.ui.components.LoomaLoadingIndicator
 import com.example.looma.ui.markdown.MarkdownBody
 import com.example.looma.ui.theme.LoomaTheme
 import com.example.looma.ui.theme.LoomaTokens
@@ -69,28 +70,20 @@ fun NoteRoute(
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val requestLeave = {
-        if (state.needsLeaveGuard) {
-            viewModel.saveThenLeave(onSaved = onNavigateUp)
-        } else {
-            onNavigateUp()
-        }
+    val requestLeave = { viewModel.requestLeave(onLeave = onNavigateUp) }
+
+    // 有未落盘内容、或要丢弃空白笔记时接管返回；其余情况交给 Navigation 3 做预测性返回
+    BackHandler(enabled = state.needsLeaveGuard || state.willDiscardEmpty) {
+        viewModel.requestLeave(onLeave = onNavigateUp)
     }
 
-    // 有未落盘内容时接管返回，先冲刷再走；干净状态交给 Navigation 3 做预测性返回
-    BackHandler(enabled = state.needsLeaveGuard) {
-        viewModel.saveThenLeave(onSaved = onNavigateUp)
-    }
-
-    val loadError = state.loadError
     when {
         state.isLoading -> NoteLoadingScreen(
             onNavigateUp = onNavigateUp,
             modifier = modifier,
         )
 
-        loadError != null -> NoteLoadErrorScreen(
-            message = loadError,
+        state.loadFailed -> NoteLoadErrorScreen(
             onNavigateUp = onNavigateUp,
             onRetry = viewModel::load,
             modifier = modifier,
@@ -187,7 +180,7 @@ private fun NoteWorkspace(
                 .padding(innerPadding)
                 .imePadding(),
         ) {
-            if (state.saveError != null) {
+            if (state.saveFailed) {
                 NoteSaveBanner(
                     state = state,
                     onRetry = onRetrySave,
@@ -201,9 +194,17 @@ private fun NoteWorkspace(
                     fallbackTitle = fallbackTitle,
                     scrollState = readScroll,
                     onCheckboxToggle = { position, checked ->
-                        MarkdownIndex.index(buffer.text.toString(), fallbackTitle)
-                            .withCheckboxChecked(position, checked)
-                            ?.let { buffer.replaceAll(it) }
+                        // 只改 "[ ]" 这三个字符，不整段替换缓冲区：光标、撤销栈和滚动位置都保住
+                        val document = MarkdownIndex.index(buffer.text.toString(), fallbackTitle)
+                        if (document.withCheckboxChecked(position, checked) != null) {
+                            buffer.edit {
+                                replace(
+                                    position,
+                                    position + MARKER_LENGTH,
+                                    if (checked) CHECKED_MARKER else UNCHECKED_MARKER,
+                                )
+                            }
+                        }
                     },
                     modifier = Modifier.weight(1f),
                 )
@@ -294,13 +295,9 @@ private fun NoteEditor(
     )
 }
 
-/** 阅读态勾选复选框后整段替换缓冲区，光标回到开头，避免下一次进编辑页落在文末 */
-private fun TextFieldState.replaceAll(text: String) {
-    edit {
-        replace(0, length, text)
-        selection = TextRange(0)
-    }
-}
+private const val MARKER_LENGTH = 3
+private const val CHECKED_MARKER = "[x]"
+private const val UNCHECKED_MARKER = "[ ]"
 
 @Composable
 private fun NoteLoadingScreen(    onNavigateUp: () -> Unit,
@@ -321,14 +318,13 @@ private fun NoteLoadingScreen(    onNavigateUp: () -> Unit,
             modifier = Modifier.fillMaxSize().padding(innerPadding),
             contentAlignment = Alignment.Center,
         ) {
-            CircularProgressIndicator()
+            LoomaLoadingIndicator()
         }
     }
 }
 
 @Composable
 private fun NoteLoadErrorScreen(
-    message: String,
     onNavigateUp: () -> Unit,
     onRetry: () -> Unit,
     modifier: Modifier = Modifier,
@@ -351,7 +347,10 @@ private fun NoteLoadErrorScreen(
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text(message, color = MaterialTheme.colorScheme.error)
+            Text(
+                text = stringResource(R.string.editor_load_failed),
+                color = MaterialTheme.colorScheme.error,
+            )
             TextButton(onClick = onRetry) { Text(stringResource(R.string.editor_reload)) }
         }
     }

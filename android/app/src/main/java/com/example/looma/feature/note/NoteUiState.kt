@@ -1,5 +1,6 @@
 package com.example.looma.feature.note
 
+import com.example.looma.domain.markdown.isEffectivelyEmpty
 import java.time.Instant
 
 /** 自动保存的状态机；[Failed] 之后不再自动重试，等用户重试或覆盖 */
@@ -14,11 +15,13 @@ data class NoteUiState(
     val savedContent: String = "",
     val modifiedAt: Instant? = null,
     val isLoading: Boolean = true,
-    val loadError: String? = null,
+    val loadFailed: Boolean = false,
     val saveState: NoteSaveState = NoteSaveState.Idle,
-    val saveError: String? = null,
+    val saveFailed: Boolean = false,
     val isConflict: Boolean = false,
     val leaveBlocked: Boolean = false,
+    /** 打开笔记时读到的设置：没有写内容就离开时要不要丢弃 */
+    val keepEmptyNotes: Boolean = true,
 ) {
     val isDirty: Boolean get() = !isLoading && content != savedContent
 
@@ -28,4 +31,16 @@ data class NoteUiState(
             saveState == NoteSaveState.Pending ||
             saveState == NoteSaveState.Saving ||
             saveState == NoteSaveState.Failed
+
+    /**
+     * 误触新建、什么都没写就离开。
+     *
+     * 只有「打开时就空、现在仍然空」才算：把一篇有内容的笔记清空不属于误触，
+     * 那种情况仍然保存，不然删掉一段文字再退出会让整篇笔记进回收站。
+     */
+    val willDiscardEmpty: Boolean
+        get() = !keepEmptyNotes &&
+            !isConflict &&
+            isEffectivelyEmpty(content) &&
+            isEffectivelyEmpty(savedContent)
 }
