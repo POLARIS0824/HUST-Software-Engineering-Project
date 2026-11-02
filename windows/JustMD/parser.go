@@ -149,8 +149,7 @@ func extractLinks(markdown string) []ExtractedLink {
 				continue
 			}
 			inner := string(runes[i+2 : closed])
-			if inner == "" || strings.ContainsAny(inner, "#^") {
-				// 保留符：标题锚点与块引用不是笔记双链。
+			if inner == "" {
 				i = closed + 1
 				continue
 			}
@@ -161,6 +160,17 @@ func extractLinks(markdown string) []ExtractedLink {
 			target = strings.TrimSpace(target)
 			if target == "" || strings.ContainsAny(target, "[]|") {
 				// 目标名本身不允许再含括号或分隔符（基线 4.6 禁止嵌套）。
+				i = closed + 1
+				continue
+			}
+			// 保留符只作用于**目标名**（评审遗留项）：
+			// 标题锚点（[[#小节]]）与块引用（[[^脚注]]）不是笔记双链。
+			//
+			// 旧实现对整个 inner 做这个判断，于是别名里带 "#" 的双链被整条丢弃：
+			// [[目标|C# 入门]] 里的 "C# 入门" 是别名，与锚点语法无关，
+			// 却让这条双链既不解析也不显示，读者看不出它指向哪里。
+			// 因此这里只看目标名，别名原样保留。
+			if strings.ContainsAny(target, "#^") {
 				i = closed + 1
 				continue
 			}
