@@ -26,12 +26,10 @@ import com.example.looma.data.vault.VaultRepository
 import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.model.NotePath
 import com.example.looma.domain.model.VaultId
-import com.example.looma.feature.editor.EditorRoute
-import com.example.looma.feature.editor.EditorViewModel
 import com.example.looma.feature.home.HomeRoute
 import com.example.looma.feature.home.HomeViewModel
-import com.example.looma.feature.reader.ReaderRoute
-import com.example.looma.feature.reader.ReaderViewModel
+import com.example.looma.feature.note.NoteRoute
+import com.example.looma.feature.note.NoteViewModel
 import com.example.looma.feature.vault.VaultSetupViewModel
 import com.example.looma.feature.vault.VaultState
 
@@ -98,7 +96,7 @@ fun LoomaNavGraph(
                 HomeRoute(
                     viewModel = homeViewModel,
                     onOpenNote = { noteId ->
-                        backStack.add(LoomaRoute.Reader.from(noteId))
+                        backStack.add(LoomaRoute.Note.from(noteId))
                     },
                     onMenuClick = {
                         if (backStack.lastOrNull() != LoomaRoute.VaultSetup) {
@@ -113,30 +111,19 @@ fun LoomaNavGraph(
                     },
                 )
             }
-            entry<LoomaRoute.Reader> { route ->
+            entry<LoomaRoute.Note> { route ->
                 val noteId = NoteId(
                     vaultId = VaultId(route.vaultId),
                     path = NotePath(route.relativePath),
                 )
-                val readerViewModel: ReaderViewModel = viewModel(
-                    factory = ReaderViewModel.factory(noteRepository, noteId)
+                val noteViewModel: NoteViewModel = viewModel(
+                    factory = NoteViewModel.factory(noteRepository, noteId)
                 )
-                ReaderRoute(
-                    viewModel = readerViewModel,
-                    onNavigateUp = { if (backStack.size > 1) backStack.removeLastOrNull() },
-                    onEdit = { backStack.add(LoomaRoute.Editor.from(noteId)) },
-                )
-            }
-            entry<LoomaRoute.Editor> { route ->
-                val noteId = NoteId(
-                    vaultId = VaultId(route.vaultId),
-                    path = NotePath(route.relativePath),
-                )
-                val editorViewModel: EditorViewModel = viewModel(
-                    factory = EditorViewModel.factory(noteRepository, noteId)
-                )
-                EditorRoute(
-                    viewModel = editorViewModel,
+                NoteRoute(
+                    viewModel = noteViewModel,
+                    fallbackTitle = route.relativePath
+                        .substringAfterLast('/')
+                        .substringBeforeLast('.'),
                     onNavigateUp = { if (backStack.size > 1) backStack.removeLastOrNull() },
                 )
             }

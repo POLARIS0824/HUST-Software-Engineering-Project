@@ -12,26 +12,14 @@ sealed interface LoomaRoute : NavKey {
     @Serializable
     data object Home : LoomaRoute
 
+    /** 一篇笔记只有一个目的地，阅读和编辑是它的两种模式 */
     @Serializable
-    data class Reader(
+    data class Note(
         val vaultId: String,
         val relativePath: String,
     ) : LoomaRoute {
         companion object {
-            fun from(id: NoteId): Reader = Reader(
-                vaultId = id.vaultId.value,
-                relativePath = id.path.relativePath,
-            )
-        }
-    }
-
-    @Serializable
-    data class Editor(
-        val vaultId: String,
-        val relativePath: String,
-    ) : LoomaRoute {
-        companion object {
-            fun from(id: NoteId): Editor = Editor(
+            fun from(id: NoteId): Note = Note(
                 vaultId = id.vaultId.value,
                 relativePath = id.path.relativePath,
             )
