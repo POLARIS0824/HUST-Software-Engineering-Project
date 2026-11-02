@@ -21,7 +21,6 @@ import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.text.input.selectAll
-import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
@@ -35,6 +34,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -170,13 +170,16 @@ private fun NoteWorkspace(
     onOpenNote: (NoteId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    // reloadToken 变化表示正文换了来源（首次加载、冲突后重载），这里据此重建输入区
+    // reloadToken 变化表示正文换了来源（首次加载、冲突后重载）。
+    // 缓冲区跟着 token 重建，而不是在 LaunchedEffect 里补写：否则重建前那一帧会把旧文本
+    // 再发给 ViewModel，刚重载完的笔记立刻又变成"有未保存修改"。
     val loaded = remember(state.reloadToken) { EditorDocument.split(state.content) }
-    val titleBuffer = rememberTextFieldState(initialText = loaded.title)
-    val bodyBuffer = rememberTextFieldState(
-        initialText = loaded.body,
-        initialSelection = TextRange(0),
-    )
+    val buffers = key(state.reloadToken) {
+        rememberTextFieldState(initialText = loaded.title) to
+            rememberTextFieldState(initialText = loaded.body, initialSelection = TextRange(0))
+    }
+    val titleBuffer = buffers.first
+    val bodyBuffer = buffers.second
     var mode by rememberSaveable { mutableStateOf(if (startInEdit) NoteMode.Edit else NoteMode.Read) }
     var linkPanelOpen by rememberSaveable { mutableStateOf(false) }
     val readScroll = rememberScrollState()
@@ -199,11 +202,6 @@ private fun NoteWorkspace(
                 snackbarHostState.showSnackbar(resources.getString(R.string.note_link_missing, target))
             }
         }
-    }
-
-    LaunchedEffect(state.reloadToken) {
-        titleBuffer.setTextAndPlaceCursorAtEnd(loaded.title)
-        bodyBuffer.setTextAndPlaceCursorAtEnd(loaded.body)
     }
 
     // 输入 → ViewModel 单向流动；标题、正文、阅读态勾选复选框都走这一条通道

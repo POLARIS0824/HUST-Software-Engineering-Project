@@ -98,6 +98,38 @@ class HomeVaultIndexTest {
         assertEquals(listOf("后来创建"), root.folders.map { it.name })
     }
 
+    @Test
+    fun `move targets exclude the folder itself and its descendants`() {
+        val index = indexOf(
+            folders = listOf(folder("项目"), folder("项目/周报"), folder("笔记")),
+            notes = emptyList(),
+        )
+
+        assertEquals(
+            listOf(FolderPath.Root, FolderPath("笔记")),
+            index.moveTargets(FolderPath("项目")),
+        )
+        assertEquals(
+            listOf(FolderPath.Root, FolderPath("项目"), FolderPath("项目/周报")),
+            index.moveTargets(FolderPath("笔记")),
+        )
+    }
+
+    @Test
+    fun `note count under a folder includes notes in nested folders`() {
+        val index = indexOf(
+            folders = listOf(folder("项目"), folder("项目/周报")),
+            notes = listOf(
+                note("计划", folder = "项目"),
+                note("周报 1", folder = "项目/周报"),
+                note("根目录笔记"),
+            ),
+        )
+
+        assertEquals(2, index.noteCountUnder(FolderPath("项目")))
+        assertEquals(1, index.noteCountUnder(FolderPath("项目/周报")))
+    }
+
     private fun indexOf(notes: List<HomeNoteItem>, folders: List<VaultFolder>): HomeVaultIndex =
         HomeVaultIndex.build(folders, notes)
 
