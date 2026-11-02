@@ -10,6 +10,7 @@ import com.example.looma.data.note.NoteListEntry
 import com.example.looma.data.note.NoteRepository
 import com.example.looma.data.note.VaultFileException
 import com.example.looma.data.note.VaultFileFailure
+import com.example.looma.data.note.markdownSnippetOf
 import com.example.looma.data.vault.VaultRepository
 import com.example.looma.domain.model.FolderPath
 import kotlinx.coroutines.CancellationException

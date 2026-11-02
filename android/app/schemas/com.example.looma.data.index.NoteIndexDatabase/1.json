@@ -1,0 +1,252 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "fa2ebf9cf61ed643d18680082d0302fb",
+    "entities": [
+      {
+        "tableName": "indexed_note",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`vaultId` TEXT NOT NULL, `path` TEXT NOT NULL, `title` TEXT NOT NULL, `excerpt` TEXT NOT NULL, `snippet` TEXT NOT NULL, `coverPath` TEXT, `modifiedAt` INTEGER NOT NULL, `sizeBytes` INTEGER NOT NULL, `indexedAt` INTEGER NOT NULL, PRIMARY KEY(`vaultId`, `path`))",
+        "fields": [
+          {
+            "fieldPath": "vaultId",
+            "columnName": "vaultId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "path",
+            "columnName": "path",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "title",
+            "columnName": "title",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "excerpt",
+            "columnName": "excerpt",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "snippet",
+            "columnName": "snippet",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "coverPath",
+            "columnName": "coverPath",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "modifiedAt",
+            "columnName": "modifiedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "sizeBytes",
+            "columnName": "sizeBytes",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "indexedAt",
+            "columnName": "indexedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "vaultId",
+            "path"
+          ]
+        }
+      },
+      {
+        "tableName": "note_tag",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`vaultId` TEXT NOT NULL, `notePath` TEXT NOT NULL, `tag` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, PRIMARY KEY(`vaultId`, `notePath`, `tag`), FOREIGN KEY(`vaultId`, `notePath`) REFERENCES `indexed_note`(`vaultId`, `path`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "vaultId",
+            "columnName": "vaultId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notePath",
+            "columnName": "notePath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "tag",
+            "columnName": "tag",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "vaultId",
+            "notePath",
+            "tag"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_note_tag_vaultId_notePath",
+            "unique": false,
+            "columnNames": [
+              "vaultId",
+              "notePath"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_note_tag_vaultId_notePath` ON `${TABLE_NAME}` (`vaultId`, `notePath`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "indexed_note",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "vaultId",
+              "notePath"
+            ],
+            "referencedColumns": [
+              "vaultId",
+              "path"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "note_link",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`vaultId` TEXT NOT NULL, `notePath` TEXT NOT NULL, `ordinal` INTEGER NOT NULL, `target` TEXT NOT NULL, `embedded` INTEGER NOT NULL, PRIMARY KEY(`vaultId`, `notePath`, `ordinal`), FOREIGN KEY(`vaultId`, `notePath`) REFERENCES `indexed_note`(`vaultId`, `path`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+        "fields": [
+          {
+            "fieldPath": "vaultId",
+            "columnName": "vaultId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "notePath",
+            "columnName": "notePath",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "ordinal",
+            "columnName": "ordinal",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "target",
+            "columnName": "target",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "embedded",
+            "columnName": "embedded",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "vaultId",
+            "notePath",
+            "ordinal"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_note_link_vaultId_notePath",
+            "unique": false,
+            "columnNames": [
+              "vaultId",
+              "notePath"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_note_link_vaultId_notePath` ON `${TABLE_NAME}` (`vaultId`, `notePath`)"
+          }
+        ],
+        "foreignKeys": [
+          {
+            "table": "indexed_note",
+            "onDelete": "CASCADE",
+            "onUpdate": "NO ACTION",
+            "columns": [
+              "vaultId",
+              "notePath"
+            ],
+            "referencedColumns": [
+              "vaultId",
+              "path"
+            ]
+          }
+        ]
+      },
+      {
+        "tableName": "search_history",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`vaultId` TEXT NOT NULL, `key` TEXT NOT NULL, `query` TEXT NOT NULL, `lastUsedAt` INTEGER NOT NULL, PRIMARY KEY(`vaultId`, `key`))",
+        "fields": [
+          {
+            "fieldPath": "vaultId",
+            "columnName": "vaultId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "key",
+            "columnName": "key",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "query",
+            "columnName": "query",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "lastUsedAt",
+            "columnName": "lastUsedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "vaultId",
+            "key"
+          ]
+        }
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'fa2ebf9cf61ed643d18680082d0302fb')"
+    ]
+  }
+}

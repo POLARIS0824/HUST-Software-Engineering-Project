@@ -8,6 +8,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.looma.data.folder.FolderRepository
+import com.example.looma.data.index.NoteIndexDatabase
+import com.example.looma.data.index.RoomNoteIndex
 import com.example.looma.data.note.NoteRepository
 import com.example.looma.data.settings.AppSettings
 import com.example.looma.data.settings.SettingsRepository
@@ -18,7 +20,8 @@ import com.example.looma.ui.theme.LoomaTheme
 
 class MainActivity : AppCompatActivity() {
     private val vaultRepository by lazy { VaultRepository(applicationContext) }
-    private val noteRepository by lazy { NoteRepository(vaultRepository) }
+    private val indexDatabase by lazy { NoteIndexDatabase.get(applicationContext) }
+    private val noteRepository by lazy { NoteRepository(vaultRepository, RoomNoteIndex(indexDatabase)) }
     private val folderRepository by lazy { FolderRepository(vaultRepository) }
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
 
