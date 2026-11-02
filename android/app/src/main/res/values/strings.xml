@@ -1,0 +1,190 @@
+<resources>
+    <string name="app_name">Looma</string>
+
+    <!-- Shell -->
+    <string name="nav_back">Back</string>
+    <string name="drawer_notes">Notes</string>
+    <string name="drawer_trash">Trash</string>
+    <string name="drawer_settings">Settings</string>
+
+    <!-- Home -->
+    <string name="home_search_placeholder">Search %1$s</string>
+    <string name="home_section_recents">Recent</string>
+    <string name="home_section_folders">Folders</string>
+    <string name="home_section_notes">Notes</string>
+    <string name="home_folder_count">%1$d</string>
+    <string name="home_empty_vault">No notes yet. Tap + to create one</string>
+    <string name="home_empty_folder">This folder is empty</string>
+    <string name="home_empty_note">Empty note</string>
+    <string name="home_untitled_note">Untitled note</string>
+    <string name="home_sort_sheet_title">Sort by</string>
+    <string name="home_sort_last_modified">Last modified</string>
+    <string name="home_sort_title">Title</string>
+    <string name="home_breadcrumb_root">Home</string>
+    <string name="home_breadcrumb_back_description">Go up one folder</string>
+    <string name="home_switch_to_list_description">Show as list</string>
+    <string name="home_switch_to_grid_description">Show as grid</string>
+    <string name="home_sort_description">Sort</string>
+    <string name="home_menu_description">Open navigation</string>
+    <string name="home_close_search_description">Close search</string>
+    <string name="home_clear_search_description">Clear search</string>
+    <string name="home_avatar_description">Settings</string>
+    <string name="home_avatar_letter">L</string>
+    <string name="home_search_hint">Search titles, text and tags</string>
+    <string name="home_search_no_match">No matching notes</string>
+    <string name="home_recent_searches">Recent searches</string>
+    <string name="home_create_note_description">New note</string>
+    <string name="home_new_folder_description">New folder</string>
+    <string name="home_retry">Retry</string>
+    <string name="home_open_note_label">Open note</string>
+    <string name="home_select_note_label">Select note</string>
+    <string name="home_error_unreadable">%1$d note files could not be read</string>
+    <string name="home_error_load">Could not load notes</string>
+    <string name="home_error_create">Could not create the note</string>
+    <string name="home_error_action">That action failed</string>
+    <string name="home_error_duplicate_name">A file with that name already exists</string>
+    <string name="home_error_invalid_name">That name is not allowed</string>
+    <string name="home_error_empty_name">Enter a name</string>
+
+    <!-- Selection -->
+    <string name="home_selection_count">%1$d</string>
+    <string name="home_selection_close">Clear selection</string>
+    <string name="home_selection_rename">Rename</string>
+    <string name="home_selection_move">Move to…</string>
+    <string name="home_selection_info">File info</string>
+    <string name="home_selection_delete">Delete</string>
+
+    <!-- Dialogs -->
+    <string name="dialog_cancel">Cancel</string>
+    <string name="dialog_confirm">OK</string>
+    <string name="dialog_save">Save</string>
+    <string name="dialog_create">Create</string>
+    <string name="home_rename_title">Rename</string>
+    <string name="home_rename_hint">File name</string>
+    <string name="home_new_folder_title">New folder</string>
+    <string name="home_new_folder_hint">Folder name</string>
+    <string name="home_info_title">File info</string>
+    <string name="home_info_path">Location</string>
+    <string name="home_info_size">Size</string>
+    <string name="home_info_modified">Modified</string>
+    <string name="home_info_words">Words</string>
+    <string name="home_info_characters">Characters</string>
+    <string name="home_info_checklist">Checklist</string>
+    <string name="home_info_checklist_value">%1$d of %2$d done</string>
+
+    <!-- Snackbars -->
+    <string name="home_snackbar_deleted">%1$d moved to trash</string>
+    <string name="home_snackbar_renamed">Renamed</string>
+    <string name="home_snackbar_moved">%1$d moved</string>
+    <string name="home_undo">Undo</string>
+    <string name="home_snackbar_restored">%1$d restored</string>
+    <string name="home_move_invalid_target">Pick a folder inside the vault</string>
+    <string name="trash_delete">Delete permanently</string>
+    <string name="trash_delete_title">Delete permanently?</string>
+    <string name="trash_delete_message">This note cannot be restored after that.</string>
+    <string name="trash_delete_confirm">Delete</string>
+    <string name="trash_deleted">Note deleted</string>
+    <string name="home_snackbar_folder_created">Folder created</string>
+
+    <!-- Trash -->
+    <string name="trash_title">Trash</string>
+    <string name="trash_empty">Trash is empty</string>
+    <string name="trash_empty_hint">Deleted notes stay here until you restore them</string>
+    <string name="trash_restore">Restore</string>
+    <string name="trash_deleted_at">Deleted %1$s</string>
+    <string name="trash_original_path">From %1$s</string>
+    <string name="trash_restored">Note restored</string>
+    <string name="trash_restore_failed">Could not restore that note</string>
+    <string name="trash_load_failed">Could not load the trash</string>
+    <string name="trash_retry">Retry</string>
+
+    <!-- Settings -->
+    <string name="settings_title">Settings</string>
+    <string name="settings_section_vault">Notes vault</string>
+    <string name="settings_vault_none">No vault selected</string>
+    <string name="settings_vault_change">Change vault</string>
+    <string name="settings_section_storage">File access</string>
+    <string name="settings_storage_allowed">All files access granted</string>
+    <string name="settings_storage_denied">All files access not granted</string>
+    <string name="settings_storage_grant">Grant access</string>
+    <string name="settings_section_appearance">Appearance</string>
+    <string name="settings_dynamic_color">Dynamic color</string>
+    <string name="settings_dynamic_color_desc">Use wallpaper colors (Android 12+)</string>
+    <string name="settings_dynamic_color_unavailable">Not supported on this version of Android</string>
+    <string name="settings_theme">Color theme</string>
+    <string name="settings_theme_wallpaper">Wallpaper</string>
+    <string name="settings_theme_dialog_title">Color theme</string>
+    <string name="settings_theme_default">Looma</string>
+    <string name="settings_theme_indigo">Indigo</string>
+    <string name="settings_theme_teal">Teal</string>
+    <string name="settings_theme_rose">Rose</string>
+    <string name="settings_theme_amber">Amber</string>
+    <string name="settings_section_language">Language</string>
+    <string name="settings_language">Language</string>
+    <string name="settings_language_dialog_title">Language</string>
+    <string name="settings_language_system">Follow system</string>
+    <string name="settings_section_notes">Notes</string>
+    <string name="settings_keep_empty_notes">Keep empty notes</string>
+    <string name="settings_keep_empty_notes_desc">Save a new note even when you write nothing</string>
+    <string name="settings_section_about">About</string>
+    <string name="settings_version">Version %1$s</string>
+    <string name="settings_vault_unavailable">The vault folder is not available</string>
+
+    <!-- Vault setup -->
+    <string name="vault_setup_title">Choose a Looma vault</string>
+    <string name="vault_setup_subtitle">Your Markdown notes live in the folder you pick</string>
+    <string name="vault_setup_choose">Choose folder</string>
+    <string name="vault_setup_confirm">Connect</string>
+    <string name="vault_setup_connecting">Connecting…</string>
+    <string name="vault_setup_reselect">Reselect</string>
+    <string name="vault_setup_change">Change</string>
+    <string name="vault_setup_pending_label">Pending</string>
+    <string name="vault_setup_current_label">Current folder</string>
+    <string name="vault_setup_pending_hint">Waiting for confirmation</string>
+    <string name="vault_setup_connected">Connected</string>
+    <string name="vault_setup_previous">Current folder: %1$s</string>
+    <string name="vault_setup_unnamed_folder">Unnamed folder</string>
+    <string name="vault_setup_error_generic">Could not connect the vault. Try again</string>
+    <string name="vault_setup_error_settings">Could not open the storage settings</string>
+    <string name="vault_setup_error_uri">Could not read that folder</string>
+    <string name="vault_permission_all_files">Grant all files access to use a vault</string>
+    <string name="vault_permission_storage">Grant storage access to use a vault</string>
+
+    <!-- Note editor -->
+    <string name="editor_back">Back</string>
+    <string name="note_edit">Edit</string>
+    <string name="note_read">Read</string>
+    <string name="editor_placeholder">Start writing Markdown…</string>
+    <string name="editor_undo">Undo</string>
+    <string name="editor_redo">Redo</string>
+    <string name="editor_bold">Bold</string>
+    <string name="editor_italic">Italic</string>
+    <string name="editor_strikethrough">Strikethrough</string>
+    <string name="editor_highlight">Highlight</string>
+    <string name="editor_inline_code">Inline code</string>
+    <string name="editor_link">Link</string>
+    <string name="editor_h1">Heading 1</string>
+    <string name="editor_h2">Heading 2</string>
+    <string name="editor_h3">Heading 3</string>
+    <string name="editor_bullet_list">Bulleted list</string>
+    <string name="editor_numbered_list">Numbered list</string>
+    <string name="editor_checklist">Checklist</string>
+    <string name="editor_quote">Quote</string>
+    <string name="editor_code_block">Code block</string>
+    <string name="editor_table">Table</string>
+    <string name="editor_divider">Divider</string>
+    <string name="editor_conflict">This note changed in another app</string>
+    <string name="editor_overwrite">Overwrite</string>
+    <string name="editor_leave_title">Changes are not saved</string>
+    <string name="editor_leave_message">Saving failed. Going back now loses your changes</string>
+    <string name="editor_retry_save">Retry save</string>
+    <string name="editor_discard_leave">Discard and go back</string>
+    <string name="editor_cancel">Cancel</string>
+    <string name="editor_reload">Reload</string>
+    <string name="editor_save_failed">Could not save this note</string>
+    <string name="editor_load_failed">Could not open this note</string>
+    <string name="home_snackbar_renamed_links">Renamed, %1$d backlink(s) updated</string>
+    <string name="home_snackbar_renamed_failed">Renamed, %1$d backlink(s) could not be updated</string>
+    <string name="note_backlinks_title">Backlinks · %1$d</string>
+    <string name="note_link_missing">No note named \"%1$s\"</string>
+</resources>
