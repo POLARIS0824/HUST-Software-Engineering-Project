@@ -891,6 +891,8 @@ func (v *Vault) writeVaultZip(w io.Writer) error {
 	sort.Strings(attRels)
 
 	// 基线 4.7：generator 固定 "JustMD v1.1"，schemaVersion "1.0"。
+	// 注意：这是**导出包格式**的标识（Android 与 Windows 共用同一份需求基线与格式），
+	// 不随 Windows 产品改名 Looma 而变化；改名会导致跨平台导出的清单解析不一致。
 	manifest := ExportManifest{
 		Generator:       "JustMD v1.1",
 		ExportTimestamp: time.Now().Format("2006-01-02T15:04:05Z07:00"),
@@ -976,7 +978,7 @@ func (v *Vault) ExportVault(parent *mygo.Window) (string, error) {
 	path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
 		Parent:      parent,
 		Title:       "导出完整知识库为 ZIP",
-		DefaultPath: fmt.Sprintf("JustMD_Backup_%s.zip", time.Now().Format("20060102T150405")),
+		DefaultPath: fmt.Sprintf("Looma_Backup_%s.zip", time.Now().Format("20060102T150405")),
 		Filters:     []mygo.FileFilter{{Name: "ZIP 归档", Extensions: []string{"zip"}}},
 	})
 	if err != nil || path == "" {

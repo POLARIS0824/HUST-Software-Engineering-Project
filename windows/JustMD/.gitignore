@@ -7,6 +7,8 @@ justmd-app.exe
 cover.out
 justmd.exe
 justmd-test.exe
+looma.exe
+looma-test.exe
 # 重建可执行文件时 Go 会把正在运行的旧镜像改名成 *.exe~（关掉进程后才能删）
 *.exe~
 onevra-tree.json

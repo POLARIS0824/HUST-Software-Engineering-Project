@@ -110,7 +110,7 @@ func TestAtomicWriteFileReplacesExisting(t *testing.T) {
 	// 临时文件不应残留。
 	entries, _ := os.ReadDir(filepath.Dir(path))
 	for _, e := range entries {
-		if strings.HasPrefix(e.Name(), ".justmd-") {
+		if strings.HasPrefix(e.Name(), ".looma-") {
 			t.Errorf("临时文件残留: %s", e.Name())
 		}
 	}
