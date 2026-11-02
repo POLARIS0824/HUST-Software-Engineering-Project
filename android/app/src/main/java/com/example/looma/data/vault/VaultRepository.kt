@@ -94,7 +94,7 @@ class VaultRepository(
         withContext(Dispatchers.IO) {
 
             val vault = getCurrentVault()
-                ?: error("尚未选择笔记库")
+                ?: error("no vault has been selected yet")
 
             requireValidDirectory(vault.rootPath)
 
@@ -110,7 +110,7 @@ class VaultRepository(
         }.exceptionOrNull() ?: return@withContext null
 
         error.localizedMessage?.takeIf { it.isNotBlank() }
-            ?: "笔记库当前不可访问"
+            ?: "the vault folder is not accessible"
     }
 
     // 6. 清除当前 Vault
@@ -121,19 +121,19 @@ class VaultRepository(
     // 7. 验证真实文件夹和存储权限
     private fun requireValidDirectory(rootPath: String): File {
         require(rootPath.isNotBlank()) {
-            "笔记库路径不能为空"
+            "the vault path is empty"
         }
 
         require(!rootPath.contains("://")) {
-            "笔记库必须使用真实文件路径，而不是 URI"
+            "the vault must be a real file path, not a URI"
         }
 
         check(storageAccess.hasAccess()) {
-            storageAccess.accessRequiredMessage
+            "all files access is required"
         }
 
         check(storageAccess.isStorageMounted()) {
-            "系统还没有挂载共享存储，请重启手机或重新安装应用"
+            "shared storage is not mounted"
         }
 
         val directory = File(rootPath).canonicalFile
@@ -145,18 +145,18 @@ class VaultRepository(
             directory != storageRoot &&
                     directory.toPath().startsWith(storageRoot.toPath())
         ) {
-            "只能选择主共享存储空间内的子文件夹"
+            "the vault must be a sub folder of primary shared storage"
         }
 
         require(directory.isDirectory) {
-            "所选笔记库不存在或不是文件夹"
+            "the vault folder does not exist"
         }
 
         require(
             directory.canRead() &&
                     directory.canWrite()
         ) {
-            "没有笔记库的读写权限"
+            "the vault folder is not readable and writable"
         }
 
         return directory
