@@ -67,6 +67,12 @@ func (a *app) notesView(c *ui.Context) {
 			a.searchBar(c)
 			a.sortBar(c)
 			a.noteList(c)
+			// 批量删除的「确认」「取消」按钮固定在列表下方：
+			// 列表可能很长，按钮若跟着列表滚下去，用户勾选后
+			// 还得翻回底部才能点确认。
+			if a.batchMode {
+				a.batchActionBar(c)
+			}
 		})
 		// 右侧：编辑器/阅读 + 反链面板。面板宽度是弹簧动画值，
 		// 编辑区 Grow(1) 每帧精确互补（Neverland 式面板收展）。
@@ -91,26 +97,99 @@ func (a *app) searchBar(c *ui.Context) {
 }
 
 // sortBar 是排序选择（FR-NOTE-02）。
+//
+// 批量删除状态下不显示排序选择与「批量删除」按钮：排序会在删除过程中
+// 改变行的位置，让用户刚勾选的笔记跑掉；「批量删除」按钮在批量状态下
+// 也无需再点（底部已有「确认」「取消」）。
 func (a *app) sortBar(c *ui.Context) {
+	t := c.Theme()
 	ui.Row(c).AlignItems(ui.Center).Children(func() {
 		if a.searching {
 			components.Spinner(c, components.SpinnerRing)
 		}
 		ui.Spacer(c).Grow(1)
-		labels := map[string]string{
-			"updated_desc": "更新时间 ↓", "updated_asc": "更新时间 ↑",
-			"created_desc": "创建时间 ↓", "created_asc": "创建时间 ↑",
-			"title_asc": "标题 A-Z", "title_desc": "标题 Z-A",
-		}
-		sel := labels[a.sort]
-		if ui.Select(c, &sel, []string{"更新时间 ↓", "更新时间 ↑", "创建时间 ↓", "创建时间 ↑", "标题 A-Z", "标题 Z-A"}).Width(140).Label("排序方式").Changed() {
-			for v, l := range labels {
-				if l == sel && v != a.sort {
-					a.setSort(v)
+		if !a.batchMode {
+			labels := map[string]string{
+				"updated_desc": "更新时间 ↓", "updated_asc": "更新时间 ↑",
+				"created_desc": "创建时间 ↓", "created_asc": "创建时间 ↑",
+				"title_asc": "标题 A-Z", "title_desc": "标题 Z-A",
+			}
+			sel := labels[a.sort]
+			if ui.Select(c, &sel, []string{"更新时间 ↓", "更新时间 ↑", "创建时间 ↓", "创建时间 ↑", "标题 A-Z", "标题 Z-A"}).Width(140).Label("排序方式").Changed() {
+				for v, l := range labels {
+					if l == sel && v != a.sort {
+						a.setSort(v)
+					}
 				}
 			}
+			// 批量删除入口（FR-UI-04）：进批量删除状态。
+			if components.IconButton(c, lucide.Trash(), "批量删除", components.IconButtonPlain).Clicked() {
+				a.enterBatchMode()
+			}
+			return
+		}
+		// 批量删除状态下显示已勾选数量与退出入口。
+		components.Text(c, "批量删除").FontSize(12).TextColor(t.TextMuted).Grow(1)
+		if components.IconButton(c, lucide.X(), "退出批量删除", components.IconButtonPlain).Clicked() {
+			a.exitBatchMode()
 		}
 	})
+}
+
+// batchActionBar 是批量删除状态下的底部操作栏：「取消」「确认删除」两个按钮。
+//
+// 「确认删除」是危险操作（笔记离开列表，只进回收站），因此用强调色；
+// 「取消」用次要样式。计数随勾选变化，用户随时知道要删几篇。
+func (a *app) batchActionBar(c *ui.Context) {
+	t := c.Theme()
+	picked := len(a.batchPickedIDs())
+	ui.Row(c).Key("batch-bar").FillWidth().Gap(t.Space(2)).AlignItems(ui.Center).
+		Padding(t.Space(1), 0, 0, 0).Children(func() {
+		components.Text(c, "已勾选 "+itoa(picked)+" 篇").FontSize(12).TextColor(t.TextMuted).Grow(1)
+		if components.Button(c, "取消", components.ButtonSecondary).Clicked() {
+			a.exitBatchMode()
+		}
+		if components.Button(c, "确认删除", components.ButtonPrimary).Clicked() {
+			a.batchDeleteSelected()
+		}
+	})
+}
+
+// batchCheckbox 是笔记标题右侧的勾选框：未勾选是空方框，勾选后显示对勾。
+//
+// 用自绘而非 components.Checkbox：后者必定渲染一段标签文字，
+// 而这里要的是"标题右侧一个空方框"，标签会挤掉标题的空间。
+//
+// 勾选状态存在 a.batchPicked（按笔记 ID），而不是绑定到局部 bool：
+// 局部变量每帧重建，勾选状态会丢。
+func (a *app) batchCheckbox(c *ui.Context, id, title string) {
+	t := c.Theme()
+	on := a.batchPicked[id]
+	box := t.Space(4)
+	// 无障碍名称：读屏软件读到的是"勾选 <标题>"，而不是空白方框。
+	el := ui.ButtonBase(c).Size(box, box).Radius(t.Space(1)).
+		Label("勾选 " + title).FocusRing(false)
+	el.Children(func() {
+		sq := ui.Box(c).Size(box, box).Radius(t.Space(1)).Shrink(0)
+		if on {
+			sq.Background(t.Accent)
+		} else {
+			sq.Background(t.Surface).Border(1, t.Border.Mix(t.Text, 0.25))
+		}
+		sq.DrawOver(func(p *ui.Painter, r ui.Rect) {
+			if !on {
+				return
+			}
+			var path ui.Path
+			path.MoveTo(r.X+r.W*0.22, r.Y+r.H*0.52).
+				LineTo(r.X+r.W*0.42, r.Y+r.H*0.71).
+				LineTo(r.X+r.W*0.78, r.Y+r.H*0.31)
+			p.StrokePath(&path, t.Space(0.5), t.AccentText)
+		})
+	})
+	if el.Clicked() {
+		a.toggleBatchPick(id)
+	}
 }
 
 // noteList 是笔记卡片列表；检索态显示检索结果（FR-SEARCH-02/05）。
@@ -142,16 +221,27 @@ func (a *app) noteList(c *ui.Context) {
 				row.Transition(rowTransition())
 				row.Background(row.AnimateColor("bg", hoverBg(t, row.Hovered()), hoverEase)).Children(func() {
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-						components.Text(c, hit.Title).Bold().Wrap()
+						components.Text(c, hit.Title).Bold().Wrap().Grow(1)
 						field := map[string]string{"title": "标题", "fileName": "文件名", "body": "正文"}[hit.MatchedField]
 						components.Badge(c, field)
+						if a.batchMode {
+							a.batchCheckbox(c, hit.NoteID, hit.Title)
+						}
 					})
 					if spans := highlightSpans(hit, t); len(spans) > 0 {
 						components.RichText(c, spans...)
 					} else {
 						components.Text(c, hit.Snippet).FontSize(12).TextColor(t.TextMuted).Wrap()
 					}
-				}).OnClick(func() {
+				})
+				if a.batchMode {
+					// 批量删除状态：点击行等同于点击复选框，不打开笔记。
+					row.OnClick(func() {
+						a.toggleBatchPick(hit.NoteID)
+					})
+					continue
+				}
+				row.OnClick(func() {
 					a.openNote(hit.NoteID)
 				})
 			}
@@ -191,7 +281,17 @@ func (a *app) noteList(c *ui.Context) {
 				bg = t.Surface
 			}
 			el := row.Background(bg).Children(func() {
-				components.Text(c, n.Title).Bold().Wrap()
+				// 标题行：批量删除状态下，标题右侧带一个复选框。
+				// 复选框与标题同行（Grow(1) 的标题让复选框靠右），
+				// 勾选框在标题右侧而不是行首——用户勾的是"这一篇"。
+				if a.batchMode {
+					ui.Row(c).FillWidth().Gap(t.Space(2)).AlignItems(ui.Center).Children(func() {
+						components.Text(c, n.Title).Bold().Wrap().Grow(1)
+						a.batchCheckbox(c, n.ID, n.Title)
+					})
+				} else {
+					components.Text(c, n.Title).Bold().Wrap()
+				}
 				if n.Summary != "" {
 					components.Text(c, n.Summary).FontSize(12).TextColor(t.TextMuted).Wrap()
 				}
@@ -210,6 +310,14 @@ func (a *app) noteList(c *ui.Context) {
 			})
 			if shredding >= 0 {
 				continue // 正在碎掉的行不再响应点击/右键
+			}
+			if a.batchMode {
+				// 批量删除状态：点击行等同于点击复选框（勾选/取消），
+				// 不打开笔记——否则用户想点标题旁的方框却打开了正文。
+				el.OnClick(func() {
+					a.toggleBatchPick(n.ID)
+				})
+				continue
 			}
 			el.OnClick(func() {
 				a.openNote(n.ID)

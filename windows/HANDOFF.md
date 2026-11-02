@@ -118,11 +118,6 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
    删除时把列表行按竖条切片、错峰下落旋转淡出，播完才真正移入回收站。用 MyGo 的
    `Element.Effect` + `Painter.ImageRegion/Transform/Clip` 实现，不截屏、不加浮层；
    系统"减少动态效果"时直接删除。代码在 `shred.go`，决策见第 6 节第 17 条。
-10. **应用图标换成 Looma 图标资源**（2026-11-02，尺寸证据 `docs/app-icon-2026-11-02.png`）：
-   `resources/icon.png` 换为 Looma 的 1024 方图（透明画布 + 白色圆角卡片），`mygo.json`
-   显式 `"icon"`；打包时 MyGo 生成 16~256 多尺寸 `.ico` 嵌入 exe 与 NSIS 安装包，
-   运行期 `icon.go` 再用 `go:embed` + `Window.SetIcon` 设置窗口图标（覆盖 `go run .`）。
-   已实测从 exe/安装包提取 16/32/48/256 四档图标均为新图标；细节见核实记录。
 8. **PR #1 第二轮评审整改**（2026-11-01 晚，评审 W01~W14 / N1~N5）：新增 19 个回归用例
    （共 148 个）。修掉的主要问题：列表行按行错峰导致新建笔记时相邻行重叠（保留位移动画、
    去掉错峰）、保存乱序静默覆盖新内容（写入序号 + `ErrStaleRevision`）、外部删 `.md`
