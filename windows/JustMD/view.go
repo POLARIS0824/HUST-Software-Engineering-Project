@@ -67,7 +67,13 @@ func (a *app) leftView(c *ui.Context) {
 
 			if len(a.tags) > 0 {
 				components.SidebarSection(c, "标签", func() {
-					a.tagTree(c, &sel)
+					// 标签树放进可滚动区域（评审遗留项）：
+					// 标签多时（几十个以上）侧栏被撑开，标签树被挤出
+					// 视口底部，用户滚动主内容区也看不到它。
+					// 固定最大高度 + 滚动，保证导航项始终可见。
+					ui.Scroll(c).Grow(1).FillWidth().MinWidth(0).Children(func() {
+						a.tagTree(c, &sel)
+					})
 				})
 			}
 		})
