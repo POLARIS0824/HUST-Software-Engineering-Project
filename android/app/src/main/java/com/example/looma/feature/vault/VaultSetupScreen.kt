@@ -42,9 +42,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -64,7 +64,7 @@ fun VaultSetupScreen(
     currentFolderName: String? = null,
     isInitializing: Boolean = false,
     isBusy: Boolean = false,
-    errorMessage: String? = null,
+    error: VaultSetupError? = null,
     modifier: Modifier = Modifier,
 ) {
     val content = when {
@@ -75,7 +75,6 @@ fun VaultSetupScreen(
     }
     val motion = MaterialTheme.motionScheme
 
-    // 限制最大内容宽度，平板上不会被拉得太宽
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
         Column(
             Modifier.fillMaxSize().padding(horizontal = 24.dp, vertical = 24.dp),
@@ -112,7 +111,7 @@ fun VaultSetupScreen(
                 }
 
                 AnimatedVisibility(
-                    visible = !errorMessage.isNullOrBlank(),
+                    visible = error != null,
                     enter = fadeIn(motion.defaultEffectsSpec()),
                     exit = fadeOut(motion.fastEffectsSpec()),
                 ) {
@@ -123,7 +122,7 @@ fun VaultSetupScreen(
                         modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                     ) {
                         Text(
-                            text = errorMessage.orEmpty(),
+                            text = vaultErrorText(error),
                             modifier = Modifier.padding(16.dp),
                             style = MaterialTheme.typography.bodyMedium,
                         )
@@ -141,6 +140,19 @@ fun VaultSetupScreen(
         }
     }
 }
+
+/** 笔记库错误到文案的唯一映射，Setup 与 Settings 共用 */
+@Composable
+fun vaultErrorText(error: VaultSetupError?): String = stringResource(
+    when (error) {
+        VaultSetupError.INVALID_FOLDER -> R.string.vault_setup_error_uri
+        VaultSetupError.STORAGE_SETTINGS -> R.string.vault_setup_error_settings
+        VaultSetupError.PERMISSION_ALL_FILES -> R.string.vault_permission_all_files
+        VaultSetupError.PERMISSION_STORAGE -> R.string.vault_permission_storage
+        VaultSetupError.UNAVAILABLE -> R.string.settings_vault_unavailable
+        VaultSetupError.GENERIC, null -> R.string.vault_setup_error_generic
+    },
+)
 
 private sealed interface VaultContent {
     data object Loading : VaultContent
@@ -178,13 +190,13 @@ private fun VaultSetupHeader() {
         }
         Spacer(Modifier.height(24.dp))
         Text(
-            text = "选择 Looma 笔记库",
+            text = stringResource(R.string.vault_setup_title),
             style = MaterialTheme.typography.headlineLargeEmphasized,
             modifier = Modifier.semantics { heading() },
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            text = "你的 Markdown 笔记将保存在所选文件夹中",
+            text = stringResource(R.string.vault_setup_subtitle),
             style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -213,20 +225,24 @@ private fun VaultFolderCard(
                 shape = CircleShape,
             ) {
                 Text(
-                    text = if (pending) "待连接" else "当前文件夹",
+                    text = stringResource(
+                        if (pending) R.string.vault_setup_pending_label else R.string.vault_setup_current_label,
+                    ),
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                 )
             }
             Text(
-                text = folderName.ifBlank { "未命名文件夹" },
+                text = folderName.ifBlank { stringResource(R.string.vault_setup_unnamed_folder) },
                 style = MaterialTheme.typography.headlineSmall,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
             Surface(color = colors.surface, contentColor = colors.onSurface, shape = CircleShape) {
                 Text(
-                    text = if (pending) "等待确认" else "已连接",
+                    text = stringResource(
+                        if (pending) R.string.vault_setup_pending_hint else R.string.vault_setup_connected,
+                    ),
                     style = MaterialTheme.typography.labelLarge,
                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                 )
@@ -234,7 +250,7 @@ private fun VaultFolderCard(
             if (pending && previousFolderName != null) {
                 HorizontalDivider(color = colors.onPrimaryContainer.copy(alpha = 0.16f))
                 Text(
-                    text = "当前文件夹：$previousFolderName",
+                    text = stringResource(R.string.vault_setup_previous, previousFolderName),
                     style = MaterialTheme.typography.labelLarge,
                     color = colors.onPrimaryContainer.copy(alpha = 0.72f),
                     maxLines = 1,
@@ -265,13 +281,22 @@ private fun VaultSetupActions(
             modifier = Modifier.fillMaxWidth().heightIn(min = height),
             contentPadding = ButtonDefaults.contentPaddingFor(height),
         ) {
-            Text("选择文件夹", style = ButtonDefaults.textStyleFor(height))
+            Text(
+                text = stringResource(R.string.vault_setup_choose),
+                style = ButtonDefaults.textStyleFor(height),
+            )
         }
         return
     }
 
-    val primaryLabel = if (busy) "正在连接…" else if (content is VaultContent.Pending) "确认" else "继续"
-    val secondaryLabel = if (content is VaultContent.Pending) "重选" else "更换"
+    val primaryLabel = when {
+        busy -> stringResource(R.string.vault_setup_connecting)
+        content is VaultContent.Pending -> stringResource(R.string.vault_setup_confirm)
+        else -> stringResource(R.string.vault_setup_confirm)
+    }
+    val secondaryLabel = stringResource(
+        if (content is VaultContent.Pending) R.string.vault_setup_reselect else R.string.vault_setup_change,
+    )
     // 窄屏纵向排列；宽屏连体按钮，主按钮的文字与指示器不会抢占空间
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val narrow = maxWidth < 305.dp

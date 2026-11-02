@@ -10,13 +10,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
+import com.example.looma.data.settings.ThemePreset
 
 /**
  * A single source of truth for the app's Material 3 Expressive theme.
  *
  * Color priority:
- * 1. System Dynamic Color on Android 12+ (when enabled)
- * 2. Material 3 Expressive fallback scheme for light/dark mode
+ * 1. System Dynamic Color on Android 12+ when the user turned it on
+ * 2. The selected preset palette, derived from one seed color
  *
  * Typography and motion remain consistent regardless of the color source.
  *
@@ -28,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 fun LoomaTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
+    preset: ThemePreset = ThemePreset.Default,
     content: @Composable () -> Unit,
 ) {
     val colorScheme = when {
@@ -35,8 +37,7 @@ fun LoomaTheme(
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
-        darkTheme -> LoomaDarkColors
-        else -> LoomaLightColors
+        else -> presetScheme(preset, darkTheme)
     }
     val typography = rememberLoomaTypography()
     val colors = remember(colorScheme) { loomaColors(colorScheme) }

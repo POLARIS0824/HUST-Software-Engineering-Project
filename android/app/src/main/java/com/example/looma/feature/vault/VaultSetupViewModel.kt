@@ -92,12 +92,7 @@ class VaultSetupViewModel(
                 throw e
             } catch (e: Exception) {
                 _uiState.update {
-                    it.copy(
-                        isBusy = false,
-                        actionError = e.localizedMessage
-                            ?.takeIf { message -> message.isNotBlank() }
-                            ?: "连接笔记库失败，请重试",
-                    )
+                    it.copy(isBusy = false, actionError = VaultSetupError.GENERIC)
                 }
 
                 // 失败可能来自已保存的笔记库本身，例如权限被撤销，重新校验后让界面与存储保持一致
@@ -106,11 +101,11 @@ class VaultSetupViewModel(
         }
     }
 
-    /** 文件选择器返回了无法识别的目录 */
-    fun showError(message: String) {
+    /** 文件选择器返回了无法识别的目录，或缺少存储权限 */
+    fun showError(error: VaultSetupError) {
         _uiState.update {
             it.copy(
-                actionError = message,
+                actionError = error,
                 selectionSaved = false,
             )
         }

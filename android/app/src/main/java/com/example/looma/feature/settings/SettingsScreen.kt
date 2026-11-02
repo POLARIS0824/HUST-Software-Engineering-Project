@@ -1,0 +1,541 @@
+@file:OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+
+package com.example.looma.feature.settings
+
+import android.os.Build
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.looma.R
+import com.example.looma.data.settings.AppLanguage
+import com.example.looma.data.settings.AppLocale
+import com.example.looma.data.settings.AppSettings
+import com.example.looma.data.settings.ThemePreset
+import com.example.looma.feature.vault.VaultSetupError
+import com.example.looma.feature.vault.VaultSetupViewModel
+import com.example.looma.feature.vault.rememberVaultPickerActions
+import com.example.looma.feature.vault.vaultErrorText
+import com.example.looma.ui.components.LoomaIcon
+import com.example.looma.ui.theme.LoomaTokens
+import com.example.looma.ui.theme.presetScheme
+
+/** 设置页：笔记库、外观、语言、笔记行为、文件访问与版本 */
+@Composable
+fun SettingsRoute(
+    vaultViewModel: VaultSetupViewModel,
+    settingsViewModel: SettingsViewModel,
+    onNavigateUp: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val vaultState by vaultViewModel.uiState.collectAsStateWithLifecycle()
+    val settings by settingsViewModel.settings.collectAsStateWithLifecycle()
+    val picker = rememberVaultPickerActions(vaultViewModel)
+    var hasStorageAccess by remember { mutableStateOf(picker.hasAccess()) }
+    val context = LocalContext.current
+    val versionName = remember(context) {
+        runCatching {
+            @Suppress("DEPRECATION")
+            context.packageManager.getPackageInfo(context.packageName, 0).versionName
+        }.getOrNull().orEmpty()
+    }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        vaultViewModel.refreshVaultStatus()
+        hasStorageAccess = picker.hasAccess()
+    }
+
+    SettingsScreen(
+        vaultName = vaultState.currentFolderName,
+        vaultPath = vaultState.currentFolderPath,
+        vaultError = vaultState.error,
+        hasStorageAccess = hasStorageAccess,
+        isVaultBusy = vaultState.isBusy,
+        versionName = versionName,
+        settings = settings,
+        language = AppLocale.current(),
+        onChooseFolderClick = picker.chooseFolder,
+        onDynamicColorChange = settingsViewModel::setDynamicColor,
+        onThemePresetSelect = settingsViewModel::setThemePreset,
+        onLanguageSelect = AppLocale::apply,
+        onKeepEmptyNotesChange = settingsViewModel::setKeepEmptyNotes,
+        onNavigateUp = onNavigateUp,
+        modifier = modifier,
+    )
+}
+
+@Composable
+fun SettingsScreen(
+    vaultName: String?,
+    vaultPath: String?,
+    vaultError: VaultSetupError?,
+    hasStorageAccess: Boolean,
+    isVaultBusy: Boolean,
+    versionName: String,
+    settings: AppSettings,
+    language: AppLanguage,
+    onChooseFolderClick: () -> Unit,
+    onDynamicColorChange: (Boolean) -> Unit,
+    onThemePresetSelect: (ThemePreset) -> Unit,
+    onLanguageSelect: (AppLanguage) -> Unit,
+    onKeepEmptyNotesChange: (Boolean) -> Unit,
+    onNavigateUp: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var themeDialogVisible by remember { mutableStateOf(false) }
+    var languageDialogVisible by remember { mutableStateOf(false) }
+    val dynamicColorSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+
+    Scaffold(
+        modifier = modifier.fillMaxSize(),
+        containerColor = LoomaTokens.colors.page,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        text = stringResource(R.string.settings_title),
+                        style = LoomaTokens.type.sheetTitle,
+                        color = LoomaTokens.colors.title,
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onNavigateUp) {
+                        LoomaIcon(
+                            iconRes = R.drawable.ic_arrow_back,
+                            contentDescription = stringResource(R.string.nav_back),
+                        )
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = LoomaTokens.colors.page,
+                    navigationIconContentColor = LoomaTokens.colors.title,
+                ),
+            )
+        },
+    ) { innerPadding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(innerPadding)
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            SettingsSectionHeader(stringResource(R.string.settings_section_vault))
+            SettingsCard {
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = vaultName ?: stringResource(R.string.settings_vault_none),
+                            style = LoomaTokens.type.cardTitle,
+                            color = LoomaTokens.colors.title,
+                        )
+                    },
+                    supportingContent = vaultPath?.let { path ->
+                        {
+                            Text(
+                                text = path,
+                                style = LoomaTokens.type.cardMeta,
+                                color = LoomaTokens.colors.muted,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    },
+                    trailingContent = {
+                        TextButton(onClick = onChooseFolderClick, enabled = !isVaultBusy) {
+                            Text(
+                                stringResource(
+                                    if (vaultName == null) {
+                                        R.string.settings_vault_choose
+                                    } else {
+                                        R.string.settings_vault_change
+                                    },
+                                ),
+                            )
+                        }
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
+            }
+            vaultError?.let { failure ->
+                Text(
+                    text = vaultErrorText(failure),
+                    style = LoomaTokens.type.cardBody,
+                    color = LoomaTokens.colors.error,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
+
+            SettingsSectionHeader(stringResource(R.string.settings_section_appearance))
+            SettingsCard {
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_dynamic_color),
+                    description = stringResource(
+                        if (dynamicColorSupported) {
+                            R.string.settings_dynamic_color_desc
+                        } else {
+                            R.string.settings_dynamic_color_unavailable
+                        },
+                    ),
+                    checked = settings.dynamicColor && dynamicColorSupported,
+                    enabled = dynamicColorSupported,
+                    onCheckedChange = onDynamicColorChange,
+                )
+                SettingsRow(
+                    title = stringResource(R.string.settings_theme),
+                    description = if (settings.dynamicColor && dynamicColorSupported) {
+                        stringResource(R.string.settings_theme_wallpaper)
+                    } else {
+                        themeName(settings.themePreset)
+                    },
+                    trailing = {
+                        ThemeSwatch(
+                            preset = settings.themePreset,
+                            useWallpaper = settings.dynamicColor && dynamicColorSupported,
+                        )
+                    },
+                    onClick = { themeDialogVisible = true },
+                )
+            }
+
+            SettingsSectionHeader(stringResource(R.string.settings_section_language))
+            SettingsCard {
+                SettingsRow(
+                    title = stringResource(R.string.settings_language),
+                    description = languageName(language),
+                    onClick = { languageDialogVisible = true },
+                )
+            }
+
+            SettingsSectionHeader(stringResource(R.string.settings_section_notes))
+            SettingsCard {
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_keep_empty_notes),
+                    description = stringResource(R.string.settings_keep_empty_notes_desc),
+                    checked = settings.keepEmptyNotes,
+                    enabled = true,
+                    onCheckedChange = onKeepEmptyNotesChange,
+                )
+            }
+
+            SettingsSectionHeader(stringResource(R.string.settings_section_storage))
+            SettingsCard {
+                SettingsRow(
+                    title = stringResource(
+                        if (hasStorageAccess) {
+                            R.string.settings_storage_allowed
+                        } else {
+                            R.string.settings_storage_denied
+                        },
+                    ),
+                    trailing = if (!hasStorageAccess) {
+                        {
+                            TextButton(onClick = onChooseFolderClick) {
+                                Text(stringResource(R.string.settings_storage_grant))
+                            }
+                        }
+                    } else {
+                        null
+                    },
+                )
+            }
+
+            SettingsSectionHeader(stringResource(R.string.settings_section_about))
+            SettingsCard {
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = stringResource(R.string.app_name),
+                            style = LoomaTokens.type.cardTitle,
+                            color = LoomaTokens.colors.title,
+                        )
+                    },
+                    supportingContent = {
+                        Text(
+                            text = stringResource(R.string.settings_version, versionName),
+                            style = LoomaTokens.type.cardMeta,
+                            color = LoomaTokens.colors.muted,
+                        )
+                    },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                )
+            }
+        }
+    }
+
+    if (themeDialogVisible) {
+        ThemePresetDialog(
+            current = settings.themePreset,
+            onSelect = {
+                onThemePresetSelect(it)
+                themeDialogVisible = false
+            },
+            onDismiss = { themeDialogVisible = false },
+        )
+    }
+
+    if (languageDialogVisible) {
+        LanguageDialog(
+            current = language,
+            onSelect = {
+                onLanguageSelect(it)
+                languageDialogVisible = false
+            },
+            onDismiss = { languageDialogVisible = false },
+        )
+    }
+}
+
+@Composable
+private fun ThemePresetDialog(
+    current: ThemePreset,
+    onSelect: (ThemePreset) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_theme_dialog_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                ThemePreset.entries.forEach { preset ->
+                    val selected = preset == current
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 52.dp)
+                            .clickable { onSelect(preset) }
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    ) {
+                        ThemeSwatch(preset = preset, useWallpaper = false)
+                        Text(
+                            text = themeName(preset),
+                            style = LoomaTokens.type.sheetOption,
+                            color = LoomaTokens.colors.title,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (selected) {
+                            LoomaIcon(
+                                iconRes = R.drawable.ic_check,
+                                contentDescription = null,
+                                tint = LoomaTokens.colors.accent,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.dialog_cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun LanguageDialog(
+    current: AppLanguage,
+    onSelect: (AppLanguage) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_language_dialog_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                AppLanguage.entries.forEach { language ->
+                    val selected = language == current
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 52.dp)
+                            .selectable(selected = selected, onClick = { onSelect(language) })
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            text = languageName(language),
+                            style = LoomaTokens.type.sheetOption,
+                            color = LoomaTokens.colors.title,
+                            modifier = Modifier.weight(1f),
+                        )
+                        if (selected) {
+                            LoomaIcon(
+                                iconRes = R.drawable.ic_check,
+                                contentDescription = null,
+                                tint = LoomaTokens.colors.accent,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.dialog_cancel)) }
+        },
+    )
+}
+
+/** 主题色块：直接渲染那套主题的主色，选择结果所见即所得 */
+@Composable
+private fun ThemeSwatch(preset: ThemePreset, useWallpaper: Boolean) {
+    val scheme = if (useWallpaper) {
+        MaterialTheme.colorScheme
+    } else {
+        presetScheme(preset, dark = false)
+    }
+    Box(
+        modifier = Modifier
+            .size(28.dp)
+            .background(scheme.primary, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (useWallpaper) {
+            Box(Modifier.size(12.dp).background(scheme.tertiary, CircleShape))
+        }
+    }
+}
+
+@Composable
+private fun themeName(preset: ThemePreset): String = stringResource(
+    when (preset) {
+        ThemePreset.Default -> R.string.settings_theme_default
+        ThemePreset.Indigo -> R.string.settings_theme_indigo
+        ThemePreset.Teal -> R.string.settings_theme_teal
+        ThemePreset.Rose -> R.string.settings_theme_rose
+        ThemePreset.Amber -> R.string.settings_theme_amber
+    },
+)
+
+@Composable
+private fun languageName(language: AppLanguage): String = when (language) {
+    AppLanguage.System -> stringResource(R.string.settings_language_system)
+    AppLanguage.English -> "English"
+    AppLanguage.Chinese -> "简体中文"
+}
+
+@Composable
+private fun SettingsSwitchRow(
+    title: String,
+    description: String,
+    checked: Boolean,
+    enabled: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    ListItem(
+        headlineContent = {
+            Text(
+                text = title,
+                style = LoomaTokens.type.cardBody,
+                color = if (enabled) LoomaTokens.colors.title else LoomaTokens.colors.muted,
+            )
+        },
+        supportingContent = {
+            Text(
+                text = description,
+                style = LoomaTokens.type.cardMeta,
+                color = LoomaTokens.colors.muted,
+            )
+        },
+        trailingContent = {
+            Switch(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
+}
+
+@Composable
+private fun SettingsRow(
+    title: String,
+    description: String? = null,
+    trailing: (@Composable () -> Unit)? = null,
+    onClick: (() -> Unit)? = null,
+) {
+    ListItem(
+        modifier = if (onClick != null) {
+            Modifier.fillMaxWidth().clickable(onClick = onClick)
+        } else {
+            Modifier.fillMaxWidth()
+        },
+        headlineContent = {
+            Text(
+                text = title,
+                style = LoomaTokens.type.cardBody,
+                color = LoomaTokens.colors.title,
+            )
+        },
+        supportingContent = description?.let { text ->
+            {
+                Text(
+                    text = text,
+                    style = LoomaTokens.type.cardMeta,
+                    color = LoomaTokens.colors.muted,
+                )
+            }
+        },
+        trailingContent = trailing,
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+    )
+}
+
+@Composable
+private fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.titleSmall,
+        color = LoomaTokens.colors.muted,
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp),
+    )
+}
+
+@Composable
+private fun SettingsCard(content: @Composable () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = LoomaTokens.colors.card,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        // Surface 的内容放在 Box 里，多行必须自己叠成 Column，否则会重叠
+        Column { content() }
+    }
+}

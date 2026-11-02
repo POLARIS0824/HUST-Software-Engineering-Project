@@ -1,40 +1,28 @@
 package com.example.looma
 
-import android.content.ActivityNotFoundException
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.os.Build
 import android.os.Bundle
-import android.provider.Settings
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.ActivityResultLauncher
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.looma.data.folder.FolderRepository
 import com.example.looma.data.note.NoteRepository
+import com.example.looma.data.settings.AppSettings
+import com.example.looma.data.settings.SettingsRepository
 import com.example.looma.data.vault.VaultRepository
-import com.example.looma.data.vault.VaultStorageAccess
-import com.example.looma.feature.vault.VaultSetupScreen
 import com.example.looma.feature.vault.VaultSetupViewModel
 import com.example.looma.navigation.LoomaNavGraph
 import com.example.looma.ui.theme.LoomaTheme
 
-class MainActivity : ComponentActivity() {
+class MainActivity : AppCompatActivity() {
     private val vaultRepository by lazy { VaultRepository(applicationContext) }
     private val noteRepository by lazy { NoteRepository(vaultRepository) }
+    private val folderRepository by lazy { FolderRepository(vaultRepository) }
+    private val settingsRepository by lazy { SettingsRepository(applicationContext) }
 
-    // Vault picker belongs to Activity (it launches system activity-result contracts).
+    // 笔记库状态与设置页共用一个 ViewModel：Activity 级作用域，切换目的地不会丢状态
     private val vaultSetupViewModel: VaultSetupViewModel by viewModels {
         VaultSetupViewModel.factory(vaultRepository)
     }
@@ -43,111 +31,21 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            LoomaTheme {
+            // 主题偏好是 Activity 级的：改完立刻换色，不需要重启
+            val settings by settingsRepository.settings
+                .collectAsStateWithLifecycle(initialValue = AppSettings())
+            LoomaTheme(
+                dynamicColor = settings.dynamicColor,
+                preset = settings.themePreset,
+            ) {
                 LoomaNavGraph(
                     vaultRepository = vaultRepository,
                     noteRepository = noteRepository,
+                    folderRepository = folderRepository,
+                    settingsRepository = settingsRepository,
                     vaultSetupViewModel = vaultSetupViewModel,
-                    vaultSetupContent = { modifier ->
-                        VaultSetupRoute(viewModel = vaultSetupViewModel, modifier = modifier)
-                    },
                 )
             }
-        }
-    }
-}
-
-/** Retains the existing system folder picker and permission logic, now hosted by NavDisplay. */
-@Composable
-private fun VaultSetupRoute(
-    viewModel: VaultSetupViewModel,
-    modifier: Modifier = Modifier,
-) {
-    val context = LocalContext.current
-    val storageAccess = remember(context) { VaultStorageAccess(context) }
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-
-    LifecycleEventEffect(Lifecycle.Event.ON_START) {
-        viewModel.refreshVaultStatus()
-    }
-
-    val folderPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree(),
-    ) { uri: Uri? ->
-        if (uri != null) {
-            runCatching { storageAccess.resolveVaultDirectory(uri) }
-                .onSuccess { directory ->
-                    viewModel.onFolderSelected(directory.path, directory.name)
-                }
-                .onFailure { error ->
-                    viewModel.showError(error.localizedMessage ?: "无法识别所选文件夹")
-                }
-        }
-    }
-
-    val settingsLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.StartActivityForResult(),
-    ) {
-        if (storageAccess.hasAccess()) {
-            folderPickerLauncher.launch(null)
-        } else {
-            viewModel.showError(storageAccess.accessRequiredMessage)
-        }
-    }
-
-    val legacyPermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestMultiplePermissions(),
-    ) {
-        if (storageAccess.hasAccess()) {
-            folderPickerLauncher.launch(null)
-        } else {
-            viewModel.showError(storageAccess.accessRequiredMessage)
-        }
-    }
-
-    VaultSetupScreen(
-        selectedFolderName = uiState.selectedFolderName,
-        currentFolderName = uiState.currentFolderName,
-        isInitializing = uiState.isInitializing,
-        isBusy = uiState.isBusy,
-        errorMessage = uiState.errorMessage,
-        onChooseFolderClick = {
-            viewModel.clearError()
-            when {
-                storageAccess.hasAccess() -> folderPickerLauncher.launch(null)
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.R ->
-                    openAllFilesAccessSettings(
-                        context = context,
-                        launcher = settingsLauncher,
-                        onUnavailable = {
-                            viewModel.showError("无法打开存储权限设置页面")
-                        },
-                    )
-                else -> legacyPermissionLauncher.launch(
-                    VaultStorageAccess.LEGACY_PERMISSIONS,
-                )
-            }
-        },
-        onConfirmClick = viewModel::confirmSelection,
-        modifier = modifier,
-    )
-}
-
-private fun openAllFilesAccessSettings(
-    context: Context,
-    launcher: ActivityResultLauncher<Intent>,
-    onUnavailable: () -> Unit,
-) {
-    val appSettings = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-        data = Uri.parse("package:${context.packageName}")
-    }
-    try {
-        launcher.launch(appSettings)
-    } catch (_: ActivityNotFoundException) {
-        try {
-            launcher.launch(Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION))
-        } catch (_: ActivityNotFoundException) {
-            onUnavailable()
         }
     }
 }
