@@ -186,4 +186,6 @@
     <string name="editor_load_failed">打开这篇笔记失败</string>
     <string name="home_snackbar_renamed_links">已重命名，更新了 %1$d 处引用</string>
     <string name="home_snackbar_renamed_failed">已重命名，%1$d 处引用未能更新</string>
+    <string name="note_backlinks_title">反向链接 · %1$d</string>
+    <string name="note_link_missing">没有名为「%1$s」的笔记</string>
 </resources>

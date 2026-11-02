@@ -188,6 +188,7 @@ fun LoomaNavGraph(
                             .substringAfterLast('/')
                             .substringBeforeLast('.'),
                         onNavigateUp = { if (backStack.size > 1) backStack.removeLastOrNull() },
+                        onOpenNote = { noteId -> backStack.add(LoomaRoute.Note.from(noteId)) },
                     )
                 }
             },

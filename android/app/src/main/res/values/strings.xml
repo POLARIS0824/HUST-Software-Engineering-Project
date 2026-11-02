@@ -186,4 +186,6 @@
     <string name="editor_load_failed">Could not open this note</string>
     <string name="home_snackbar_renamed_links">Renamed, %1$d backlink(s) updated</string>
     <string name="home_snackbar_renamed_failed">Renamed, %1$d backlink(s) could not be updated</string>
+    <string name="note_backlinks_title">Backlinks · %1$d</string>
+    <string name="note_link_missing">No note named \"%1$s\"</string>
 </resources>

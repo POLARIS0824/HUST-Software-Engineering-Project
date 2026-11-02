@@ -9,6 +9,7 @@ import com.example.looma.data.note.NoteChangedExternallyException
 import com.example.looma.data.note.NoteRepository
 import com.example.looma.data.settings.SettingsRepository
 import com.example.looma.domain.model.NoteId
+import com.example.looma.domain.wiki.WikiContext
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -49,6 +50,8 @@ class NoteViewModel(
             try {
                 val note = repository.readNote(noteId)
                 val keepEmptyNotes = settingsRepository.settings.first().keepEmptyNotes
+                // 索引只是缓存：读它失败不该让笔记打不开，链接退化成全部未解析即可
+                val wiki = runCatching { repository.wikiContext(noteId) }.getOrDefault(WikiContext.Empty)
                 _uiState.update {
                     it.copy(
                         content = note.content,
@@ -60,12 +63,31 @@ class NoteViewModel(
                         loadFailed = false,
                         isConflict = false,
                         keepEmptyNotes = keepEmptyNotes,
+                        wiki = wiki,
                     )
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 _uiState.update { it.copy(isLoading = false, loadFailed = true) }
+            }
+        }
+    }
+
+    /**
+     * 回到这篇笔记时重取双链快照：刚刚从别的笔记回来，那边的改动可能新增了反向链接，
+     * 或让原本未解析的目标存在了。只读索引，不读盘。
+     */
+    fun refreshWiki() {
+        if (_uiState.value.isLoading) return
+        viewModelScope.launch {
+            try {
+                val wiki = repository.wikiContext(noteId)
+                _uiState.update { it.copy(wiki = wiki) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // 保留上一份快照：链接样式过时，比整篇笔记报错要好
             }
         }
     }

@@ -1,6 +1,7 @@
 package com.example.looma.feature.note
 
 import com.example.looma.domain.markdown.isEffectivelyEmpty
+import com.example.looma.domain.wiki.WikiContext
 import java.time.Instant
 
 /** 自动保存的状态机；[Failed] 之后不再自动重试，等用户重试或覆盖 */
@@ -22,6 +23,8 @@ data class NoteUiState(
     val leaveBlocked: Boolean = false,
     /** 打开笔记时读到的设置：没有写内容就离开时要不要丢弃 */
     val keepEmptyNotes: Boolean = true,
+    /** 正文里每个 `[[目标]]` 解析到哪篇笔记，以及谁链接到这里；空表示还没读到 */
+    val wiki: WikiContext = WikiContext.Empty,
 ) {
     val isDirty: Boolean get() = !isLoading && content != savedContent
 

@@ -27,6 +27,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
@@ -35,6 +36,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.looma.R
+import com.example.looma.domain.wiki.WikiContext
 import com.example.looma.ui.theme.LoomaTokens
 import com.mikepenz.markdown.annotator.annotatorSettings
 import com.mikepenz.markdown.annotator.buildMarkdownAnnotatedString
@@ -118,6 +120,9 @@ fun loomaMarkdownTheme(base: TextStyle, compact: Boolean = false): LoomaMarkdown
  * 组件集合。[onCheckboxToggle] 为 null 时复选框只读（卡片预览），
  * 有回调时点击交回原文坐标，由 feature 层写回文件。
  *
+ * [wiki] 为 null 时不处理双链（卡片预览），有值时为 `[[..]]` 加样式与点击；
+ * 解析结果只影响颜色，点击交回 [onWikiLinkClick]，渲染层不认识 NoteId。
+ *
  * 不是 @Composable：调用方可以用 remember 缓存，避免滚动时重建组件树。
  */
 fun loomaMarkdownComponents(
@@ -127,22 +132,38 @@ fun loomaMarkdownComponents(
     onCheckboxToggle: ((position: Int, checked: Boolean) -> Unit)? = null,
     bodyStart: Int = 0,
     showImages: Boolean = true,
+    wiki: WikiContext? = null,
+    onWikiLinkClick: (String) -> Unit = {},
+    resolvedLink: SpanStyle = SpanStyle(),
+    missingLink: SpanStyle = SpanStyle(),
 ): MarkdownComponents {
     val checkSize = if (compact) 14.dp else 18.dp
     val checkGap = if (compact) 6.dp else 9.dp
     // 列表的标记列由渲染库的 markerModifier 控制宽度，所以列宽要把复选框和间距一起算进去
     val markerColumn = checkSize + checkGap
     val headingBottom = if (compact) 0.dp else 2.dp
+    val links: WikiAnnotator? = wiki?.let { context ->
+        val codeBackground = theme.colors.inlineCodeBackground
+        { text: AnnotatedString ->
+            text.withWikiLinks(
+                codeBackground = codeBackground,
+                isResolved = { target -> context.resolve(target) != null },
+                onClick = onWikiLinkClick,
+                resolvedStyle = resolvedLink,
+                missingStyle = missingLink,
+            )
+        }
+    }
 
     return markdownComponents(
-        heading1 = heading(theme.typography.h1, MarkdownTokenTypes.ATX_CONTENT, if (compact) 10.dp else 20.dp, headingBottom, null),
-        heading2 = heading(theme.typography.h2, MarkdownTokenTypes.ATX_CONTENT, if (compact) 8.dp else 16.dp, if (compact) 0.dp else 6.dp, if (compact) null else dividerColor),
-        heading3 = heading(theme.typography.h3, MarkdownTokenTypes.ATX_CONTENT, if (compact) 6.dp else 12.dp, headingBottom, null),
-        heading4 = heading(theme.typography.h4, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null),
-        heading5 = heading(theme.typography.h5, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null),
-        heading6 = heading(theme.typography.h6, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null),
-        setextHeading1 = heading(theme.typography.h1, MarkdownTokenTypes.SETEXT_CONTENT, if (compact) 10.dp else 20.dp, headingBottom, null),
-        setextHeading2 = heading(theme.typography.h2, MarkdownTokenTypes.SETEXT_CONTENT, if (compact) 8.dp else 16.dp, if (compact) 0.dp else 6.dp, if (compact) null else dividerColor),
+        heading1 = heading(theme.typography.h1, MarkdownTokenTypes.ATX_CONTENT, if (compact) 10.dp else 20.dp, headingBottom, null, links),
+        heading2 = heading(theme.typography.h2, MarkdownTokenTypes.ATX_CONTENT, if (compact) 8.dp else 16.dp, if (compact) 0.dp else 6.dp, if (compact) null else dividerColor, links),
+        heading3 = heading(theme.typography.h3, MarkdownTokenTypes.ATX_CONTENT, if (compact) 6.dp else 12.dp, headingBottom, null, links),
+        heading4 = heading(theme.typography.h4, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null, links),
+        heading5 = heading(theme.typography.h5, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null, links),
+        heading6 = heading(theme.typography.h6, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null, links),
+        setextHeading1 = heading(theme.typography.h1, MarkdownTokenTypes.SETEXT_CONTENT, if (compact) 10.dp else 20.dp, headingBottom, null, links),
+        setextHeading2 = heading(theme.typography.h2, MarkdownTokenTypes.SETEXT_CONTENT, if (compact) 8.dp else 16.dp, if (compact) 0.dp else 6.dp, if (compact) null else dividerColor, links),
         unorderedList = { model ->
             MarkdownBulletList(
                 content = model.content,
@@ -161,7 +182,7 @@ fun loomaMarkdownComponents(
                 listModifier = { Modifier.weight(1f) },
             )
         },
-        paragraph = { model -> LoomaMarkdownParagraph(model) },
+        paragraph = { model -> LoomaMarkdownParagraph(model, links) },
         checkbox = { model ->
             CheckboxMarker(
                 checked = model.isChecked(),
@@ -178,19 +199,23 @@ fun loomaMarkdownComponents(
     )
 }
 
+/** 段落与标题共用的双链标注；由 [loomaMarkdownComponents] 建一次 */
+private typealias WikiAnnotator = (AnnotatedString) -> AnnotatedString
+
 private fun heading(
     style: TextStyle,
     contentChildType: IElementType,
     top: Dp,
     bottom: Dp,
     borderColor: Color?,
+    links: WikiAnnotator?,
 ): MarkdownComponent = { model ->
     val settings = annotatorSettings()
-    val annotated = remember(model.content, model.node, settings) {
+    val annotated = remember(model.content, model.node, settings, links) {
         val child = model.node.findChildOfType(contentChildType) ?: model.node
         buildAnnotatedString {
             buildMarkdownAnnotatedString(model.content, child, settings)
-        }.withSynthItalic()
+        }.withSynthItalic().let { links?.invoke(it) ?: it }
     }
     MarkdownText(
         content = annotated,
@@ -218,12 +243,12 @@ private fun heading(
 
 /** 段落自己构建 AnnotatedString，才能给斜体补上绘制期倾斜 */
 @Composable
-private fun LoomaMarkdownParagraph(model: MarkdownComponentModel) {
+private fun LoomaMarkdownParagraph(model: MarkdownComponentModel, links: WikiAnnotator?) {
     val settings = annotatorSettings()
-    val annotated = remember(model.content, model.node, settings) {
+    val annotated = remember(model.content, model.node, settings, links) {
         buildAnnotatedString {
             buildMarkdownAnnotatedString(model.content, model.node, settings)
-        }.withSynthItalic()
+        }.withSynthItalic().let { links?.invoke(it) ?: it }
     }
     MarkdownText(
         content = annotated,
