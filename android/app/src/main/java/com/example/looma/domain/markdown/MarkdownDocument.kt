@@ -31,7 +31,7 @@ fun MarkdownDocument.withCheckboxChecked(position: Int, checked: Boolean): Strin
     val end = start + MARKER_LENGTH
     if (end > source.length) return null
     val marker = source.substring(start, end)
-    if (marker != UNCHECKED && marker != CHECKED) return null
+    if (!marker.equals(UNCHECKED) && !marker.equals(CHECKED, ignoreCase = true)) return null
     return source.replaceRange(start, end, if (checked) CHECKED else UNCHECKED)
 }
 

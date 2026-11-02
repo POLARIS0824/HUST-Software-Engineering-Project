@@ -77,7 +77,7 @@ object MarkdownIndex {
         if (start + MARKER_LENGTH > text.length) return null
         return MarkdownCheckbox(
             range = (base + start) until (base + start + MARKER_LENGTH),
-            checked = text.regionMatches(start, CHECKED, 0, MARKER_LENGTH),
+            checked = text.regionMatches(start, CHECKED, 0, MARKER_LENGTH, ignoreCase = true),
         )
     }
 

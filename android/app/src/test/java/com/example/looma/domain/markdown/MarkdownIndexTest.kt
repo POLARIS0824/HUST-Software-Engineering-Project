@@ -62,6 +62,17 @@ class MarkdownIndexTest {
     }
 
     @Test
+    fun `an uppercase marker counts as checked and can still be tapped`() {
+        val text = "- [X] 已完成\n"
+
+        val document = MarkdownIndex.index(text, "兜底")
+        val box = document.checkboxes.single()
+
+        assertTrue(box.checked)
+        assertEquals("- [ ] 已完成\n", document.withCheckboxChecked(box.range.first, false))
+    }
+
+    @Test
     fun `checkbox-looking lines inside a code fence are not clickable`() {
         val fenced = """
             # 标题
