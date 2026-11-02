@@ -187,4 +187,9 @@
     <string name="home_snackbar_renamed_failed">已重命名，%1$d 处引用未能更新</string>
     <string name="note_backlinks_title">反向链接 · %1$d</string>
     <string name="note_link_missing">没有名为「%1$s」的笔记</string>
+    <string name="editor_wikilink">插入双链</string>
+    <string name="editor_wikilink_search">搜索笔记</string>
+    <string name="editor_wikilink_empty">没有匹配的笔记</string>
+    <string name="editor_reload_from_disk">从磁盘重载</string>
+    <string name="editor_draft_restored">已恢复上次未保存的内容</string>
 </resources>

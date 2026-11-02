@@ -9,6 +9,7 @@ import com.example.looma.domain.model.TrashedNote
 import com.example.looma.domain.model.Vault
 import java.io.File
 import java.io.IOException
+import java.security.MessageDigest
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -164,6 +165,53 @@ internal class NoteFileStore(
     fun resolveCover(note: StoredMarkdown, reference: String?): String? =
         resolveCover(note.root, note.file, reference)
 
+    /**
+     * 把还没落盘的正文写进草稿区，进程被杀后还能捞回来。
+     *
+     * 草稿不参与扫描（`.looma` 是点目录），文件名是路径的哈希，
+     * 所以改名或换目录后旧草稿不会串到别的笔记上。
+     */
+    suspend fun writeDraft(id: NoteId, content: String) = withContext(Dispatchers.IO) {
+        val (_, ops) = currentVault(id.vaultId)
+        val file = draftFile(ops.rootDir, id.path)
+        file.parentFile?.mkdirs()
+        writeMarkdown(file, content)
+    }
+
+    /** 读到比正文更新的草稿就返回它；没有草稿或草稿更旧时返回 null */
+    suspend fun readDraft(id: NoteId, noteModifiedAt: Instant): String? = withContext(Dispatchers.IO) {
+        val (_, ops) = currentVault(id.vaultId)
+        val file = draftFile(ops.rootDir, id.path)
+        if (!file.isFile) return@withContext null
+        if (Instant.ofEpochMilli(file.lastModified()) <= noteModifiedAt) return@withContext null
+        runCatching { readMarkdown(file) }.getOrNull()
+    }
+
+    suspend fun deleteDraft(id: NoteId) = withContext(Dispatchers.IO) {
+        val (_, ops) = currentVault(id.vaultId)
+        draftFile(ops.rootDir, id.path).delete()
+    }
+
+    /** 覆盖保存之前把磁盘上的那一份留档，返回备份文件路径 */
+    suspend fun backupConflict(id: NoteId, content: String): File = withContext(Dispatchers.IO) {
+        val (_, ops) = currentVault(id.vaultId)
+        val directory = File(ops.rootDir, CONFLICT_DIRECTORY)
+        if (!directory.isDirectory && !directory.mkdirs()) {
+            throw VaultFileException(VaultFileFailure.IO)
+        }
+        val base = id.path.relativePath.substringAfterLast('/').removeSuffix(MARKDOWN_SUFFIX)
+        val file = File(directory, "$base-${Instant.now().toEpochMilli()}$MARKDOWN_SUFFIX")
+        writeMarkdown(file, content)
+        file
+    }
+
+    private fun draftFile(root: File, path: NotePath): File {
+        val digest = MessageDigest.getInstance("SHA-256")
+            .digest(path.relativePath.toByteArray(Charsets.UTF_8))
+        val name = digest.joinToString("") { "%02x".format(it.toInt() and 0xFF) }.take(32)
+        return File(File(root, DRAFT_DIRECTORY), "$name$MARKDOWN_SUFFIX")
+    }
+
     private suspend fun currentVault(expected: com.example.looma.domain.model.VaultId): Pair<Vault, VaultFileOps> {
         val vault = vaultRepository.requireCurrentVault()
         if (vault.id != expected) throw VaultFileException(VaultFileFailure.NOT_FOUND)
@@ -195,6 +243,9 @@ internal class NoteFileStore(
 
     private companion object {
         const val UNTITLED_FALLBACK = "Untitled"
+        const val MARKDOWN_SUFFIX = ".md"
+        const val DRAFT_DIRECTORY = ".looma/drafts"
+        const val CONFLICT_DIRECTORY = ".looma/conflicts"
     }
 }
 

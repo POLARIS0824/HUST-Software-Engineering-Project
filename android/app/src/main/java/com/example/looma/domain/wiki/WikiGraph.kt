@@ -24,6 +24,8 @@ data class Backlink(
 data class WikiContext(
     private val targets: Map<String, NoteId> = emptyMap(),
     val backlinks: List<Backlink> = emptyList(),
+    /** 可以链到的其它笔记，按标题排序；插入双链时的候选来源 */
+    val linkables: List<WikiNote> = emptyList(),
 ) {
     fun resolve(target: String): NoteId? = targets[normalizeWikiName(target)]
 
@@ -95,6 +97,12 @@ class WikiGraph(
             .mapNotNull { target -> resolve(target, note.path)?.let { normalizeWikiName(target) to it } }
             .toMap(),
         backlinks = backlinksOf(note),
+        linkables = all
+            .asSequence()
+            .filter { it.id != note }
+            .map { WikiNote(it.id, titles[it.id].orEmpty().ifBlank { baseNameOf(it.id.path) }) }
+            .sortedWith(compareBy({ it.title.lowercase() }, { it.id.path.relativePath }))
+            .toList(),
     )
 
     private fun folderOf(path: NotePath): String = path.relativePath.substringBeforeLast('/', missingDelimiterValue = "")

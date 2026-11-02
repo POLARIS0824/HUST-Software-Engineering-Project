@@ -74,6 +74,36 @@ class NoteRepository internal constructor(
 
     suspend fun readNote(id: NoteId): Note = toNote(fileStore.readNote(id))
 
+    /** 重试保存前重新取一次修改时间：先分清"刚才写失败"和"别人真的改过" */
+    suspend fun modifiedAtOf(id: NoteId): Instant = fileStore.modifiedAt(id)
+
+    /**
+     * 打开一篇笔记，并把还没落盘的草稿找回来。
+     *
+     * 草稿比正文新才作数：上一次保存成功之后草稿就该被删掉，
+     * 留下来的只可能是"写了但没写进去"的那一份。
+     */
+    suspend fun openNote(id: NoteId): OpenedNote {
+        val stored = fileStore.readNote(id)
+        val draft = fileStore.readDraft(id, stored.modifiedAt)
+        if (draft == null || draft == stored.content) {
+            return OpenedNote(toNote(stored), restoredDraft = false)
+        }
+        return OpenedNote(
+            note = toNote(stored, content = draft),
+            restoredDraft = true,
+        )
+    }
+
+    /** 应用退到后台时先把缓冲区写进草稿区，进程被杀也不至于丢字 */
+    suspend fun writeDraft(id: NoteId, content: String) = fileStore.writeDraft(id, content)
+
+    /** 覆盖保存之前，把磁盘上被别人改过的那一份留档 */
+    suspend fun backupConflict(id: NoteId): Boolean = runCatching {
+        val stored = fileStore.readNote(id)
+        fileStore.backupConflict(id, stored.content)
+    }.isSuccess
+
     /**
      * 只读索引拼出的双链快照：正文里的目标各解析到哪篇笔记，哪几篇又引用了它。
      *
@@ -103,6 +133,8 @@ class NoteRepository internal constructor(
         val stored = fileStore.saveNote(id, content, expectedModifiedAt)
         textCache.put(stored.id, stored.modifiedAt, stored.content)
         writeThrough(IndexDelta(stored.id.vaultId, upserts = listOf(indexedOf(stored))))
+        // 正文已经落盘，草稿没有存在价值了；删不掉也只是多占一份副本
+        runCatching { fileStore.deleteDraft(id) }
         return toNote(stored)
     }
 
@@ -241,14 +273,23 @@ class NoteRepository internal constructor(
         }
     }
 
-    private suspend fun toNote(stored: StoredMarkdown): Note = withContext(Dispatchers.Default) {
-        val metadata = parser.parse(stored.content, stored.file.nameWithoutExtension)
+    private suspend fun toNote(
+        stored: StoredMarkdown,
+        content: String = stored.content,
+    ): Note = withContext(Dispatchers.Default) {
+        val metadata = parser.parse(content, stored.file.nameWithoutExtension)
         Note(
             id = stored.id,
             title = metadata.title,
-            content = stored.content,
+            content = content,
             modifiedAt = stored.modifiedAt,
             tags = metadata.tags,
         )
     }
 }
+
+/** 打开结果：正文可能来自文件，也可能来自一份更新的草稿 */
+data class OpenedNote(
+    val note: Note,
+    val restoredDraft: Boolean,
+)

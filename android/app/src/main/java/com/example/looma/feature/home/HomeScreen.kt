@@ -109,6 +109,7 @@ data class HomeActions(
 fun HomeRoute(
     viewModel: HomeViewModel,
     onOpenNote: (NoteId) -> Unit,
+    onCreatedNote: (NoteId) -> Unit,
     onMenuClick: () -> Unit,
     onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -134,7 +135,7 @@ fun HomeRoute(
     // 新建成功是一次性事件：Route 负责导航，ViewModel 只交出一个 NoteId
     LaunchedEffect(state.createdNote) {
         state.createdNote?.let { noteId ->
-            onOpenNote(noteId)
+            onCreatedNote(noteId)
             viewModel.onCreatedNoteOpened()
         }
     }

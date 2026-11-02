@@ -19,11 +19,17 @@ import androidx.compose.ui.unit.dp
 import com.example.looma.R
 import com.example.looma.feature.note.NoteUiState
 
-/** 写盘失败时贴在编辑区顶部的提示；冲突时提供覆盖保存，其余错误提供重试 */
+/**
+ * 写盘失败时贴在编辑区顶部的提示。
+ *
+ * 冲突时给的是两个都能用到底的动作：读回磁盘上的版本，或者带着留档覆盖。
+ * 原来只有一个"重试"，而重试带着过期的修改时间，永远不可能成功。
+ */
 @Composable
 internal fun NoteSaveBanner(
     state: NoteUiState,
     onRetry: () -> Unit,
+    onReload: () -> Unit,
     onOverwrite: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.errorContainer) {
@@ -41,6 +47,16 @@ internal fun NoteSaveBanner(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onErrorContainer,
             )
+            if (state.isConflict) {
+                TextButton(
+                    onClick = onReload,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    ),
+                ) {
+                    Text(stringResource(R.string.editor_reload_from_disk))
+                }
+            }
             TextButton(
                 onClick = if (state.isConflict) onOverwrite else onRetry,
                 colors = ButtonDefaults.textButtonColors(

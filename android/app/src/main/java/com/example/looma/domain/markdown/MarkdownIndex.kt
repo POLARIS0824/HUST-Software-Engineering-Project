@@ -92,20 +92,8 @@ object MarkdownIndex {
 
     /** 只剥掉文件开头那段合法 frontmatter，剥不掉就整段当正文，宁可多显示也不丢内容 */
     private fun splitBody(source: String): Body {
-        if (!source.startsWith("---")) return Body(source, 0)
-        if (source.length > 3 && source[3] != '\n' && source[3] != '\r') return Body(source, 0)
-        var cursor = source.indexOf('\n').let { if (it < 0) return Body(source, 0) else it + 1 }
-        while (cursor < source.length) {
-            val lineEnd = source.indexOf('\n', cursor).let { if (it < 0) source.length else it }
-            val line = source.substring(cursor, lineEnd).trimEnd('\r')
-            if (line.trim() == "---") {
-                val start = if (lineEnd < source.length) lineEnd + 1 else lineEnd
-                return Body(source.substring(start), start)
-            }
-            if (lineEnd >= source.length) break
-            cursor = lineEnd + 1
-        }
-        return Body(source, 0)
+        val start = frontmatterEnd(source)
+        return Body(source.substring(start), start)
     }
 
     private val MARKER = Regex("""^\[[ xX]]\s*$""")

@@ -187,4 +187,9 @@
     <string name="home_snackbar_renamed_failed">Renamed, %1$d backlink(s) could not be updated</string>
     <string name="note_backlinks_title">Backlinks · %1$d</string>
     <string name="note_link_missing">No note named \"%1$s\"</string>
+    <string name="editor_wikilink">Link a note</string>
+    <string name="editor_wikilink_search">Search notes</string>
+    <string name="editor_wikilink_empty">No notes match</string>
+    <string name="editor_reload_from_disk">Reload from disk</string>
+    <string name="editor_draft_restored">Restored unsaved changes from last time</string>
 </resources>
