@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -122,14 +121,35 @@ func safeRelPath(root, rel string) (string, error) {
 
 // uniqueRelPath 在 notes/ 下为目标标题生成不冲突的相对路径：
 // 冲突时追加自增序号（基线 4.3：严禁静默覆盖）。
+//
+// Lstat 出错时的处理（评审 #3）：旧实现只认 os.ErrNotExist，
+// 其它错误（权限不足、共享冲突、网络盘断开）会让 for 循环**无限重试**——
+// 同一个错误条件永远不消失，循环永不退出，直接卡死整个应用
+// （Create/Rename/Restore/import 都持着 v.mu 调用它，一卡就是全应用卡死）。
+//
+// 现在区分三种情况：
+//   - os.IsNotExist：目标不存在，这个名字可用；
+//   - 其它错误：状态未知，不能确定这个名字是否被占用，也不能无限重试。
+//     此时返回一个带序号后缀的候选名并停止重试——最坏情况是名字冲突
+//     （后续写盘会报错，由调用方如实告知用户），远好过把应用卡死；
+//   - 无错误：确实被占用，换下一个候选名。
 func uniqueRelPath(notesDir, title string) string {
 	base := filepath.FromSlash(title + ".md")
-	if _, err := os.Lstat(filepath.Join(notesDir, base)); errors.Is(err, os.ErrNotExist) {
+	_, err := os.Lstat(filepath.Join(notesDir, base))
+	if err == nil {
+		// 已存在：走冲突后缀分支。
+	} else if os.IsNotExist(err) {
 		return filepath.ToSlash(base)
 	}
 	for i := 1; ; i++ {
 		candidate := fmt.Sprintf("%s (%d).md", title, i)
-		if _, err := os.Lstat(filepath.Join(notesDir, filepath.FromSlash(candidate))); errors.Is(err, os.ErrNotExist) {
+		_, err := os.Lstat(filepath.Join(notesDir, filepath.FromSlash(candidate)))
+		if os.IsNotExist(err) {
+			return filepath.ToSlash(candidate)
+		}
+		if err != nil {
+			// 状态未知（权限/共享冲突/网络盘断开）：不再重试。
+			// 返回当前候选交给写盘报错，避免无限循环卡死应用（评审 #3）。
 			return filepath.ToSlash(candidate)
 		}
 	}
