@@ -55,6 +55,12 @@ type AttachmentResult struct {
 // RECOVERED 元数据、校准被外部修改过的正文哈希、清空内存索引并重建
 // （BR-03 自愈，SCN-04）。
 func (v *Vault) loadWorkspace() error {
+	// 未选择工作区时拒绝装载（评审 #1）：下面会按 v.root 拼出 notes/、.meta/
+	// 等目录并 MkdirAll，root 为空就等于在**进程当前工作目录**下凭空
+	// 造出一整套知识库目录。
+	if v.root == "" {
+		return ErrNoWorkspace
+	}
 	for _, d := range []string{dirNotes, dirAttachments, dirMetaNotes, dirMetaPending, dirTrash, dirTmp} {
 		if err := os.MkdirAll(filepath.Join(v.root, filepath.FromSlash(d)), 0o755); err != nil {
 			return err

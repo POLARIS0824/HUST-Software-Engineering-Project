@@ -146,7 +146,9 @@ func OpenVault() (*Vault, error) {
 	if v.root != "" {
 		if err := v.loadWorkspace(); err != nil {
 			// 工作区目录被外部删除等情况：保持未就绪，让用户重新选择。
-			v.root = ""
+			// 必须清空索引（评审 #1）：留着旧库的笔记会让后续保存
+			// 在 root=="" 时落到进程 CWD，凭空写出 notes/ 与 .meta/。
+			v.resetWorkspaceState()
 		}
 	}
 	return v, nil
@@ -180,6 +182,16 @@ func (v *Vault) ChooseWorkspace(parent *mygo.Window) (WorkspaceInfo, error) {
 	return v.GetWorkspace(), nil
 }
 
+// switchWorkspace 切换知识库根目录。
+//
+// 失败时必须把内存状态清干净（评审 #1）：
+// 旧实现在 loadWorkspace 失败时只把 root 置空，却留着上一座知识库的索引，
+// 于是 GetWorkspace().Ready 为 false 但 v.notes 仍是旧库的笔记。
+// 后续任何保存都会在 root=="" 的情况下按 filepath.Join("", "notes", ...)
+// 落到**进程当前工作目录**下凭空写出 notes/ 与 .meta/——用户换库失败一次，
+// 磁盘上就多出一堆不知哪来的文件。
+//
+// 因此这里的规则是：root 为空时一切写操作一律拒绝，绝不落到 CWD。
 func (v *Vault) switchWorkspace(root string) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -187,9 +199,10 @@ func (v *Vault) switchWorkspace(root string) error {
 	if err != nil {
 		return err
 	}
+	// 先切到新根目录再装载：装载失败时下方会把 root 清空并清空索引。
 	v.root = abs
 	if err := v.loadWorkspace(); err != nil {
-		v.root = ""
+		v.resetWorkspaceState()
 		return err
 	}
 	data, _ := json.MarshalIndent(vaultConfig{Workspace: abs}, "", "  ")
@@ -200,6 +213,17 @@ func (v *Vault) switchWorkspace(root string) error {
 		return err
 	}
 	return nil
+}
+
+// resetWorkspaceState 把工作区状态清空：root 置空、索引与回收站清空。
+// 用于工作区装载失败（目录被外部删除、权限不足等）——此时磁盘上的事实源
+// 已经不可用，留着旧索引只会让后续操作写到错误的地方（评审 #1）。
+func (v *Vault) resetWorkspaceState() {
+	v.root = ""
+	v.notes = map[string]*indexedNote{}
+	v.trashed = map[string]*NoteMeta{}
+	v.byTitle = map[string][]string{}
+	v.writeSeq = nil
 }
 
 func (v *Vault) workspaceInfo() WorkspaceInfo {
@@ -579,6 +603,14 @@ func (v *Vault) ForceSaveContentSeq(id string, markdown string, seq int64) (Save
 func (v *Vault) saveContent(id string, markdown string, force bool, seq int64) (SaveReceipt, error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	// 未选择工作区时一律拒绝写入（评审 #1）。
+	// 旧实现只判 v.notes[id] 是否存在，而工作区装载失败后 root 被置空、
+	// 索引却还留着旧库的笔记，于是 filepath.Join("", "notes", ...) 落到
+	// **进程当前工作目录**下，凭空写出 notes/ 与 .meta/。
+	// 这里把"没有工作区"作为独立的前置条件拦下，绝不落到 CWD。
+	if v.root == "" {
+		return SaveReceipt{}, ErrNoWorkspace
+	}
 	n, ok := v.notes[id]
 	if !ok {
 		return SaveReceipt{}, ErrNoteNotFound
