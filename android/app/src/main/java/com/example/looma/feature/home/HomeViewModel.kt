@@ -262,7 +262,10 @@ class HomeViewModel(
             _uiState.update { it.copy(dialogError = HomeFileError.EMPTY_NAME) }
             return
         }
-        runDialogAction(HomeMessage.Renamed) { noteRepository.renameNote(item.id, trimmed) }
+        runDialogAction {
+            val outcome = noteRepository.renameNote(item.id, trimmed)
+            HomeMessage.Renamed(outcome.linksUpdated, outcome.linksFailed)
+        }
     }
 
     fun confirmNewFolder(name: String) {
@@ -271,8 +274,9 @@ class HomeViewModel(
             _uiState.update { it.copy(dialogError = HomeFileError.EMPTY_NAME) }
             return
         }
-        runDialogAction(HomeMessage.FolderCreated) {
+        runDialogAction {
             folderRepository.createFolder(_uiState.value.files.path, trimmed)
+            HomeMessage.FolderCreated
         }
     }
 
@@ -369,15 +373,14 @@ class HomeViewModel(
 
     /**
      * 对话框里的确认动作：成功则关闭对话框、清空选择并刷新，失败把原因留在对话框上，
-     * 用户可以改个名字接着试。
+     * 用户可以改个名字接着试。[message] 由动作本身给出，因为它常常带着结果计数。
      */
-    private fun runDialogAction(message: HomeMessage, block: suspend () -> Unit) {
+    private fun runDialogAction(message: suspend () -> HomeMessage) {
         if (_uiState.value.isActionRunning) return
         viewModelScope.launch {
             _uiState.update { it.copy(isActionRunning = true, dialogError = null) }
             try {
-                block()
-                finishAction(message)
+                finishAction(message())
             } catch (e: CancellationException) {
                 throw e
             } catch (e: VaultFileException) {

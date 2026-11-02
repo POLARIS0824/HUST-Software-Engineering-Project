@@ -184,4 +184,6 @@
     <string name="editor_reload">Reload</string>
     <string name="editor_save_failed">Could not save this note</string>
     <string name="editor_load_failed">Could not open this note</string>
+    <string name="home_snackbar_renamed_links">Renamed, %1$d backlink(s) updated</string>
+    <string name="home_snackbar_renamed_failed">Renamed, %1$d backlink(s) could not be updated</string>
 </resources>

@@ -341,7 +341,11 @@ private fun homeMessageText(message: HomeMessage): String = when (message) {
     is HomeMessage.Deleted -> stringResource(R.string.home_snackbar_deleted, message.count)
     is HomeMessage.Restored -> stringResource(R.string.home_snackbar_restored, message.count)
     is HomeMessage.Moved -> stringResource(R.string.home_snackbar_moved, message.count)
-    HomeMessage.Renamed -> stringResource(R.string.home_snackbar_renamed)
+    is HomeMessage.Renamed -> when {
+        message.linksFailed > 0 -> stringResource(R.string.home_snackbar_renamed_failed, message.linksFailed)
+        message.linksUpdated > 0 -> stringResource(R.string.home_snackbar_renamed_links, message.linksUpdated)
+        else -> stringResource(R.string.home_snackbar_renamed)
+    }
     HomeMessage.FolderCreated -> stringResource(R.string.home_snackbar_folder_created)
     HomeMessage.ActionFailed -> stringResource(R.string.home_error_action)
     HomeMessage.InvalidMoveTarget -> stringResource(R.string.home_move_invalid_target)

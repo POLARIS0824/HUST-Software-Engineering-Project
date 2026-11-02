@@ -25,7 +25,8 @@ sealed interface HomeMessage {
     data class Deleted(val count: Int, val trashIds: List<String>) : HomeMessage
     data class Restored(val count: Int) : HomeMessage
     data class Moved(val count: Int) : HomeMessage
-    data object Renamed : HomeMessage
+    /** 改名时顺手改写的引用数；有引用没改成功时也如实报出来 */
+    data class Renamed(val linksUpdated: Int, val linksFailed: Int = 0) : HomeMessage
     data object FolderCreated : HomeMessage
     data object ActionFailed : HomeMessage
     data object InvalidMoveTarget : HomeMessage

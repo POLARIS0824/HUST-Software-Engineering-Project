@@ -6,6 +6,8 @@ import com.example.looma.data.index.NoteIndex
 import com.example.looma.data.index.VaultIndexer
 import com.example.looma.data.index.indexedNote
 import com.example.looma.data.vault.VaultRepository
+import com.example.looma.domain.markdown.MarkdownIndex
+import com.example.looma.domain.markdown.WikiLinks
 import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.Note
 import com.example.looma.domain.model.NoteId
@@ -13,6 +15,10 @@ import com.example.looma.domain.model.NoteProperties
 import com.example.looma.domain.model.NoteSummary
 import com.example.looma.domain.model.NoteTextStats
 import com.example.looma.domain.model.TrashedNote
+import com.example.looma.domain.wiki.WikiContext
+import com.example.looma.domain.wiki.WikiGraph
+import com.example.looma.domain.wiki.WikiNote
+import com.example.looma.domain.wiki.retargetAfterRename
 import java.io.File
 import java.time.Instant
 import kotlinx.coroutines.CancellationException
@@ -68,6 +74,15 @@ class NoteRepository internal constructor(
 
     suspend fun readNote(id: NoteId): Note = toNote(fileStore.readNote(id))
 
+    /**
+     * 只读索引拼出的双链快照：正文里的目标各解析到哪篇笔记，哪几篇又引用了它。
+     *
+     * 不扫库也不读盘，所以新鲜度最多等于最后一次扫描或写穿；索引还没跟上的改动这里看不到。
+     */
+    suspend fun wikiContext(id: NoteId): WikiContext = withContext(Dispatchers.Default) {
+        wikiGraphOf(index.load(id.vaultId)).context(id)
+    }
+
     suspend fun createNote(
         title: String,
         initialContent: String? = null,
@@ -91,19 +106,11 @@ class NoteRepository internal constructor(
         return toNote(stored)
     }
 
-    suspend fun renameNote(id: NoteId, newFilename: String): Note {
-        val stored = fileStore.renameNote(id, newFilename)
-        textCache.move(id, stored.id)
-        writeThrough(moveDelta(id, stored))
-        return toNote(stored)
-    }
+    suspend fun renameNote(id: NoteId, newFilename: String): RenameOutcome =
+        relocate(id) { fileStore.renameNote(id, newFilename) }
 
-    suspend fun moveNote(id: NoteId, target: FolderPath): Note {
-        val stored = fileStore.moveNote(id, target)
-        textCache.move(id, stored.id)
-        writeThrough(moveDelta(id, stored))
-        return toNote(stored)
-    }
+    suspend fun moveNote(id: NoteId, target: FolderPath): RenameOutcome =
+        relocate(id) { fileStore.moveNote(id, target) }
 
     suspend fun deleteNote(id: NoteId): TrashedNote {
         val trashed = fileStore.deleteNote(id)
@@ -145,6 +152,68 @@ class NoteRepository internal constructor(
         vaultId = stored.id.vaultId,
         upserts = listOf(indexedOf(stored)),
         removed = oldId.path.takeIf { it != stored.id.path }?.let { listOf(it) }.orEmpty(),
+    )
+
+    /**
+     * 改名与移动的共用流程：按索引快照找出引用方，动文件，再逐个把引用方的正文改过来。
+     *
+     * 文件操作失败时原样抛出：引用方一个字都没改，索引仍是旧路径，上层现有的错误提示依然成立。
+     * 引用改写失败只计数，不能让已经成功的改名反过来算失败。
+     */
+    private suspend fun relocate(
+        id: NoteId,
+        operation: suspend () -> StoredMarkdown,
+    ): RenameOutcome {
+        // 快照必须在动文件之前取：文件一搬走，旧路径就从索引里消失了
+        val referrers = wikiGraphOf(index.load(id.vaultId)).referrersOf(id)
+        val stored = operation()
+        textCache.move(id, stored.id)
+        writeThrough(moveDelta(id, stored))
+
+        // 原地改名/移动没有换目标名，再走一遍只会把每个引用改写成同样的字面量、白白刷新 mtime
+        if (stored.id == id) {
+            return RenameOutcome(note = toNote(stored), linksUpdated = 0, linksFailed = 0)
+        }
+
+        var linksUpdated = 0
+        var linksFailed = 0
+        withContext(Dispatchers.IO) {
+            for (referrer in referrers) {
+                // 被改名的笔记自己也在 referrers 里，但它此时已经在新的路径上
+                val current = if (referrer == id) stored.id else referrer
+                try {
+                    val (text, modifiedAt) = fileStore.readText(current)
+                    val filename = current.path.relativePath.substringAfterLast('/').removeSuffix(".md")
+                    val spans = MarkdownIndex.index(text, filename).links
+                    val rewritten = WikiLinks.retarget(
+                        source = text,
+                        spans = spans,
+                        retarget = retargetAfterRename(id.path, stored.id.path),
+                    ) ?: continue
+                    // 拿刚读到的 mtime 当乐观锁：期间被别人改过就抛，宁可这次漏改也不覆盖别人的编辑
+                    val saved = fileStore.saveNote(current, rewritten, expectedModifiedAt = modifiedAt)
+                    // 缓存和索引都还是改写前的正文，必须跟着换掉
+                    textCache.remove(current)
+                    writeThrough(IndexDelta(saved.id.vaultId, upserts = listOf(indexedOf(saved))))
+                    linksUpdated++
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    linksFailed++
+                }
+            }
+        }
+        return RenameOutcome(
+            note = toNote(stored),
+            linksUpdated = linksUpdated,
+            linksFailed = linksFailed,
+        )
+    }
+
+    /** 索引快照到双链图只在这里发生一次，名字解析规则全部留在 [WikiGraph] 里 */
+    private fun wikiGraphOf(indexed: List<IndexedNote>): WikiGraph = WikiGraph(
+        notes = indexed.map { note -> WikiNote(note.id, note.title) },
+        linksByNote = indexed.associate { note -> note.id to note.links.map { link -> link.target } },
     )
 
     private fun IndexedNote.toListEntry(): NoteListEntry = NoteListEntry(
