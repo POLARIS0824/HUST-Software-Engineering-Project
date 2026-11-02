@@ -113,6 +113,14 @@ type app struct {
 	shred        *shredAnim
 	statsVersion uint64
 
+	// 批量删除状态。
+	//
+	// batchMode 表示正处于批量删除状态：笔记列表每行标题右侧显示复选框，
+	// 列表下方显示「确认」「取消」两个按钮。
+	batchMode bool
+	// batchPicked 是被勾选的笔记 ID 集合。map 的值无意义，只看键。
+	batchPicked map[string]bool
+
 	// 反链面板。
 	backlinks     []BacklinkItem
 	showBacklinks bool
@@ -147,12 +155,13 @@ type confirmState struct {
 
 func newApp(vault *Vault) *app {
 	return &app{
-		vault:     vault,
-		view:      viewNotes,
-		sort:      "updated_desc",
-		editors:   map[string]*noteEditor{},
-		mode:      "edit",
-		saveState: saveSaved,
+		vault:       vault,
+		view:        viewNotes,
+		sort:        "updated_desc",
+		editors:     map[string]*noteEditor{},
+		mode:        "edit",
+		saveState:   saveSaved,
+		batchPicked: map[string]bool{},
 	}
 }
 
@@ -852,6 +861,158 @@ func (a *app) deleteFromList(id string) bool {
 	delete(a.editors, id)
 	a.refreshLists()
 	a.refreshReaderSnapshot()
+	return true
+}
+
+// ---- 批量删除（bulk delete）---------------------------------------------------
+
+// enterBatchMode 进入批量删除状态：笔记列表每行标题右侧出现复选框，
+// 列表下方出现「确认」「取消」两个按钮。
+//
+// 进入时清空上一次的勾选：用户上一次勾了哪几篇与这一次无关，
+// 沿用旧勾选会让用户误删没打算删的笔记。
+func (a *app) enterBatchMode() {
+	a.batchMode = true
+	a.batchPicked = map[string]bool{}
+}
+
+// exitBatchMode 退出批量删除状态并清空勾选。
+func (a *app) exitBatchMode() {
+	a.batchMode = false
+	a.batchPicked = map[string]bool{}
+}
+
+// toggleBatchPick 勾选/取消勾选一篇笔记。
+func (a *app) toggleBatchPick(id string) {
+	if a.batchPicked == nil {
+		a.batchPicked = map[string]bool{}
+	}
+	if a.batchPicked[id] {
+		delete(a.batchPicked, id)
+		return
+	}
+	a.batchPicked[id] = true
+}
+
+// batchVisibleIDs 返回当前列表里可见的笔记 ID，按显示顺序。
+//
+// 检索态显示的是检索结果而不是全部笔记，因此两态要分别取：
+// 否则用户在检索结果里勾了 2 篇，批量删除却把全部笔记都算进去。
+func (a *app) batchVisibleIDs() []string {
+	ids := []string{}
+	if a.query != "" && strings.TrimSpace(a.query) != "" {
+		for _, h := range a.hits {
+			ids = append(ids, h.NoteID)
+		}
+		return ids
+	}
+	for _, n := range a.visibleNotes() {
+		ids = append(ids, n.ID)
+	}
+	return ids
+}
+
+// batchPickedIDs 返回被勾选的笔记 ID，按当前列表顺序排列。
+//
+// 顺序取自当前可见列表：批量删除要按用户看到的顺序处理，
+// 便于与"勾了哪几篇"对上；勾选集里可能残留已被外部删除或
+// 过滤掉的笔记 ID，这些不在列表里，不参与删除。
+func (a *app) batchPickedIDs() []string {
+	ids := []string{}
+	for _, id := range a.batchVisibleIDs() {
+		if a.batchPicked[id] {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// batchDeleteSelected 删除被勾选的笔记并退出批量删除状态。
+//
+// 删除语义与单篇删除一致：移入回收站（可撤销），不是彻底删除。
+// 逐篇独立处理：一篇失败（保存失败、磁盘错误）不影响其余，
+// 失败原因汇总提示，不静默吞掉。
+//
+// 碎纸机动画不用于批量删除：一次只播一篇，逐篇播会让 N 篇笔记
+// 排队等动画，删除十几篇就变成十几秒的等待；批量删除以效率为先。
+func (a *app) batchDeleteSelected() {
+	ids := a.batchPickedIDs()
+	if len(ids) == 0 {
+		a.pendingToast = "请先勾选要删除的笔记"
+		return
+	}
+	// 退出批量删除状态：无论删除结果如何都退出，避免用户面对
+	// 一堆已经删掉的复选框继续点「确认」。
+	a.exitBatchMode()
+
+	deleted := 0
+	failed := 0
+	firstErr := ""
+	for _, id := range ids {
+		if a.deleteFromListQuiet(id) {
+			deleted++
+			continue
+		}
+		failed++
+		if firstErr == "" {
+			firstErr = id
+		}
+	}
+	a.refreshLists()
+	a.refreshReaderSnapshot()
+
+	switch {
+	case failed == 0:
+		a.pendingToast = "已将 " + itoa(deleted) + " 篇笔记移入回收站"
+	case deleted == 0:
+		a.pendingToast = "删除失败：" + a.batchDeleteReason(firstErr)
+	default:
+		a.pendingToast = "已删除 " + itoa(deleted) + " 篇，" + itoa(failed) + " 篇失败：" + a.batchDeleteReason(firstErr)
+	}
+}
+
+// batchDeleteReason 返回某篇笔记删除失败的原因（用户可读）。
+func (a *app) batchDeleteReason(id string) string {
+	if id == "" {
+		return "未知原因"
+	}
+	for _, n := range a.notes {
+		if n.ID == id {
+			return "「" + n.Title + "」删除失败"
+		}
+	}
+	return "部分笔记删除失败"
+}
+
+// deleteFromListQuiet 走单篇删除的完整链路，但不弹提示：
+// 批量删除要自己汇总结果，逐篇弹提示会刷屏。
+//
+// 与 deleteFromList 的差别只有"是否提示"，删除语义完全一致：
+// 先落盘草稿（评审 #2），再移入回收站。
+func (a *app) deleteFromListQuiet(id string) bool {
+	if a.vault.NoteVanished(id) {
+		// 正文文件已被外部删除：没有内容可移入回收站，
+		// 把这条僵尸笔记从索引里清掉即可。
+		if _, err := a.vault.DropVanishedNote(id); err == nil {
+			delete(a.editors, id)
+			if a.currentID == id {
+				a.currentID = ""
+				a.backlinks = nil
+			}
+			return true
+		}
+	}
+	if !a.flushSaveNote(id) {
+		return false
+	}
+	if _, err := a.vault.TrashNote(id); err != nil {
+		return false
+	}
+	if a.currentID == id {
+		a.currentID = ""
+		a.backlinks = nil
+	}
+	delete(a.editors, id)
 	return true
 }
 

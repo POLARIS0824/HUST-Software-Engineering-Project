@@ -115,11 +115,6 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
    删除时把列表行按竖条切片、错峰下落旋转淡出，播完才真正移入回收站。用 MyGo 的
    `Element.Effect` + `Painter.ImageRegion/Transform/Clip` 实现，不截屏、不加浮层；
    系统"减少动态效果"时直接删除。代码在 `shred.go`，决策见第 6 节第 17 条。
-10. **应用图标换成 Looma 图标资源**（2026-11-02，尺寸证据 `docs/app-icon-2026-11-02.png`）：
-   `resources/icon.png` 换为 Looma 的 1024 方图（透明画布 + 白色圆角卡片），`mygo.json`
-   显式 `"icon"`；打包时 MyGo 生成 16~256 多尺寸 `.ico` 嵌入 exe 与 NSIS 安装包，
-   运行期 `icon.go` 再用 `go:embed` + `Window.SetIcon` 设置窗口图标（覆盖 `go run .`）。
-   已实测从 exe/安装包提取 16/32/48/256 四档图标均为新图标；细节见核实记录。
 8. **PR #1 第二轮评审整改**（2026-11-01 晚，评审 W01~W14 / N1~N5）：新增 19 个回归用例
    （共 148 个）。修掉的主要问题：列表行按行错峰导致新建笔记时相邻行重叠（保留位移动画、
    去掉错峰）、保存乱序静默覆盖新内容（写入序号 + `ErrStaleRevision`）、外部删 `.md`
@@ -141,6 +136,20 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
    低优先级：`README.MD` 后缀、空标题兜底"未命名笔记"、别名里的 `#` 被误删、
    标题里的 `[ ]` 生成非法 markdown、标签树无滚动。
    细节见 `windows/docs/verification-record.md` 的"缺陷修复轮（2026-11-02）"一节。
+10. **应用图标换成 Looma 图标资源**（2026-11-02，尺寸证据 `docs/app-icon-2026-11-02.png`）：
+    `resources/icon.png` 换为 Looma 的 1024 方图（透明画布 + 白色圆角卡片），`mygo.json`
+    显式 `"icon"`；打包时 MyGo 生成 16~256 多尺寸 `.ico` 嵌入 exe 与 NSIS 安装包，
+    运行期 `icon.go` 再用 `go:embed` + `Window.SetIcon` 设置窗口图标（覆盖 `go run .`）。
+    已实测从 exe/安装包提取 16/32/48/256 四档图标均为新图标；细节见核实记录。
+11. **批量删除笔记**（2026-11-02，新功能）：笔记目录栏新增「批量删除」入口，进入后每行
+    标题右侧出现可勾选方框（勾选显示对勾），列表下方固定「已勾选 N 篇」「取消」「确认删除」。
+    删除走**回收站**语义（可撤销），不是彻底删除；删除前先落盘草稿（沿用评审 #2 的约束）；
+    逐篇独立处理，失败篇数与原因汇总提示。碎纸机动画**不用于**批量删除：一次只播一篇，
+    逐篇播会让 N 篇笔记排队等动画，删十几篇就变成十几秒的等待。
+    实现：`app.go` 的 `batchMode` / `batchPicked` 状态与 `batchDeleteSelected` 等方法，
+    `view_notes.go` 的 `batchActionBar` / `batchCheckbox`。新增 16 个回归用例
+    （叠加 PR #3 的图标用例后共 193 个）。
+    细节见 `windows/docs/verification-record.md` 的"新功能：批量删除笔记（2026-11-02）"一节。
 
 ## 6. 关键设计决策（接手者不要轻易推翻）
 
