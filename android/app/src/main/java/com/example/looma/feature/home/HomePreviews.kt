@@ -30,6 +30,7 @@ private fun previewState(
     isGridMode: Boolean = true,
     notes: List<HomeNoteItem> = previewNotes(),
     path: FolderPath = FolderPath.Root,
+    selection: Set<String> = emptySet(),
 ): HomeUiState = HomeUiState(
     vaultName = "Looma",
     notes = notes.orderedBy(HomeSort.LAST_MODIFIED),
@@ -38,6 +39,8 @@ private fun previewState(
     isGridMode = isGridMode,
     isLoading = false,
     files = previewIndex(notes).files(path, HomeSort.LAST_MODIFIED),
+    selection = selection,
+    selectedItems = notes.filter { it.listKey in selection },
 )
 
 private fun previewIndex(notes: List<HomeNoteItem>): HomeVaultIndex {
@@ -101,7 +104,9 @@ private fun previewNotes(): List<HomeNoteItem> {
 @Preview(name = "首页 · 网格", showBackground = true, widthDp = 393, heightDp = 820)
 @Composable
 private fun HomeGridPreview() {
-    LoomaTheme(dynamicColor = false) { HomeScreenPreview(previewState()) }
+    LoomaTheme(dynamicColor = false) {
+        HomeScreen(state = previewState(), actions = HomeActions())
+    }
 }
 
 @Preview(
@@ -114,21 +119,38 @@ private fun HomeGridPreview() {
 @Composable
 private fun HomeListDarkPreview() {
     LoomaTheme(darkTheme = true, dynamicColor = false) {
-        HomeScreenPreview(previewState(isGridMode = false))
+        HomeScreen(state = previewState(isGridMode = false), actions = HomeActions())
     }
 }
 
 @Preview(name = "首页 · 空", showBackground = true, widthDp = 393, heightDp = 820)
 @Composable
 private fun HomeEmptyPreview() {
-    LoomaTheme(dynamicColor = false) { HomeScreenPreview(previewState(notes = emptyList())) }
+    LoomaTheme(dynamicColor = false) {
+        HomeScreen(state = previewState(notes = emptyList()), actions = HomeActions())
+    }
 }
 
 @Preview(name = "首页 · 文件夹内", showBackground = true, widthDp = 393, heightDp = 820)
 @Composable
 private fun HomeFolderPreview() {
     LoomaTheme(dynamicColor = false) {
-        HomeScreenPreview(previewState(path = FolderPath("笔记")))
+        HomeScreen(
+            state = previewState(path = FolderPath("笔记")),
+            actions = HomeActions(),
+        )
+    }
+}
+
+@Preview(name = "首页 · 选择模式", showBackground = true, widthDp = 393, heightDp = 820)
+@Composable
+private fun HomeSelectionPreview() {
+    val notes = previewNotes()
+    LoomaTheme(dynamicColor = false) {
+        HomeScreen(
+            state = previewState(selection = notes.take(2).map { it.listKey }.toSet()),
+            actions = HomeActions(),
+        )
     }
 }
 
@@ -151,23 +173,4 @@ private fun HomeSearchResultsPreview() {
             }
         }
     }
-}
-
-/** Preview 只关心状态，事件一律给空实现 */
-@Composable
-private fun HomeScreenPreview(state: HomeUiState) {
-    HomeScreen(
-        state = state,
-        onQueryChange = {},
-        onToggleLayout = {},
-        onSortSelect = {},
-        onNoteClick = {},
-        onFolderClick = {},
-        onNavigateUp = {},
-        onCreateNoteClick = {},
-        onMenuClick = {},
-        onAssistantClick = {},
-        onAvatarClick = {},
-        onRetryClick = {},
-    )
 }

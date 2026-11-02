@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.DocumentsContract
 import androidx.core.content.ContextCompat
+import com.example.looma.domain.model.FolderPath
 import java.io.File
 
 /**
@@ -28,13 +29,6 @@ class VaultStorageAccess(context: Context) {
         }
     }
 
-    val accessRequiredMessage: String
-        get() = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            "请先授予全部文件访问权限"
-        } else {
-            "请先授予存储空间读写权限"
-        }
-
     fun isStorageMounted(): Boolean =
         Environment.getExternalStorageDirectory().exists()
 
@@ -42,7 +36,7 @@ class VaultStorageAccess(context: Context) {
         require(
             uri.authority == EXTERNAL_STORAGE_AUTHORITY,
         ) {
-            "请选择设备本地共享存储中的文件夹"
+            "only folders on local shared storage are supported"
         }
 
         val documentId = DocumentsContract.getTreeDocumentId(uri)
@@ -51,11 +45,11 @@ class VaultStorageAccess(context: Context) {
         val relativePath = documentId.substringAfter(':', "")
 
         require(volume.equals(PRIMARY_VOLUME, ignoreCase = true)) {
-            "当前仅支持设备主共享存储空间"
+            "only primary shared storage is supported"
         }
 
         require(relativePath.isNotBlank()) {
-            "不能直接选择存储空间根目录"
+            "the storage root cannot be used as a vault"
         }
 
         val storageRoot =
@@ -68,10 +62,27 @@ class VaultStorageAccess(context: Context) {
             directory != storageRoot &&
                     directory.toPath().startsWith(storageRoot.toPath()),
         ) {
-            "无效的笔记库路径"
+            "invalid vault path"
         }
 
         return directory
+    }
+
+    /**
+     * 把目录选择器的结果换算成笔记库内的相对路径。
+     *
+     * 选中笔记库外、或不是共享存储里的目录时返回 null，调用方据此提示而不是抛异常：
+     * 用户取消或选错都是正常操作。
+     */
+    fun resolveFolderWithin(uri: Uri, vaultRoot: String?): FolderPath? {
+        val root = vaultRoot?.takeIf { it.isNotBlank() }
+            ?.let { runCatching { File(it).canonicalFile }.getOrNull() }
+            ?: return null
+        val directory = runCatching { resolveVaultDirectory(uri) }.getOrNull() ?: return null
+        val relative = runCatching { directory.canonicalFile.relativeTo(root) }.getOrNull() ?: return null
+        val path = relative.invariantSeparatorsPath
+        if (path == ".." || path.startsWith("../")) return null
+        return FolderPath(path)
     }
 
     companion object {

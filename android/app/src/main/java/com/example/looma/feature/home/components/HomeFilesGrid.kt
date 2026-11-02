@@ -22,9 +22,9 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.example.looma.R
 import com.example.looma.domain.model.FolderPath
-import com.example.looma.domain.model.NoteId
 import com.example.looma.feature.home.HomeFilesState
 import com.example.looma.feature.home.HomeFolderItem
+import com.example.looma.feature.home.HomeNoteItem
 import com.example.looma.ui.theme.LoomaTokens
 
 /**
@@ -33,13 +33,18 @@ import com.example.looma.ui.theme.LoomaTokens
  * 文件夹永远排在笔记前面；根目录额外插入“最近”一行。
  * 列表形态把当前层的文件夹收进一张分组卡片，网格形态每列各自一张卡片，
  * 所以列数只由 isGridMode 决定，列表按钮在根目录和文件夹内都有效。
+ * 选择集合只影响笔记卡片的描边与底色。
  */
 @Composable
 internal fun HomeFilesGrid(
     files: HomeFilesState,
     isGridMode: Boolean,
+    selection: Set<String>,
+    scrollRecentsToStart: Boolean,
+    onRecentsScrolled: () -> Unit,
     onFolderClick: (FolderPath) -> Unit,
-    onNoteClick: (NoteId) -> Unit,
+    onNoteClick: (HomeNoteItem) -> Unit,
+    onNoteLongClick: (HomeNoteItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     LazyVerticalStaggeredGrid(
@@ -56,7 +61,14 @@ internal fun HomeFilesGrid(
                     HomeSectionHeader(title = stringResource(R.string.home_section_recents))
                 }
                 item(span = StaggeredGridItemSpan.FullLine) {
-                    HomeRecentRow(items = files.recents, onNoteClick = onNoteClick)
+                    HomeRecentRow(
+                        items = files.recents,
+                        selection = selection,
+                        scrollToStart = scrollRecentsToStart,
+                        onScrolled = onRecentsScrolled,
+                        onNoteClick = onNoteClick,
+                        onNoteLongClick = onNoteLongClick,
+                    )
                 }
             }
             if (files.folders.isNotEmpty()) {
@@ -95,7 +107,12 @@ internal fun HomeFilesGrid(
             items = files.notes,
             key = { "note:${it.listKey}" },
         ) { note ->
-            HomeNoteCard(note = note, onClick = { onNoteClick(note.id) })
+            HomeNoteCard(
+                note = note,
+                isSelected = note.listKey in selection,
+                onClick = { onNoteClick(note) },
+                onLongClick = { onNoteLongClick(note) },
+            )
         }
     }
 }

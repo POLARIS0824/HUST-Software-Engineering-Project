@@ -7,4 +7,6 @@ data class TrashedNote(
     val trashId: String,
     val originalPath: NotePath,
     val deletedAt: Instant,
+    val title: String = "",
+    val excerpt: String = "",
 )

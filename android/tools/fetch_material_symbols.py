@@ -24,6 +24,24 @@ BASE_URL = (
 
 # Material Symbols 名称 -> res/drawable 文件名（不含 .xml）
 ICONS = {
+    # 应用骨架与文件管理
+    "menu": "ic_menu",
+    "search": "ic_search",
+    "add": "ic_add",
+    "close": "ic_close",
+    "check": "ic_check",
+    "sort": "ic_sort",
+    "grid_view": "ic_grid",
+    "view_list": "ic_view_list",
+    "arrow_back": "ic_arrow_back",
+    "description": "ic_note",
+    "create_new_folder": "ic_folder_plus",
+    "delete": "ic_delete",
+    "info": "ic_info",
+    "drive_file_move": "ic_move",
+    "restore_from_trash": "ic_restore",
+    "settings": "ic_settings",
+    # 编辑器格式栏
     "undo": "ic_editor_undo",
     "redo": "ic_editor_redo",
     "format_bold": "ic_editor_bold",

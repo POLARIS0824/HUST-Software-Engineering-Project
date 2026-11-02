@@ -1,6 +1,8 @@
 package com.example.looma.feature.home.components
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,11 +14,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -24,7 +29,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.looma.R
-import com.example.looma.domain.model.NoteId
+import com.example.looma.feature.home.HomeNoteItem
 import com.example.looma.feature.home.HomeRecentItem
 import com.example.looma.ui.markdown.MarkdownPreview
 import com.example.looma.ui.theme.LoomaTokens
@@ -38,18 +43,33 @@ import com.example.looma.ui.theme.LoomaTokens
 @Composable
 internal fun HomeRecentRow(
     items: List<HomeRecentItem>,
-    onNoteClick: (NoteId) -> Unit,
+    selection: Set<String>,
+    scrollToStart: Boolean,
+    onScrolled: () -> Unit,
+    onNoteClick: (HomeNoteItem) -> Unit,
+    onNoteLongClick: (HomeNoteItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (items.isEmpty()) return
+    val listState = rememberLazyListState()
+    // 新建笔记后这一行要立刻回到最前面，否则新笔记藏在用户上次滚动到的位置之外
+    LaunchedEffect(scrollToStart) {
+        if (scrollToStart) {
+            listState.animateScrollToItem(0)
+            onScrolled()
+        }
+    }
     LazyRow(
+        state = listState,
         modifier = modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         items(items = items, key = { it.note.listKey }) { item ->
             HomeRecentCard(
                 item = item,
-                onClick = { onNoteClick(item.note.id) },
+                isSelected = item.note.listKey in selection,
+                onClick = { onNoteClick(item.note) },
+                onLongClick = { onNoteLongClick(item.note) },
             )
         }
     }
@@ -58,14 +78,27 @@ internal fun HomeRecentRow(
 @Composable
 private fun HomeRecentCard(
     item: HomeRecentItem,
+    isSelected: Boolean,
     onClick: () -> Unit,
+    onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val shape = RoundedCornerShape(20.dp)
+    val selectLabel = stringResource(R.string.home_select_note_label)
     Surface(
-        onClick = onClick,
-        modifier = modifier.width(RecentCardWidth).height(RecentCardHeight),
-        shape = RoundedCornerShape(20.dp),
+        modifier = modifier
+            .width(RecentCardWidth)
+            .height(RecentCardHeight)
+            .clip(shape)
+            .combinedClickable(
+                onLongClickLabel = selectLabel,
+                onLongClick = onLongClick,
+                onClick = onClick,
+            ),
+        shape = shape,
+        // 选中只加描边：底色不变，卡片底部的渐隐层才不会和背景色打架、泛出一圈白光
         color = LoomaTokens.colors.card,
+        border = if (isSelected) BorderStroke(2.dp, LoomaTokens.colors.accent) else null,
     ) {
         Column(Modifier.fillMaxSize().padding(horizontal = 14.dp, vertical = 12.dp)) {
             Text(
