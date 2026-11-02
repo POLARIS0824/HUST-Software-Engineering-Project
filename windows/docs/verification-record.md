@@ -87,8 +87,18 @@
 - **两条生效路径**：
   1. 打包：`go tool mygo build` 把图标生成 16/24/32/48/64/128/256 多尺寸 `.ico`，嵌入 `JustMD.exe` 与 NSIS 安装包；
   2. 运行期：`icon.go` 用 `//go:embed resources/icon.png` + `Window.SetIcon` 再设置一次窗口图标，覆盖 `go run .` / `mygo dev` 这类没有 exe 资源的场景（打包后与 exe 内嵌图标一致）。
-- **已验证**：`go tool mygo build` 实跑成功（`build/windows-amd64/JustMD.exe` 12.4 MB、`justmd-setup-0.2.0-amd64.exe` 4.2 MB）；用 `PrivateExtractIcons` 从 **exe 与安装包**分别提取 16/32/48/256 四档图标，均为新图标且无缺失档位；build 目录旁复制的 `icon.png` 与仓库文件哈希一致；`TestAppIconEmbedded` 断言嵌入的是可解码的方形 PNG（≥256）且无窗口调用不 panic；`go test ./...` 129 用例全绿。
+- **已验证**：`go tool mygo build` 实跑成功（当时产物名 `JustMD.exe` 12.4 MB、`justmd-setup-0.2.0-amd64.exe` 4.2 MB；随后产品更名为 Looma，产物名变为 `Looma.exe` / `looma-setup-*.exe`）；用 `PrivateExtractIcons` 从 **exe 与安装包**分别提取 16/32/48/256 四档图标，均为新图标且无缺失档位；build 目录旁复制的 `icon.png` 与仓库文件哈希一致；`TestAppIconEmbedded` 断言嵌入的是可解码的方形 PNG（≥256）且无窗口调用不 panic。
 - **未验证**：Windows 资源管理器/任务栏/开始菜单在安装后的实际显示（需跑安装包后人工确认）；安装流程本身未执行。
+
+### 产品更名 JustMD → Looma（2026-11-02）
+
+Windows 版产品名改为 **Looma**（与 Android 版一致；课程项目名与需求基线文档仍是 JustMD）。
+
+- **改了什么**：应用名（`app.SetName("Looma")`，决定用户数据目录）、窗口标题、`mygo.json` 的 `name="Looma"`/`slug="looma"`/`identifier="com.hust.looma.windows"`、可执行文件与安装包名（`Looma.exe`、`looma-setup-0.2.0-amd64.exe`）、配置文件 `looma-config.json`、导出默认文件名 `Looma_Backup_*.zip`、原子写临时前缀 `.looma-*.tmp`、阅读页内部链接 scheme（`looma-note://` / `looma-open://`，仅内存快照使用、不落盘）。
+- **保持不变**（避免破坏兼容）：Markdown/元数据/回收站等工作区数据格式；导出包 manifest 的 `generator="JustMD v1.1"` 与 `schemaVersion="1.0"`（基线 4.7 的跨平台格式标识，改名会让 Android 版解析不一致）；Go 模块名 `justmd`（内部标识）。
+- **升级兼容**：应用名变化会把用户数据目录从 `%APPDATA%\JustMD` 换成 `%APPDATA%\Looma`。`migration.go` 在首次启动时把旧目录的 `justmd-config.json`、`window-state.json` 复制为新目录的 `looma-config.json`、`window-state.json`：只在新文件不存在时复制（新数据优先），不覆盖、不删除旧文件（允许回退旧版本）。
+- **已验证**：`go tool mygo build` 实跑产出 `build/windows-amd64/Looma.exe`（12.3 MB）与 `looma-setup-0.2.0-amd64.exe`（4.2 MB）；实机启动进程名/窗口标题为 "Looma"；首次启动后 `%APPDATA%\Looma` 出现 `looma-config.json`（工作区指针与旧配置一致）与 `window-state.json`，旧目录保留完整；迁移回归 4 个（正常迁移/不覆盖新数据/无旧目录/旧目录路径推导）通过，`gofmt`/`go vet`/`go tool mygo vet` 无输出。
+- **未验证**：安装包安装/升级流程（NSIS 的 AppId 与注册表项会随 identifier 变化，旧版本需要先卸载或由安装器处理）；已安装旧版本的自动升级路径未测。
 
 ### 标题框删不干净（2026-11-01，实机复现修复）
 

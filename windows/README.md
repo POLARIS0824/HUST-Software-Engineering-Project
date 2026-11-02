@@ -1,6 +1,9 @@
-# JustMD Windows
+# Looma Windows
 
-JustMD 的 Windows 桌面客户端，基于 [MyGo](https://mygo.egoist.dev/) 的**原生 UI**（`package ui`，GPU 直接绘制，无 WebView、无 HTML/JavaScript）与 [Onevra](https://github.com/oneo-me/onevra) 组件库实现。与 Android 版共享同一需求基线：本地优先（Local-first）、Markdown 文件是正文唯一事实源、标签与全文检索、`[[双链]]` 与反向引用。
+Looma（课程项目名 **JustMD**，产品名与 Android 版统一为 Looma）的 Windows 桌面客户端，基于 [MyGo](https://mygo.egoist.dev/) 的**原生 UI**（`package ui`，GPU 直接绘制，无 WebView、无 HTML/JavaScript）与 [Onevra](https://github.com/oneo-me/onevra) 组件库实现。与 Android 版共享同一需求基线：本地优先（Local-first）、Markdown 文件是正文唯一事实源、标签与全文检索、`[[双链]]` 与反向引用。
+
+> 从 JustMD 更名为 Looma 后，应用名、窗口标题、可执行文件/安装包名、用户数据目录（`%APPDATA%\Looma`）都换了；
+> 旧版本的工作区配置与窗口位置会在首次启动时自动迁移过来（见 `windows/JustMD/migration.go`），笔记数据格式不变。
 
 ## V1 功能
 
