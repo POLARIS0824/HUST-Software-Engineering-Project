@@ -187,4 +187,27 @@
     <string name="home_snackbar_renamed_failed">Renamed, %1$d backlink(s) could not be updated</string>
     <string name="note_backlinks_title">Backlinks · %1$d</string>
     <string name="note_link_missing">No note named \"%1$s\"</string>
+
+    <!-- Folder actions -->
+    <string name="home_folder_actions_description">Folder actions</string>
+    <string name="home_folder_action_rename">Rename</string>
+    <string name="home_folder_action_move">Move</string>
+    <string name="home_folder_action_delete">Delete</string>
+    <string name="home_folder_rename_title">Rename folder</string>
+    <string name="home_folder_rename_hint">Folder name</string>
+    <string name="home_folder_move_title">Move “%1$s”</string>
+    <string name="home_folder_delete_title">Delete “%1$s”?</string>
+    <plurals name="home_folder_delete_message">
+        <item quantity="one">%1$d note in this folder will move to the trash.</item>
+        <item quantity="other">%1$d notes in this folder will move to the trash.</item>
+    </plurals>
+    <string name="home_folder_delete_message_empty">This folder is empty and will be removed.</string>
+    <string name="home_folder_delete_confirm">Delete</string>
+    <string name="home_folder_snackbar_renamed">Folder renamed</string>
+    <string name="home_folder_snackbar_moved">Folder moved</string>
+    <plurals name="home_folder_snackbar_deleted">
+        <item quantity="one">Folder deleted · %1$d note moved to trash</item>
+        <item quantity="other">Folder deleted · %1$d notes moved to trash</item>
+    </plurals>
+    <string name="home_folder_snackbar_deleted_empty">Folder deleted</string>
 </resources>

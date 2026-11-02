@@ -50,6 +50,29 @@ internal class HomeVaultIndex private constructor(
     fun contains(path: FolderPath): Boolean =
         path == FolderPath.Root || folderNames.containsKey(path)
 
+    /**
+     * 移动文件夹时可选的目标：根目录加上所有已知文件夹，排除文件夹自身与它的子孙。
+     *
+     * 根目录永远排第一，其余按路径排序，界面直接按顺序渲染。
+     */
+    fun moveTargets(folder: FolderPath): List<FolderPath> {
+        val descendantPrefix = folder.relativePath + "/"
+        return buildList {
+            add(FolderPath.Root)
+            folderNames.keys
+                .asSequence()
+                .filter { it != folder && !it.relativePath.startsWith(descendantPrefix) }
+                .sortedBy { it.relativePath.lowercase() }
+                .forEach(::add)
+        }
+    }
+
+    /** 文件夹（含所有子孙目录）里的笔记数，用于删除前的确认文案 */
+    fun noteCountUnder(folder: FolderPath): Int {
+        val prefix = folder.relativePath + "/"
+        return allNotes.count { it.id.path.relativePath.startsWith(prefix) }
+    }
+
     /** 找不到的路径回落到根目录，用于外部删除文件夹后的收敛 */
     fun files(path: FolderPath, sort: HomeSort): HomeFilesState {
         val target = if (contains(path)) path else FolderPath.Root

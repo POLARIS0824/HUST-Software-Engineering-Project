@@ -97,6 +97,71 @@ internal class VaultFileOps(root: File) {
         return candidate
     }
 
+    /** 文件夹改名；新名字已被同级占用时报错，返回改名后的相对路径 */
+    fun renameFolder(path: FolderPath, newName: String): FolderPath {
+        val directory = folderDirectory(path)
+        if (directory == root) throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        if (!directory.isDirectory) throw VaultFileException(VaultFileFailure.NOT_FOUND)
+        val parent = directory.parentFile ?: throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        // 与笔记名共用同一套清洗规则：去空白、去首尾点、拒绝非法字符
+        val destination = File(parent, validateName(newName, folder = true)).canonicalFile
+        if (!isInside(destination) || destination == root) {
+            throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        }
+        if (destination == directory) return path
+        if (destination.exists()) throw VaultFileException(VaultFileFailure.NAME_TAKEN)
+        if (!directory.renameTo(destination)) throw VaultFileException(VaultFileFailure.IO)
+        return FolderPath(destination.relativeTo(root).invariantSeparatorsPath)
+    }
+
+    /**
+     * 把文件夹整体移到另一个目录下，笔记文件跟着走，不需要逐个搬运。
+     *
+     * 目标在文件夹自身内部时拒绝，否则目录会被搬进自己、路径瞬间失效；
+     * 目标已有同名目录时同样拒绝，避免和别人的文件夹悄悄合并。
+     */
+    fun moveFolder(path: FolderPath, destination: FolderPath): FolderPath {
+        val source = folderDirectory(path)
+        if (source == root) throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        if (!source.isDirectory) throw VaultFileException(VaultFileFailure.NOT_FOUND)
+        val target = folderDirectory(destination)
+        if (!target.isDirectory) throw VaultFileException(VaultFileFailure.NOT_FOUND)
+        if (target == source.parentFile) return path
+        val sourcePath = source.toPath()
+        // startsWith 同时覆盖“移到自己”和“移到自己的子孙目录”
+        if (target.toPath().startsWith(sourcePath)) {
+            throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        }
+        val moved = File(target, source.name).canonicalFile
+        if (!isInside(moved) || moved == root) {
+            throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        }
+        if (moved.exists()) throw VaultFileException(VaultFileFailure.NAME_TAKEN)
+        if (!source.renameTo(moved)) throw VaultFileException(VaultFileFailure.IO)
+        return FolderPath(moved.relativeTo(root).invariantSeparatorsPath)
+    }
+
+    /**
+     * 删除一个文件夹：先把其中每一篇 Markdown 笔记移进回收站（保留原相对路径），
+     * 再自底向上删掉已经空了的目录。
+     *
+     * 点开头的目录（`.looma`）整棵跳过：回收站元数据不该被当成笔记，也不该被删。
+     * 文件夹里还有非 Markdown 文件时，对应目录不算“空了”，会留在原处。
+     * 任何一步搬运失败都直接抛出，后续笔记与目录保持原样。
+     *
+     * @return 实际移入回收站的笔记数
+     */
+    fun deleteFolder(path: FolderPath): Int {
+        val directory = folderDirectory(path)
+        if (directory == root) throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        if (!directory.isDirectory) throw VaultFileException(VaultFileFailure.NOT_FOUND)
+        val notes = mutableListOf<File>()
+        collectNotes(directory, notes)
+        notes.forEach { note -> trash(note) }
+        deleteEmptyDirectories(directory)
+        return notes.size
+    }
+
     /** 改名，目标同名时拒绝，避免悄悄覆盖别人的笔记 */
     fun rename(note: File, newName: String): File {
         val destination = File(note.parentFile, "${validateName(newName, folder = false)}$MARKDOWN_SUFFIX").canonicalFile
@@ -216,6 +281,33 @@ internal class VaultFileOps(root: File) {
         if (!create) return null
         if (!directory.mkdirs()) throw VaultFileException(VaultFileFailure.IO)
         return directory
+    }
+
+    /**
+     * 收集目录下所有 Markdown 笔记，点开头的目录整棵跳过。
+     *
+     * 排序只为让回收站里的先后顺序稳定；读不了的目录直接报 IO，
+     * 宁可整次删除失败，也不能漏掉没看见的笔记。
+     */
+    private fun collectNotes(directory: File, into: MutableList<File>) {
+        val children = directory.listFiles() ?: throw VaultFileException(VaultFileFailure.IO)
+        children.sortedBy { it.name }.forEach { child ->
+            if (child.isDirectory) {
+                if (child.name.startsWith('.') || !isInside(child)) return@forEach
+                collectNotes(child, into)
+            } else if (child.isFile && child.extension.equals("md", ignoreCase = true) && isInside(child)) {
+                into += child
+            }
+        }
+    }
+
+    /** 自底向上删掉空目录；点开头目录与含非 Markdown 文件的目录都保留 */
+    private fun deleteEmptyDirectories(directory: File) {
+        directory.listFiles().orEmpty()
+            .filter { it.isDirectory && !it.name.startsWith('.') }
+            .forEach(::deleteEmptyDirectories)
+        val remaining = directory.listFiles() ?: return
+        if (remaining.isEmpty()) directory.delete()
     }
 
     private fun uniqueIn(directory: File, filename: String): File {

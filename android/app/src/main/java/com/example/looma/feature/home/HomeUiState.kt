@@ -1,5 +1,6 @@
 package com.example.looma.feature.home
 
+import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.model.NoteProperties
 import com.example.looma.domain.model.NoteSummary
@@ -28,6 +29,10 @@ sealed interface HomeMessage {
     /** 改名时顺手改写的引用数；有引用没改成功时也如实报出来 */
     data class Renamed(val linksUpdated: Int, val linksFailed: Int = 0) : HomeMessage
     data object FolderCreated : HomeMessage
+    data object FolderRenamed : HomeMessage
+    data object FolderMoved : HomeMessage
+    /** 删除文件夹时顺带移进回收站的笔记数 */
+    data class FolderDeleted(val notes: Int) : HomeMessage
     data object ActionFailed : HomeMessage
     data object InvalidMoveTarget : HomeMessage
 }
@@ -37,6 +42,20 @@ sealed interface HomeFileDialog {
     data class Rename(val initialName: String) : HomeFileDialog
     data class Properties(val properties: NoteProperties) : HomeFileDialog
     data object NewFolder : HomeFileDialog
+
+    /** 文件夹卡片长按或“更多”打开的小菜单 */
+    data class FolderActions(val folder: HomeFolderItem) : HomeFileDialog
+    data class RenameFolder(val path: FolderPath, val initialName: String) : HomeFileDialog
+    data class MoveFolder(
+        val path: FolderPath,
+        val folderName: String,
+        val targets: List<FolderPath>,
+    ) : HomeFileDialog
+    data class DeleteFolder(
+        val path: FolderPath,
+        val folderName: String,
+        val noteCount: Int,
+    ) : HomeFileDialog
 }
 
 /** 只放 Home 渲染需要的数据，不改 domain 模型 */

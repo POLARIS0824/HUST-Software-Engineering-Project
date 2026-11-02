@@ -280,6 +280,78 @@ class HomeViewModel(
         }
     }
 
+    // ---- 文件夹操作：长按卡片打开菜单，三个动作都走同一条对话框 → 刷新路径 ----
+
+    fun startFolderActions(folder: HomeFolderItem) = _uiState.update {
+        it.copy(dialog = HomeFileDialog.FolderActions(folder), dialogError = null)
+    }
+
+    fun startFolderRename() {
+        val folder = _uiState.value.folderActions() ?: return
+        _uiState.update {
+            it.copy(
+                dialog = HomeFileDialog.RenameFolder(folder.path, folder.name),
+                dialogError = null,
+            )
+        }
+    }
+
+    fun startFolderMove() {
+        val folder = _uiState.value.folderActions() ?: return
+        _uiState.update {
+            it.copy(
+                dialog = HomeFileDialog.MoveFolder(
+                    path = folder.path,
+                    folderName = folder.name,
+                    targets = index.moveTargets(folder.path),
+                ),
+                dialogError = null,
+            )
+        }
+    }
+
+    fun startFolderDelete() {
+        val folder = _uiState.value.folderActions() ?: return
+        _uiState.update {
+            it.copy(
+                dialog = HomeFileDialog.DeleteFolder(
+                    path = folder.path,
+                    folderName = folder.name,
+                    noteCount = index.noteCountUnder(folder.path),
+                ),
+                dialogError = null,
+            )
+        }
+    }
+
+    fun confirmRenameFolder(name: String) {
+        val dialog = _uiState.value.dialog as? HomeFileDialog.RenameFolder ?: return
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) {
+            _uiState.update { it.copy(dialogError = HomeFileError.EMPTY_NAME) }
+            return
+        }
+        runDialogAction {
+            folderRepository.renameFolder(dialog.path, trimmed)
+            HomeMessage.FolderRenamed
+        }
+    }
+
+    fun confirmMoveFolder(target: FolderPath) {
+        val dialog = _uiState.value.dialog as? HomeFileDialog.MoveFolder ?: return
+        runDialogAction {
+            folderRepository.moveFolder(dialog.path, target)
+            HomeMessage.FolderMoved
+        }
+    }
+
+    fun confirmDeleteFolder() {
+        val dialog = _uiState.value.dialog as? HomeFileDialog.DeleteFolder ?: return
+        runDialogAction {
+            HomeMessage.FolderDeleted(folderRepository.deleteFolder(dialog.path))
+        }
+    }
+
     /** 系统目录选择器给出的目标；调用方已经确认它在笔记库内 */
     fun moveSelectedTo(target: FolderPath) {
         val moving = _uiState.value.selectedItems
@@ -411,6 +483,9 @@ class HomeViewModel(
 
     private fun HomeUiState.singleSelection(): HomeNoteItem? =
         selectedItems.singleOrNull()
+
+    private fun HomeUiState.folderActions(): HomeFolderItem? =
+        (dialog as? HomeFileDialog.FolderActions)?.folder
 
     companion object {
         fun factory(
