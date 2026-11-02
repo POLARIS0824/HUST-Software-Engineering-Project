@@ -3,5 +3,6 @@
   "identifier": "com.hust.justmd.windows",
   "version": "0.2.0",
   "out": "build",
+  "icon": "resources/icon.png",
   "linux": { "webview": false }
 }

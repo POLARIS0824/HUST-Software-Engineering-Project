@@ -80,6 +80,16 @@
 - **兜底路径**：系统开启"减少动态效果"（`Preferences.ReduceMotion`）时直接删除不做动画；动画中途切到回收站/设置页、被删笔记因标签过滤不在列表、或进入搜索态时，立即结算删除。
 - **回归测试**（`shred_test.go`）：动画期间不删且可打开 → 推进虚拟时钟后进回收站并带"撤销"、撤销可恢复；ReduceMotion 立即删除；切页立即结算；碎纸中段的渲染像素与静止画面不同（`ui.Tester.Image()` 逐像素比较）。同时更新了两条既有删除用例（`TestUserSim`、`TestContextMenuHitsAnimatedRow`）以等待动画结束。
 
+### 应用图标换成 Looma 图标资源（2026-11-02，尺寸证据 `docs/app-icon-2026-11-02.png`）
+
+- **来源**：`Looma_Icon_Resources_Download.zip` 里的 `source/looma_icon_full_1024.png`（1024×1024 白底完整方图，与 Android 版同一套图形）。
+- **处理**：转成 Windows 版的应用图标 `windows/JustMD/resources/icon.png`——透明画布 + 白色圆角卡片（圆角半径 18%，接近 Windows 11 图标观感），卡片内沿用原图构图（彩条占比与安卓版一致，小尺寸下仍可辨识）。`mygo.json` 显式 `"icon": "resources/icon.png"`。
+- **两条生效路径**：
+  1. 打包：`go tool mygo build` 把图标生成 16/24/32/48/64/128/256 多尺寸 `.ico`，嵌入 `JustMD.exe` 与 NSIS 安装包；
+  2. 运行期：`icon.go` 用 `//go:embed resources/icon.png` + `Window.SetIcon` 再设置一次窗口图标，覆盖 `go run .` / `mygo dev` 这类没有 exe 资源的场景（打包后与 exe 内嵌图标一致）。
+- **已验证**：`go tool mygo build` 实跑成功（`build/windows-amd64/JustMD.exe` 12.4 MB、`justmd-setup-0.2.0-amd64.exe` 4.2 MB）；用 `PrivateExtractIcons` 从 **exe 与安装包**分别提取 16/32/48/256 四档图标，均为新图标且无缺失档位；build 目录旁复制的 `icon.png` 与仓库文件哈希一致；`TestAppIconEmbedded` 断言嵌入的是可解码的方形 PNG（≥256）且无窗口调用不 panic；`go test ./...` 129 用例全绿。
+- **未验证**：Windows 资源管理器/任务栏/开始菜单在安装后的实际显示（需跑安装包后人工确认）；安装流程本身未执行。
+
 ### 标题框删不干净（2026-11-01，实机复现修复）
 
 - **现象**：标题输入框删到只剩最后一个字符就删不掉，旧字符反复回弹。
