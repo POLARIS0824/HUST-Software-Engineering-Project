@@ -39,7 +39,7 @@ Onevra 组件库（小组指定，队友要求"不要用 webview"）。两轮迭
 ```bash
 cd windows/JustMD
 go run .                      # 开发运行（注意：mygo dev 会被杀毒软件锁 exe）
-CGO_ENABLED=0 go test ./...   # 全部测试（必须无 cgo，181 个用例，约 15 秒）
+CGO_ENABLED=0 go test ./...   # 全部测试（必须无 cgo，204 个用例，约 16 秒）
 go vet . && go tool mygo vet .
 gofmt -l .                    # 必须无输出
 go build -o looma-test.exe .  # 构建可运行程序（本地测试用，勿提交）
@@ -61,6 +61,7 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 | `meta.go` | 开放 JSON 元数据 + pending 崩溃恢复日志 |
 | `atomic.go` | 原子写、规范化、sha256、`safeRelPath`、`uniqueRelPath` |
 | `sanitize.go` | 文件名清洗 |
+| `category.go` | 分类（= `notes/` 下的真实目录）：`ListCategories`/`UnfiledNoteCount`/`CreateCategory`/`MoveNoteToCategory`/`DeleteCategory`（移动只搬文件、不改名；先写 pending，失败回滚，仅能删空分类） |
 | `portability.go` | 导入（`decodeImportedText` 唯一解码入口 / 文件夹导入 / 冲突三选一 / 路径二次校验）、`writeVaultZip` ZIP 导出、装载与崩溃对账（哈希校准、元数据择优）、拖放导入（目录递归、附件查重） |
 | `errors.go` | 领域错误（中文业务化措辞） |
 | `migration.go` | 产品更名（JustMD → Looma）的用户数据兼容：把旧用户目录的配置/窗口状态复制到新目录（只复制、不覆盖、不删旧文件） |
@@ -76,6 +77,7 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 | `view_pages.go` | 回收站、设置页、确认弹窗、导入冲突弹窗 |
 | `shred.go` | 删除笔记的"碎纸机"动画：`shredAnim`（进度/时长）+ `shredEffect`（`ui.Effect`，把行渲染成位图后按竖条切片下落/旋转/淡出） |
 | `icon.go` | 应用图标：`//go:embed resources/icon.png` + `applyWindowIcon`（`Window.SetIcon`），让开发运行也有窗口/任务栏图标；打包时由 MyGo 嵌入 exe/安装包资源 |
+| `view_category.go` | 分类界面：侧栏分类树（含「未分类」）、分类/标签过滤互斥、右键或胶囊打开移动弹窗、新建/删除分类弹窗 |
 | `*_test.go` | 领域测试 + `view_test` 回归 + `usersim*` 用户流程模拟 |
 
 ## 5. 本阶段已完成的工作（2026-10-30 ~ 11-01）
@@ -153,6 +155,12 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
     `%APPDATA%\JustMD` 的配置与窗口状态复制到新目录（只复制、不覆盖、不删旧文件），
     用户不需要重新选择知识库。笔记数据格式完全不变；导出包 manifest 的 `generator`
     仍为基线 4.7 规定的 `"JustMD v1.1"`（跨平台格式标识，不随产品名变化）。
+12. **笔记分类（真实文件夹）**（2026-11-02，界面证据 `docs/category-2026-11-02.png`）：
+    分类 = `notes/` 下的真实目录（可多级），不是独立数据库字段；移动笔记只搬 `.md`，
+    不改文件名/标题（改名会破坏双链），导出 ZIP 与导入文件夹天然保留层级。
+    侧栏「分类」树含「未分类」入口，右键卡片或编辑区「📁 分类」胶囊打开移动弹窗；
+    分类与标签过滤互斥；在分类视图里新建笔记直接落进该分类；删除分类只允许空目录。
+    领域实现见 `category.go`，界面见 `view_category.go`，决策见第 6 节第 25 条。
 
 ## 6. 关键设计决策（接手者不要轻易推翻）
 
@@ -236,6 +244,14 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
     `"JustMD v1.1"`）保持不变——前者只是内部标识，后者是跨平台导出格式的字段，
     改名会让 Android 版解析不一致。改用户数据目录后必须保留 `migration.go` 的迁移逻辑
     （只复制旧目录的配置/窗口状态，不覆盖新数据、不删旧文件），否则升级用户会丢工作区选择。
+25. **分类就是 `notes/` 下的真实目录**，不引入数据库字段或侧边索引文件：
+    这样 Markdown 文件仍是唯一事实源（BR-01），导出 ZIP/导入文件夹天然带层级，
+    用户用资源管理器整理目录也能被正确读回。移动笔记**只搬文件、绝不改文件名/标题**
+    （改名会波及双链；目标分类已有同名笔记时返回 `ErrCategoryConflict` 让用户自己决定），
+    所以移动不推进 `Revision`/`UpdatedAtUtc`。写盘顺序与崩溃对账和改名同型：
+    先写 `pending kind=move`，再搬文件、提交 meta，失败回滚；`loadWorkspace` 有 move 分支。
+    分类删除只允许空目录（`ErrCategoryNotEmpty`），绝不递归删。分类过滤与标签过滤互斥，
+    避免两个过滤叠加后列表空得莫名其妙。
 
 ## 7. 测试与调试工具链
 
@@ -262,7 +278,7 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 ## 8. 验证状态（诚实版）
 
 **已验证**（细节见 `windows/docs/verification-record.md`）：
-- `gofmt`/`go vet`/`go tool mygo vet`/`CGO_ENABLED=0 go test ./...` 全绿（181 用例）；
+- `gofmt`/`go vet`/`go tool mygo vet`/`CGO_ENABLED=0 go test ./...` 全绿（204 用例）；
   上一轮 CI（windows-latest）全绿，本轮改动需 push 后再看 CI 结果。
 - **本轮（2026-11-02）PR #1 第三轮整改的 8 个变更文件逐一做了变异测试**：把修复代码改回缺陷版本，
   对应回归用例必须 FAIL；改回后必须 PASS——确认 29 个新用例不会出现"测试通过但 bug 还在"的假阳性。
@@ -285,6 +301,9 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
   `looma-setup-0.2.0-amd64.exe`；实机启动窗口标题为 "Looma"；
   首次启动自动从 `%APPDATA%\JustMD` 迁移出 `looma-config.json` 与 `window-state.json`
   （工作区指针、窗口位置都保留，旧目录未删除）；迁移用例 4 个通过。安装包安装流程未执行。
+- **笔记分类**：领域 12 + 界面 11 个回归用例覆盖树/计数/建删、移动（保留标题正文双链、
+  同名冲突不动文件、幂等、移回未分类）、崩溃对账 `move`、过滤与空状态、新建笔记落入当前分类；
+  `ui.Tester` 证据 `docs/category-2026-11-02.png`。分类重命名/拖拽移动未实现。
 
 **明确没做/没验证**（也是下一步）：
 - 真实中文 IME 专项（常规中文输入与 IME 组合输入标题实测正常，未做系统性用例）、
@@ -314,3 +333,4 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 - `windows/docs/technical-selection.md` — 为什么原生 UI/Onevra、平台差异
 - `windows/docs/verification-record.md` — **已验证/未验证的唯一权威来源**
 - `android/docs/` — 需求基线（改需求先看这里，编号不要乱造）
+
