@@ -18,21 +18,24 @@ internal class RoomNoteIndex(private val database: NoteIndexDatabase) : NoteInde
 
     override suspend fun load(vaultId: VaultId): List<IndexedNote> {
         val key = vaultId.value
-        val tagsByPath = dao.tags(key).groupBy { it.notePath }
-        val linksByPath = dao.links(key).groupBy { it.notePath }
-        return dao.notes(key).map { note ->
-            IndexedNote(
-                id = NoteId(vaultId, NotePath(note.path)),
-                title = note.title,
-                excerpt = note.excerpt,
-                snippet = note.snippet,
-                coverPath = note.coverPath,
-                modifiedAt = Instant.ofEpochMilli(note.modifiedAt),
-                fingerprint = FileFingerprint(note.sizeBytes, note.modifiedAt),
-                tags = tagsByPath[note.path].orEmpty().map { it.tag },
-                links = linksByPath[note.path].orEmpty()
-                    .map { MarkdownLink(target = it.target, embedded = it.embedded) },
-            )
+        // 三张表必须在同一个事务里读：写穿只改其中一部分时，不能让图拼出「有笔记、没链接」的快照
+        return database.withTransaction {
+            val tagsByPath = dao.tags(key).groupBy { it.notePath }
+            val linksByPath = dao.links(key).groupBy { it.notePath }
+            dao.notes(key).map { note ->
+                IndexedNote(
+                    id = NoteId(vaultId, NotePath(note.path)),
+                    title = note.title,
+                    excerpt = note.excerpt,
+                    snippet = note.snippet,
+                    coverPath = note.coverPath,
+                    modifiedAt = Instant.ofEpochMilli(note.modifiedAt),
+                    fingerprint = FileFingerprint(note.sizeBytes, note.modifiedAt),
+                    tags = tagsByPath[note.path].orEmpty().map { it.tag },
+                    links = linksByPath[note.path].orEmpty()
+                        .map { MarkdownLink(target = it.target, embedded = it.embedded) },
+                )
+            }
         }
     }
 
