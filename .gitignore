@@ -3,3 +3,6 @@ android/.idea/
 
 # 一次性原型，不入库
 .prototype/
+
+# 体积大的技能镜像只留在本机
+.agents/skills/m3-skill/
