@@ -27,7 +27,7 @@ internal class MarkdownParser {
                         it.trim().startsWith("![[") ||
                         it.trim().startsWith("![")
             }
-            .map { it.trim().replace(LIST_MARKER, "") }
+            .map { stripInlineMarkdown(it.trim().replace(LIST_MARKER, "")) }
             .filter { it.isNotBlank() }
             .take(15)
             .joinToString("\n")
@@ -56,6 +56,15 @@ internal class MarkdownParser {
         )
     }
 
+    /** 摘要只做纯文本，渲染交给 Markdown 渲染器，这里不去猜样式 */
+    private fun stripInlineMarkdown(line: String): String = line
+        .replace(WIKI_IMAGE, "")
+        .replace(WIKI_LINK, "$1")
+        .replace(MARKDOWN_IMAGE, "")
+        .replace(MARKDOWN_LINK, "$1")
+        .replace(EMPHASIS, "")
+        .replace(CODE_SPAN, "$1")
+
     private fun bodyLines(text: String): List<String> {
         val lines = text.lines()
         if (lines.firstOrNull()?.trim() != "---") return lines
@@ -76,5 +85,8 @@ internal class MarkdownParser {
         val MARKDOWN_IMAGE = Regex("""!\[[^]]*]\(([^)]+)\)""")
         val WIKI_IMAGE = Regex("""!\[\[([^]]+)]]""")
         val WIKI_LINK = Regex("""(?<!!)\[\[([^]]+)]]""")
+        val MARKDOWN_LINK = Regex("""\[([^]]*)]\(([^)]*)\)""")
+        val EMPHASIS = Regex("""\*\*|\*|__|~~""")
+        val CODE_SPAN = Regex("""`([^`]*)`""")
     }
 }

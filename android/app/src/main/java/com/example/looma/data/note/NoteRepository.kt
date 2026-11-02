@@ -1,6 +1,7 @@
 package com.example.looma.data.note
 
 import com.example.looma.data.vault.VaultRepository
+import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.Note
 import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.model.NoteSummary
@@ -56,7 +57,8 @@ class NoteRepository(vaultRepository: VaultRepository) {
     suspend fun createNote(
         title: String = "未命名笔记",
         initialContent: String? = null,
-    ): Note = toNote(fileStore.createNote(title, initialContent))
+        folder: FolderPath = FolderPath.Root,
+    ): Note = toNote(fileStore.createNote(title, initialContent, folder))
 
     suspend fun saveNote(
         id: NoteId,

@@ -38,7 +38,7 @@ class HomeViewModel(
     fun refresh() {
         refreshJob?.cancel()
         refreshJob = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
+            _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 val vault = vaultRepository.requireCurrentVault()
                 val result = noteRepository.listNotes()
@@ -54,9 +54,11 @@ class HomeViewModel(
                         searchResults = notes.matching(current.query).orderedBy(current.sort),
                         files = index.files(path, current.sort),
                         isLoading = false,
-                        errorMessage = result.unreadableCount
-                            .takeIf { count -> count > 0 }
-                            ?.let { count -> "$count 个笔记文件无法读取" },
+                        error = if (result.unreadableCount > 0) {
+                            HomeError.UnreadableNotes(result.unreadableCount)
+                        } else {
+                            null
+                        },
                     )
                 }
             } catch (e: CancellationException) {
@@ -69,7 +71,7 @@ class HomeViewModel(
                         searchResults = emptyList(),
                         files = HomeFilesState(),
                         isLoading = false,
-                        errorMessage = e.localizedMessage ?: "加载笔记失败",
+                        error = HomeError.LoadFailed,
                     )
                 }
             }
@@ -97,11 +99,7 @@ class HomeViewModel(
 
     fun toggleLayout() = _uiState.update { it.copy(isGridMode = !it.isGridMode) }
 
-    fun toggleSort() = _uiState.update {
-        val sort = when (it.sort) {
-            HomeSort.LAST_MODIFIED -> HomeSort.TITLE
-            HomeSort.TITLE -> HomeSort.LAST_MODIFIED
-        }
+    fun setSort(sort: HomeSort) = _uiState.update {
         it.copy(
             sort = sort,
             notes = it.notes.orderedBy(sort),
@@ -113,15 +111,16 @@ class HomeViewModel(
     fun createNote() {
         if (_uiState.value.isCreating) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isCreating = true, errorMessage = null) }
+            _uiState.update { it.copy(isCreating = true, error = null) }
             try {
-                val note = noteRepository.createNote()
+                val folder = _uiState.value.files.path
+                val note = noteRepository.createNote(folder = folder)
                 refresh()
                 _uiState.update { it.copy(createdNote = note.id) }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiState.update { it.copy(errorMessage = e.localizedMessage ?: "创建笔记失败") }
+                _uiState.update { it.copy(error = HomeError.CreateFailed) }
             } finally {
                 _uiState.update { it.copy(isCreating = false) }
             }
@@ -143,8 +142,7 @@ class HomeViewModel(
 
 private fun NoteListEntry.toHomeItem() = HomeNoteItem(
     summary = summary,
-    checklist = metadata.checklist.take(5).map { HomeChecklistItem(it.text, it.checked) },
     coverPath = coverPath,
-    linkLabel = metadata.firstWikiLink,
+    markdownSnippet = markdownSnippetOf(searchText, summary.title),
     searchableText = searchText,
 )

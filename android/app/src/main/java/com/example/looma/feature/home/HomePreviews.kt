@@ -4,7 +4,6 @@ import android.content.res.Configuration
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -19,6 +18,7 @@ import com.example.looma.domain.model.VaultFolder
 import com.example.looma.domain.model.VaultId
 import com.example.looma.feature.home.components.HomeSearchResults
 import com.example.looma.ui.theme.LoomaTheme
+import com.example.looma.ui.theme.LoomaTokens
 import java.time.Instant
 
 /**
@@ -59,7 +59,6 @@ private fun previewNotes(): List<HomeNoteItem> {
         excerpt: String,
         path: String = "$name.md",
         tags: Set<String> = emptySet(),
-        checklist: List<HomeChecklistItem> = emptyList(),
     ) = HomeNoteItem(
         summary = NoteSummary(
             id = NoteId(VaultId("preview-vault"), NotePath(path)),
@@ -68,7 +67,7 @@ private fun previewNotes(): List<HomeNoteItem> {
             modifiedAt = Instant.parse("2026-10-31T12:00:00Z"),
             tags = tags,
         ),
-        checklist = checklist,
+        markdownSnippet = excerpt,
         searchableText = "$title $excerpt",
     )
     return listOf(
@@ -82,13 +81,7 @@ private fun previewNotes(): List<HomeNoteItem> {
         note(
             "git",
             "Git 忽略清单",
-            "",
-            checklist = listOf(
-                HomeChecklistItem(".claude", false),
-                HomeChecklistItem(".idea", false),
-                HomeChecklistItem("CLAUDE.md", false),
-                HomeChecklistItem("tests/", true),
-            ),
+            "- [ ] .claude\n- [ ] .idea\n- [x] tests/",
         ),
         note(
             "java",
@@ -143,12 +136,12 @@ private fun HomeFolderPreview() {
 @Composable
 private fun HomeSearchResultsPreview() {
     LoomaTheme(dynamicColor = false) {
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+        Surface(Modifier.fillMaxSize(), color = LoomaTokens.colors.page) {
             Column {
                 Text(
                     text = "搜索 Java",
                     modifier = Modifier.padding(20.dp),
-                    style = MaterialTheme.typography.titleLarge,
+                    style = LoomaTokens.type.sheetTitle,
                 )
                 HomeSearchResults(
                     query = "Java",
@@ -167,7 +160,7 @@ private fun HomeScreenPreview(state: HomeUiState) {
         state = state,
         onQueryChange = {},
         onToggleLayout = {},
-        onToggleSort = {},
+        onSortSelect = {},
         onNoteClick = {},
         onFolderClick = {},
         onNavigateUp = {},

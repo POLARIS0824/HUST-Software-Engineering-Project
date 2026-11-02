@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -44,19 +45,19 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.example.looma.R
 import com.example.looma.domain.model.NoteId
 import com.example.looma.feature.home.HomeNoteItem
-import com.example.looma.feature.home.HomeSort
 import com.example.looma.feature.home.HomeUiState
 import com.example.looma.ui.components.LoomaIcon
+import com.example.looma.ui.theme.LoomaTokens
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
@@ -75,7 +76,7 @@ internal fun HomeSearchBar(
     scrollBehavior: SearchBarScrollBehavior,
     onQueryChange: (String) -> Unit,
     onToggleLayout: () -> Unit,
-    onToggleSort: () -> Unit,
+    onSortClick: () -> Unit,
     onNoteClick: (NoteId) -> Unit,
     onMenuClick: () -> Unit,
     onAvatarClick: () -> Unit,
@@ -84,8 +85,25 @@ internal fun HomeSearchBar(
     val searchBarState = rememberContainedSearchBarState()
     val scope = rememberCoroutineScope()
     val keyboard = LocalSoftwareKeyboardController.current
+    // 搜索条和页面同底色，输入框用卡片色，靠明度差分层；不画描边。
+    val pageColor = LoomaTokens.colors.page
+    val fieldColor = LoomaTokens.colors.searchField
+    val baseSearchColors = SearchBarDefaults.containedColors(state = searchBarState)
+    val fieldColors = baseSearchColors.inputFieldColors.copy(
+        focusedContainerColor = fieldColor,
+        unfocusedContainerColor = fieldColor,
+    )
     val appBarColors = SearchBarDefaults.appBarWithSearchColors(
-        searchBarColors = SearchBarDefaults.containedColors(state = searchBarState),
+        searchBarColors = baseSearchColors.copy(
+            containerColor = fieldColor,
+            dividerColor = Color.Transparent,
+            inputFieldColors = fieldColors,
+        ),
+        scrolledSearchBarContainerColor = fieldColor,
+        appBarContainerColor = pageColor,
+        scrolledAppBarContainerColor = pageColor,
+        appBarNavigationIconColor = LoomaTokens.colors.title,
+        appBarActionIconColor = LoomaTokens.colors.title,
     )
 
     val collapse: () -> Unit = {
@@ -114,20 +132,23 @@ internal fun HomeSearchBar(
             textFieldState = textFieldState,
             searchBarState = searchBarState,
             colors = appBarColors.searchBarColors.inputFieldColors,
+            textStyle = LoomaTokens.type.searchText,
             onSearch = {
                 keyboard?.hide()
                 scope.launch { searchBarState.animateToCollapsed() }
             },
             placeholder = {
                 HomeSearchPlaceholder(
-                    text = if (expanded) "搜索 ${state.vaultName}" else "Looma",
-                    emphasized = !expanded,
+                    text = stringResource(R.string.home_search_placeholder, state.vaultName),
                 )
             },
             leadingIcon = {
                 if (expanded) {
                     IconButton(onClick = collapse) {
-                        LoomaIcon(R.drawable.ic_arrow_back, contentDescription = "关闭搜索")
+                        LoomaIcon(
+                            iconRes = R.drawable.ic_arrow_back,
+                            contentDescription = stringResource(R.string.home_close_search_description),
+                        )
                     }
                 } else {
                     LoomaIcon(R.drawable.ic_search, contentDescription = null)
@@ -138,14 +159,18 @@ internal fun HomeSearchBar(
                     if (textFieldState.text.isNotEmpty()) {
                         IconButton(
                             onClick = { textFieldState.setTextAndPlaceCursorAtEnd("") },
-                        ) { LoomaIcon(R.drawable.ic_close, contentDescription = "清除搜索内容") }
+                        ) {
+                            LoomaIcon(
+                                iconRes = R.drawable.ic_close,
+                                contentDescription = stringResource(R.string.home_clear_search_description),
+                            )
+                        }
                     }
                 } else {
                     HomeListControls(
                         isGridMode = state.isGridMode,
-                        sort = state.sort,
                         onToggleLayout = onToggleLayout,
-                        onToggleSort = onToggleSort,
+                        onSortClick = onSortClick,
                     )
                 }
             },
@@ -160,7 +185,10 @@ internal fun HomeSearchBar(
         navigationIcon = {
             HideWhenSearchExpanded(searchBarState, fromStart = true) {
                 IconButton(onClick = onMenuClick) {
-                    LoomaIcon(R.drawable.ic_menu, contentDescription = "打开侧边菜单")
+                    LoomaIcon(
+                        iconRes = R.drawable.ic_menu,
+                        contentDescription = stringResource(R.string.home_menu_description),
+                    )
                 }
             }
         },
@@ -188,18 +216,13 @@ internal fun HomeSearchBar(
 }
 
 @Composable
-private fun HomeSearchPlaceholder(text: String, emphasized: Boolean) {
+private fun HomeSearchPlaceholder(text: String) {
     Text(
         text = text,
         // 占位文字不需要被读屏重复朗读
         modifier = Modifier.clearAndSetSemantics {},
-        style = if (emphasized) {
-            MaterialTheme.typography.titleLarge
-        } else {
-            MaterialTheme.typography.bodyLarge
-        },
-        fontWeight = if (emphasized) FontWeight.SemiBold else FontWeight.Normal,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        style = LoomaTokens.type.searchText,
+        color = LoomaTokens.colors.muted,
         maxLines = 1,
     )
 }
@@ -207,25 +230,22 @@ private fun HomeSearchPlaceholder(text: String, emphasized: Boolean) {
 @Composable
 private fun HomeListControls(
     isGridMode: Boolean,
-    sort: HomeSort,
     onToggleLayout: () -> Unit,
-    onToggleSort: () -> Unit,
+    onSortClick: () -> Unit,
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onToggleLayout) {
             LoomaIcon(
                 iconRes = if (isGridMode) R.drawable.ic_view_list else R.drawable.ic_grid,
-                contentDescription = if (isGridMode) "切换为列表" else "切换为网格",
+                contentDescription = stringResource(
+                    if (isGridMode) R.string.home_switch_to_list_description else R.string.home_switch_to_grid_description,
+                ),
             )
         }
-        IconButton(onClick = onToggleSort) {
+        IconButton(onClick = onSortClick) {
             LoomaIcon(
                 iconRes = R.drawable.ic_sort,
-                contentDescription = if (sort == HomeSort.LAST_MODIFIED) {
-                    "按标题排序"
-                } else {
-                    "按修改时间排序"
-                },
+                contentDescription = stringResource(R.string.home_sort_description),
             )
         }
     }
@@ -233,17 +253,22 @@ private fun HomeListControls(
 
 @Composable
 private fun HomeAvatarButton(onClick: () -> Unit) {
+    val avatarDescription = stringResource(R.string.home_avatar_description)
     Surface(
         onClick = onClick,
         modifier = Modifier
-            .size(44.dp)
-            .semantics { contentDescription = "笔记库设置" },
+            .padding(end = 4.dp)
+            .size(40.dp)
+            .semantics { contentDescription = avatarDescription },
         shape = CircleShape,
-        color = MaterialTheme.colorScheme.primaryContainer,
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary),
+        color = LoomaTokens.colors.accentContainer,
+        border = BorderStroke(2.dp, LoomaTokens.colors.avatarRing),
     ) {
         Box(contentAlignment = Alignment.Center) {
-            Text("L", style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = stringResource(R.string.home_avatar_letter),
+                style = LoomaTokens.type.avatar,
+            )
         }
     }
 }
@@ -279,8 +304,8 @@ internal fun HomeSearchResults(
     onNoteClick: (NoteId) -> Unit,
 ) {
     when {
-        query.isBlank() -> HomeSearchHint("搜索标题、正文与标签")
-        notes.isEmpty() -> HomeSearchHint("没有匹配的笔记")
+        query.isBlank() -> HomeSearchHint(stringResource(R.string.home_search_hint))
+        notes.isEmpty() -> HomeSearchHint(stringResource(R.string.home_search_no_match))
         else -> LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 24.dp),
@@ -288,11 +313,19 @@ internal fun HomeSearchResults(
             items(notes, key = { it.listKey }) { note ->
                 ListItem(
                     headlineContent = {
-                        Text(note.summary.title, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            text = note.summary.title,
+                            style = LoomaTokens.type.cardTitle,
+                            color = LoomaTokens.colors.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     },
                     supportingContent = {
                         Text(
                             text = note.summary.excerpt.ifEmpty { note.id.path.relativePath },
+                            style = LoomaTokens.type.cardBody,
+                            color = LoomaTokens.colors.body,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -301,7 +334,9 @@ internal fun HomeSearchResults(
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clickable(onClickLabel = "打开笔记") { onNoteClick(note.id) },
+                        .clickable(onClickLabel = stringResource(R.string.home_open_note_label)) {
+                            onNoteClick(note.id)
+                        },
                 )
             }
         }
@@ -311,6 +346,6 @@ internal fun HomeSearchResults(
 @Composable
 private fun HomeSearchHint(text: String) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(text, style = LoomaTokens.type.emptyState, color = LoomaTokens.colors.muted)
     }
 }

@@ -1,35 +1,36 @@
 package com.example.looma.feature.home.components
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.example.looma.feature.home.HomeChecklistItem
+import com.example.looma.R
 import com.example.looma.feature.home.HomeNoteItem
+import com.example.looma.ui.markdown.MarkdownPreview
+import com.example.looma.ui.theme.LoomaTokens
 
-/** 单张笔记卡片：封面、标题、摘要、清单、链接与标签，顺序固定 */
+/** 单张笔记卡片：封面、标题、Markdown 正文开头与标签 */
 @Composable
 internal fun HomeNoteCard(note: HomeNoteItem, onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = LoomaTokens.colors.card,
     ) {
         Column {
             note.coverPath?.let { path ->
@@ -40,26 +41,31 @@ internal fun HomeNoteCard(note: HomeNoteItem, onClick: () -> Unit) {
             }
             Column(
                 modifier = Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 Text(
                     text = note.summary.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 3,
+                    style = LoomaTokens.type.cardTitle,
+                    color = LoomaTokens.colors.title,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
-                if (note.summary.excerpt.isNotBlank()) {
+                if (note.markdownSnippet.isBlank()) {
                     Text(
-                        text = note.summary.excerpt,
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 9,
-                        overflow = TextOverflow.Ellipsis,
+                        text = stringResource(R.string.home_empty_note),
+                        style = LoomaTokens.type.cardBody,
+                        color = LoomaTokens.colors.muted,
                     )
+                } else {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 240.dp)
+                            .clipToBounds(),
+                    ) {
+                        MarkdownPreview(markdown = note.markdownSnippet)
+                    }
                 }
-                note.checklist.forEach { item -> HomeChecklistRow(item) }
-                note.linkLabel?.let { link -> HomeChip("▣ $link") }
                 if (note.summary.tags.isNotEmpty()) {
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         note.summary.tags.take(2).forEach { tag ->
@@ -73,33 +79,16 @@ internal fun HomeNoteCard(note: HomeNoteItem, onClick: () -> Unit) {
 }
 
 @Composable
-private fun HomeChecklistRow(item: HomeChecklistItem) {
-    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(
-            text = if (item.checked) "☑" else "☐",
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Text(
-            text = item.text,
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-@Composable
 private fun HomeChip(label: String) {
     Surface(
         shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.secondaryContainer,
+        color = LoomaTokens.colors.chip,
     ) {
         Text(
             text = label,
             modifier = Modifier.widthIn(max = 150.dp).padding(horizontal = 10.dp, vertical = 7.dp),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSecondaryContainer,
+            style = LoomaTokens.type.cardMeta,
+            color = LoomaTokens.colors.onChip,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )

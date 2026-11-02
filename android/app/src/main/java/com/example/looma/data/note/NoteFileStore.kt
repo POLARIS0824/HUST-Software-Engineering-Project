@@ -87,15 +87,17 @@ internal class NoteFileStore(
     suspend fun createNote(
         title: String = "未命名笔记",
         initialContent: String? = null,
+        folder: FolderPath = FolderPath.Root,
     ): StoredMarkdown = withContext(Dispatchers.IO) {
         val vault = vaultRepository.requireCurrentVault()
         val root = rootDir(vault)
+        val directory = resolveNoteFolder(root, folder)
         val base = safeFilename(title)
         var chosen: File? = null
         for (i in 0..999) {
             coroutineContext.ensureActive()
             val name = if (i == 0) "$base.md" else "$base ($i).md"
-            val candidate = File(root, name)
+            val candidate = File(directory, name)
             if (!isInside(root, candidate)) throw SecurityException("无效笔记路径")
             if (candidate.createNewFile()) {
                 chosen = candidate
@@ -261,6 +263,22 @@ internal class NoteFileStore(
 
     private fun rootDir(vault: Vault): File = File(vault.rootPath).canonicalFile.also {
         if (!it.isDirectory || !it.canRead()) throw IOException("当前 Vault 不可访问")
+    }
+
+    /** 新建笔记的目标目录：空路径是根目录，其余必须落在 Vault 内，不存在就建出来 */
+    private fun resolveNoteFolder(root: File, folder: FolderPath): File {
+        val relative = folder.relativePath
+        if (relative.isEmpty()) return root
+        require(
+            !relative.startsWith('/') && '\\' !in relative &&
+                relative.split('/').none { it.isBlank() || it == "." || it == ".." || it.startsWith('.') }
+        ) { "无效文件夹路径" }
+        val directory = File(root, relative).canonicalFile
+        require(directory != root && directory.toPath().startsWith(root.toPath())) {
+            "文件夹路径超出 Vault"
+        }
+        if (!directory.isDirectory && !directory.mkdirs()) throw IOException("无法创建笔记目录")
+        return directory
     }
 
     private fun resolveNoteFile(root: File, path: NotePath): File {

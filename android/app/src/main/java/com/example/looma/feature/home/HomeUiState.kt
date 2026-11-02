@@ -3,17 +3,19 @@ package com.example.looma.feature.home
 import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.model.NoteSummary
 
-data class HomeChecklistItem(
-    val text: String,
-    val checked: Boolean,
-)
+/** 首页能报给用户的错误，文案由 UI 层按资源映射 */
+sealed interface HomeError {
+    data class UnreadableNotes(val count: Int) : HomeError
+    data object LoadFailed : HomeError
+    data object CreateFailed : HomeError
+}
 
 /** 只放 Home 渲染需要的数据，不改 domain 模型 */
 data class HomeNoteItem(
     val summary: NoteSummary,
-    val checklist: List<HomeChecklistItem> = emptyList(),
     val coverPath: String? = null,
-    val linkLabel: String? = null,
+    /** 卡片里渲染的 Markdown 开头，已去掉 frontmatter 与重复标题 */
+    val markdownSnippet: String = "",
     val searchableText: String = "",
 ) {
     val id: NoteId get() = summary.id
@@ -46,7 +48,7 @@ data class HomeUiState(
     val sort: HomeSort = HomeSort.LAST_MODIFIED,
     val isLoading: Boolean = true,
     val isCreating: Boolean = false,
-    val errorMessage: String? = null,
+    val error: HomeError? = null,
     /** 一次性事件：新建成功后待打开的笔记，消费后置空 */
     val createdNote: NoteId? = null,
     /** 文件视图：当前浏览路径、面包屑、最近笔记与当前层的文件夹 / 笔记 */
