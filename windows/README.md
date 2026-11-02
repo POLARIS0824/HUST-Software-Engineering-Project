@@ -26,6 +26,11 @@ go run .                 # 开发运行
 go tool mygo build       # 打包（build/ 下生成 exe 与安装包）
 ```
 
+应用图标为 `resources/icon.png`（1024×1024 方形 PNG，`mygo.json` 的 `icon` 显式指向它）：
+`go tool mygo build` 会生成 16/24/32/48/64/128/256 多尺寸 `.ico` 嵌入 exe 与 NSIS 安装包；
+运行期还会用同一份图标设置窗口图标（`icon.go` 的 `go:embed` + `Window.SetIcon`），
+所以 `go run .` 的标题栏/任务栏也有正确图标。
+
 测试：
 
 ```bash

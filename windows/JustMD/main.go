@@ -76,6 +76,10 @@ func main() {
 			Content:   a.contentView,
 		})
 		a.attach(shell)
+		// 应用图标：打包时由 mygo 嵌入 exe 资源（resources/icon.png），
+		// 这里再设置一次窗口图标，让 `go run .`/开发模式的标题栏与任务栏
+		// 也显示正确图标（打包后两者一致）。
+		applyWindowIcon(shell.Window())
 		// 拖放导入（评审 #6）：.md 入库、图片等进 attachments/。
 		shell.Window().OnFileDrop(func(e *mygo.FileDropEvent) {
 			if len(e.Paths) == 0 {

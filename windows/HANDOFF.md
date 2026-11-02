@@ -37,7 +37,7 @@ Onevra 组件库（小组指定，队友要求"不要用 webview"）。两轮迭
 ```bash
 cd windows/JustMD
 go run .                      # 开发运行（注意：mygo dev 会被杀毒软件锁 exe）
-CGO_ENABLED=0 go test ./...   # 全部测试（必须无 cgo，128 个用例，约 11 秒）
+CGO_ENABLED=0 go test ./...   # 全部测试（必须无 cgo，178 个用例，约 14 秒）
 go vet . && go tool mygo vet .
 gofmt -l .                    # 必须无输出
 go build -o justmd-test.exe . # 构建可运行程序（本地测试用，勿提交）
@@ -72,6 +72,7 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 | `view_notes.go` | 主页面：列表行 `rowTransition`、编辑器/阅读 `paneSwap`、反链面板宽度弹簧、自绘编辑/阅读分段控件 |
 | `view_pages.go` | 回收站、设置页、确认弹窗、导入冲突弹窗 |
 | `shred.go` | 删除笔记的"碎纸机"动画：`shredAnim`（进度/时长）+ `shredEffect`（`ui.Effect`，把行渲染成位图后按竖条切片下落/旋转/淡出） |
+| `icon.go` | 应用图标：`//go:embed resources/icon.png` + `applyWindowIcon`（`Window.SetIcon`），让开发运行也有窗口/任务栏图标；打包时由 MyGo 嵌入 exe/安装包资源 |
 | `*_test.go` | 领域测试 + `view_test` 回归 + `usersim*` 用户流程模拟 |
 
 ## 5. 本阶段已完成的工作（2026-10-30 ~ 11-01）
@@ -114,6 +115,11 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
    删除时把列表行按竖条切片、错峰下落旋转淡出，播完才真正移入回收站。用 MyGo 的
    `Element.Effect` + `Painter.ImageRegion/Transform/Clip` 实现，不截屏、不加浮层；
    系统"减少动态效果"时直接删除。代码在 `shred.go`，决策见第 6 节第 17 条。
+10. **应用图标换成 Looma 图标资源**（2026-11-02，尺寸证据 `docs/app-icon-2026-11-02.png`）：
+   `resources/icon.png` 换为 Looma 的 1024 方图（透明画布 + 白色圆角卡片），`mygo.json`
+   显式 `"icon"`；打包时 MyGo 生成 16~256 多尺寸 `.ico` 嵌入 exe 与 NSIS 安装包，
+   运行期 `icon.go` 再用 `go:embed` + `Window.SetIcon` 设置窗口图标（覆盖 `go run .`）。
+   已实测从 exe/安装包提取 16/32/48/256 四档图标均为新图标；细节见核实记录。
 8. **PR #1 第二轮评审整改**（2026-11-01 晚，评审 W01~W14 / N1~N5）：新增 19 个回归用例
    （共 148 个）。修掉的主要问题：列表行按行错峰导致新建笔记时相邻行重叠（保留位移动画、
    去掉错峰）、保存乱序静默覆盖新内容（写入序号 + `ErrStaleRevision`）、外部删 `.md`
@@ -239,8 +245,8 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 ## 8. 验证状态（诚实版）
 
 **已验证**（细节见 `windows/docs/verification-record.md`）：
-- `gofmt`/`go vet`/`go tool mygo vet`/`CGO_ENABLED=0 go test ./...` 全绿（176 用例，
-  总语句覆盖 75.8%）；上一轮 CI（windows-latest）全绿，本轮改动需 push 后再看 CI 结果。
+- `gofmt`/`go vet`/`go tool mygo vet`/`CGO_ENABLED=0 go test ./...` 全绿（178 用例）；
+  上一轮 CI（windows-latest）全绿，本轮改动需 push 后再看 CI 结果。
 - **本轮（2026-11-02）PR #1 第三轮整改的 8 个变更文件逐一做了变异测试**：把修复代码改回缺陷版本，
   对应回归用例必须 FAIL；改回后必须 PASS——确认 29 个新用例不会出现"测试通过但 bug 还在"的假阳性。
 - 领域层：解析/检索/导入导出（含 GBK 端到端、ZIP 包体真实执行）/崩溃对账/标签树/
@@ -255,6 +261,9 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
   错峰下落、淡出；用例覆盖"动画期间不删→播完入回收站→撤销恢复"、ReduceMotion 直接删除、
   切页立即结算、碎纸中段像素与静止画面不同。窗口模式的观感仍需人工确认（无头渲染与 GPU 绘制
   的采样略有差异）。
+- **应用图标**：`go tool mygo build` 实跑成功，从 `JustMD.exe` 与 NSIS 安装包各提取
+  16/32/48/256 四档图标均为 Looma 新图标（尺寸证据 `docs/app-icon-2026-11-02.png`）；
+  `TestAppIconEmbedded` 覆盖嵌入图标的完整性。资源管理器/开始菜单的实际显示需安装后人工确认。
 
 **明确没做/没验证**（也是下一步）：
 - 真实中文 IME 专项（常规中文输入与 IME 组合输入标题实测正常，未做系统性用例）、
