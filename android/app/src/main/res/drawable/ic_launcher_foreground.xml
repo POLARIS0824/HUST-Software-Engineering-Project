@@ -1,13 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 图形按可见安全区（108dp 画布的中央 72dp）绘制：笔画外接框 43.68x42.72dp，约占可见区 61% -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
-    <path android:pathData="M 28.26,46.26 L 79.92,46.26" android:strokeWidth="13.86" android:strokeColor="#FA4438" android:strokeLineCap="round"/>
-    <path android:pathData="M 28.26,66.78 L 79.92,66.78" android:strokeWidth="13.86" android:strokeColor="#19B94E" android:strokeLineCap="round"/>
-    <path android:pathData="M 50.58,29.52 L 35.64,79.38" android:strokeWidth="14.22" android:strokeColor="#258BFD" android:strokeLineCap="round"/>
-    <path android:pathData="M 70.92,29.52 L 55.98,79.38" android:strokeWidth="14.22" android:strokeColor="#FEC911" android:strokeLineCap="round"/>
-    <path android:pathData="M 40.218,39.33 L 36.065,53.19 L 50.91,53.19 L 55.063,39.33 Z" android:fillColor="#3B60D9" />
-    <path android:pathData="M 60.558,39.33 L 56.405,53.19 L 71.25,53.19 L 75.403,39.33 Z" android:fillColor="#FE9D0D" />
-    <path android:pathData="M 34.07,59.85 L 29.917,73.71 L 44.761,73.71 L 48.914,59.85 Z" android:fillColor="#1493AE" />
-    <path android:pathData="M 54.41,59.85 L 50.257,73.71 L 65.101,73.71 L 69.254,59.85 Z" android:fillColor="#96C31D" />
+    <path android:pathData="M 36.78,48.54 L 71.22,48.54" android:strokeWidth="9.24" android:strokeColor="#FA4438" android:strokeLineCap="round"/>
+    <path android:pathData="M 36.78,62.22 L 71.22,62.22" android:strokeWidth="9.24" android:strokeColor="#19B94E" android:strokeLineCap="round"/>
+    <path android:pathData="M 51.66,37.38 L 41.7,70.62" android:strokeWidth="9.48" android:strokeColor="#258BFD" android:strokeLineCap="round"/>
+    <path android:pathData="M 65.22,37.38 L 55.26,70.62" android:strokeWidth="9.48" android:strokeColor="#FEC911" android:strokeLineCap="round"/>
+    <path android:pathData="M 44.75,43.92 L 41.98,53.16 L 51.88,53.16 L 54.65,43.92 Z" android:fillColor="#3B60D9" />
+    <path android:pathData="M 58.31,43.92 L 55.54,53.16 L 65.44,53.16 L 68.21,43.92 Z" android:fillColor="#FE9D0D" />
+    <path android:pathData="M 40.65,57.6 L 37.88,66.84 L 47.78,66.84 L 50.55,57.6 Z" android:fillColor="#1493AE" />
+    <path android:pathData="M 54.21,57.6 L 51.44,66.84 L 61.34,66.84 L 64.11,57.6 Z" android:fillColor="#96C31D" />
 </vector>

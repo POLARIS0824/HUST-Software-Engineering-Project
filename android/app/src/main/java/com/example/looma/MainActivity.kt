@@ -29,7 +29,6 @@ class MainActivity : AppCompatActivity() {
     private val folderRepository by lazy { FolderRepository(vaultRepository) }
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
 
-    // 笔记库状态与设置页共用一个 ViewModel：Activity 级作用域，切换目的地不会丢状态
     private val vaultSetupViewModel: VaultSetupViewModel by viewModels {
         VaultSetupViewModel.factory(vaultRepository)
     }
@@ -38,7 +37,6 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            // 主题偏好是 Activity 级的：改完立刻换色，不需要重启
             val settings by settingsRepository.settings
                 .collectAsStateWithLifecycle(initialValue = AppSettings())
             LoomaTheme(
