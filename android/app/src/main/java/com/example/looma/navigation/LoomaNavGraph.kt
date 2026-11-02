@@ -25,6 +25,7 @@ import androidx.navigation3.ui.NavDisplay
 import com.example.looma.R
 import com.example.looma.data.folder.FolderRepository
 import com.example.looma.data.note.NoteRepository
+import com.example.looma.data.search.SearchHistoryRepository
 import com.example.looma.data.settings.SettingsRepository
 import com.example.looma.data.vault.VaultRepository
 import com.example.looma.domain.model.NoteId
@@ -56,6 +57,7 @@ fun LoomaNavGraph(
     vaultRepository: VaultRepository,
     noteRepository: NoteRepository,
     folderRepository: FolderRepository,
+    searchHistoryRepository: SearchHistoryRepository,
     settingsRepository: SettingsRepository,
     vaultSetupViewModel: VaultSetupViewModel,
     modifier: Modifier = Modifier,
@@ -139,6 +141,7 @@ fun LoomaNavGraph(
                             vaultRepository = vaultRepository,
                             noteRepository = noteRepository,
                             folderRepository = folderRepository,
+                            searchHistoryRepository = searchHistoryRepository,
                         ),
                     )
                     HomeRoute(

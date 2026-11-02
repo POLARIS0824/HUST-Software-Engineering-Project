@@ -80,6 +80,8 @@ data class HomeUiState(
     /** 命中搜索框关键字的笔记，已按 [sort] 排序 */
     val searchResults: List<HomeNoteItem> = emptyList(),
     val query: String = "",
+    /** 搜索框为空时展示的最近搜索，最新在前 */
+    val recentSearches: List<String> = emptyList(),
     val isGridMode: Boolean = true,
     val sort: HomeSort = HomeSort.LAST_MODIFIED,
     val isLoading: Boolean = true,

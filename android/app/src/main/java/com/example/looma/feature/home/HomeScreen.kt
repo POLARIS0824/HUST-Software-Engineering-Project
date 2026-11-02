@@ -74,6 +74,8 @@ import com.example.looma.ui.theme.LoomaTokens
 @Immutable
 data class HomeActions(
     val onQueryChange: (String) -> Unit = {},
+    val onSearchSubmit: () -> Unit = {},
+    val onSearchResultClick: (NoteId) -> Unit = {},
     val onToggleLayout: () -> Unit = {},
     val onSortSelect: (HomeSort) -> Unit = {},
     val onNoteClick: (NoteId) -> Unit = {},
@@ -147,6 +149,11 @@ fun HomeRoute(
         state = state,
         actions = HomeActions(
             onQueryChange = viewModel::setQuery,
+            onSearchSubmit = viewModel::recordSearch,
+            onSearchResultClick = { noteId ->
+                viewModel.recordSearch()
+                onOpenNote(noteId)
+            },
             onToggleLayout = viewModel::toggleLayout,
             onSortSelect = viewModel::setSort,
             onNoteClick = onOpenNote,
@@ -228,7 +235,8 @@ fun HomeScreen(
                         onQueryChange = actions.onQueryChange,
                         onToggleLayout = actions.onToggleLayout,
                         onSortClick = { sortSheetVisible = true },
-                        onNoteClick = actions.onNoteClick,
+                        onSearchSubmit = actions.onSearchSubmit,
+                        onSearchResultClick = actions.onSearchResultClick,
                         onMenuClick = actions.onMenuClick,
                         onAvatarClick = actions.onSettingsClick,
                     )

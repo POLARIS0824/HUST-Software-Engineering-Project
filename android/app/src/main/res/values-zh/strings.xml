@@ -32,6 +32,7 @@
     <string name="home_avatar_letter">L</string>
     <string name="home_search_hint">搜索标题、正文与标签</string>
     <string name="home_search_no_match">没有匹配的笔记</string>
+    <string name="home_recent_searches">最近搜索</string>
     <string name="home_create_note_description">新建笔记</string>
     <string name="home_new_folder_description">新建文件夹</string>
     <string name="home_retry">重试</string>
