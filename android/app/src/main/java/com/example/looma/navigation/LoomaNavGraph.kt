@@ -171,6 +171,11 @@ fun LoomaNavGraph(
                     SettingsRoute(
                         vaultViewModel = vaultSetupViewModel,
                         settingsViewModel = settingsViewModel,
+                        onChangeVaultClick = {
+                            if (backStack.lastOrNull() != LoomaRoute.VaultSetup) {
+                                backStack.add(LoomaRoute.VaultSetup)
+                            }
+                        },
                         onNavigateUp = { if (backStack.size > 1) backStack.removeLastOrNull() },
                     )
                 }

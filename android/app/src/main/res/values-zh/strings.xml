@@ -102,8 +102,7 @@
     <string name="settings_title">设置</string>
     <string name="settings_section_vault">笔记库</string>
     <string name="settings_vault_none">尚未选择笔记库</string>
-    <string name="settings_vault_change">更换文件夹</string>
-    <string name="settings_vault_choose">选择文件夹</string>
+    <string name="settings_vault_change">更换笔记库</string>
     <string name="settings_section_storage">文件访问</string>
     <string name="settings_storage_allowed">已获得所有文件访问权限</string>
     <string name="settings_storage_denied">未获得所有文件访问权限</string>

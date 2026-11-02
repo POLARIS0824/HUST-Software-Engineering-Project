@@ -64,6 +64,7 @@ import com.example.looma.ui.theme.presetScheme
 fun SettingsRoute(
     vaultViewModel: VaultSetupViewModel,
     settingsViewModel: SettingsViewModel,
+    onChangeVaultClick: () -> Unit,
     onNavigateUp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -93,7 +94,8 @@ fun SettingsRoute(
         versionName = versionName,
         settings = settings,
         language = AppLocale.current(),
-        onChooseFolderClick = picker.chooseFolder,
+        onChangeVaultClick = onChangeVaultClick,
+        onStorageAccessClick = picker.chooseFolder,
         onDynamicColorChange = settingsViewModel::setDynamicColor,
         onThemePresetSelect = settingsViewModel::setThemePreset,
         onLanguageSelect = AppLocale::apply,
@@ -113,7 +115,8 @@ fun SettingsScreen(
     versionName: String,
     settings: AppSettings,
     language: AppLanguage,
-    onChooseFolderClick: () -> Unit,
+    onChangeVaultClick: () -> Unit,
+    onStorageAccessClick: () -> Unit,
     onDynamicColorChange: (Boolean) -> Unit,
     onThemePresetSelect: (ThemePreset) -> Unit,
     onLanguageSelect: (AppLanguage) -> Unit,
@@ -182,16 +185,8 @@ fun SettingsScreen(
                         }
                     },
                     trailingContent = {
-                        TextButton(onClick = onChooseFolderClick, enabled = !isVaultBusy) {
-                            Text(
-                                stringResource(
-                                    if (vaultName == null) {
-                                        R.string.settings_vault_choose
-                                    } else {
-                                        R.string.settings_vault_change
-                                    },
-                                ),
-                            )
+                        TextButton(onClick = onChangeVaultClick, enabled = !isVaultBusy) {
+                            Text(stringResource(R.string.settings_vault_change))
                         }
                     },
                     colors = ListItemDefaults.colors(containerColor = Color.Transparent),
@@ -270,7 +265,7 @@ fun SettingsScreen(
                     ),
                     trailing = if (!hasStorageAccess) {
                         {
-                            TextButton(onClick = onChooseFolderClick) {
+                            TextButton(onClick = onStorageAccessClick) {
                                 Text(stringResource(R.string.settings_storage_grant))
                             }
                         }

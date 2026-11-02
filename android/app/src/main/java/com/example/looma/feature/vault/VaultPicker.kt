@@ -18,8 +18,8 @@ import com.example.looma.data.vault.VaultStorageAccess
 /**
  * 笔记库选择入口：打开系统文件夹选择器，缺权限时先去授权，再回到选择器。
  *
- * 首次连接与设置页的“更换文件夹”走同一套流程，所以收敛在 feature 层，
- * Activity 不需要认识权限细节。
+ * 首次连接与设置页跳转过去的笔记库页共用同一份状态与选择器，
+ * 所以收敛在 feature 层，Activity 不需要认识权限细节。
  */
 @Immutable
 data class VaultPickerActions(

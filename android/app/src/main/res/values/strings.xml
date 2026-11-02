@@ -102,8 +102,7 @@
     <string name="settings_title">Settings</string>
     <string name="settings_section_vault">Notes vault</string>
     <string name="settings_vault_none">No vault selected</string>
-    <string name="settings_vault_change">Change folder</string>
-    <string name="settings_vault_choose">Choose folder</string>
+    <string name="settings_vault_change">Change vault</string>
     <string name="settings_section_storage">File access</string>
     <string name="settings_storage_allowed">All files access granted</string>
     <string name="settings_storage_denied">All files access not granted</string>
