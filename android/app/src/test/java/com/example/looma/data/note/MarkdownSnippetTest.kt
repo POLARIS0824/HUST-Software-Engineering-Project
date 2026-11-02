@@ -1,4 +1,4 @@
-package com.example.looma.feature.home
+package com.example.looma.data.note
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

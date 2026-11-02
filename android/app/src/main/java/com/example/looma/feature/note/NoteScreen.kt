@@ -20,6 +20,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -27,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -35,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -42,12 +46,17 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.looma.R
 import com.example.looma.domain.markdown.MarkdownEditing
 import com.example.looma.domain.markdown.MarkdownIndex
 import com.example.looma.domain.markdown.TextSelection
 import com.example.looma.domain.markdown.withCheckboxChecked
+import com.example.looma.domain.model.NoteId
+import com.example.looma.domain.wiki.WikiContext
+import com.example.looma.feature.note.components.BacklinksSection
 import com.example.looma.feature.note.components.NoteFormatBar
 import com.example.looma.feature.note.components.NoteLeaveDialog
 import com.example.looma.feature.note.components.NoteSaveBanner
@@ -57,6 +66,7 @@ import com.example.looma.ui.markdown.MarkdownBody
 import com.example.looma.ui.theme.LoomaTheme
 import com.example.looma.ui.theme.LoomaTokens
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 
 /**
  * 笔记页组合根。阅读和编辑是同一篇笔记的两种呈现，共用一份缓冲区，
@@ -67,10 +77,14 @@ fun NoteRoute(
     viewModel: NoteViewModel,
     fallbackTitle: String,
     onNavigateUp: () -> Unit,
+    onOpenNote: (NoteId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val requestLeave = { viewModel.requestLeave(onLeave = onNavigateUp) }
+
+    // 从别的笔记回来时双链可能已经变了：那边可能新增了反向链接，或让未解析的目标存在了
+    LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.refreshWiki() }
 
     // 有未落盘内容、或要丢弃空白笔记时接管返回；其余情况交给 Navigation 3 做预测性返回
     BackHandler(enabled = state.needsLeaveGuard || state.willDiscardEmpty) {
@@ -96,6 +110,7 @@ fun NoteRoute(
             onRequestLeave = requestLeave,
             onRetrySave = viewModel::retrySave,
             onOverwrite = viewModel::overwrite,
+            onOpenNote = onOpenNote,
             modifier = modifier,
         )
     }
@@ -123,6 +138,7 @@ private fun NoteWorkspace(
     onRequestLeave: () -> Unit,
     onRetrySave: () -> Unit,
     onOverwrite: () -> Unit,
+    onOpenNote: (NoteId) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val buffer = rememberTextFieldState(
@@ -135,6 +151,21 @@ private fun NoteWorkspace(
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    // 解析得到就打开，解析不到就报出目标名：跳转与否只由这一处决定
+    val onWikiLinkClick: (String) -> Unit = { target ->
+        val id = state.wiki.resolve(target)
+        if (id != null) {
+            onOpenNote(id)
+        } else {
+            scope.launch {
+                snackbarHostState.showSnackbar(context.getString(R.string.note_link_missing, target))
+            }
+        }
+    }
 
     // 输入 → ViewModel 单向流动；阅读态里勾选复选框也走同一条通道
     LaunchedEffect(buffer) {
@@ -164,6 +195,7 @@ private fun NoteWorkspace(
     Scaffold(
         modifier = modifier.fillMaxSize(),
         containerColor = LoomaTokens.colors.page,
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             NoteTopBar(
                 mode = mode,
@@ -193,6 +225,9 @@ private fun NoteWorkspace(
                     text = text,
                     fallbackTitle = fallbackTitle,
                     scrollState = readScroll,
+                    wiki = state.wiki,
+                    onWikiLinkClick = onWikiLinkClick,
+                    onOpenNote = onOpenNote,
                     onCheckboxToggle = { position, checked ->
                         // 只改 "[ ]" 这三个字符，不整段替换缓冲区：光标、撤销栈和滚动位置都保住
                         val document = MarkdownIndex.index(buffer.text.toString(), fallbackTitle)
@@ -244,6 +279,9 @@ private fun NoteReadBody(
     text: String,
     fallbackTitle: String,
     scrollState: ScrollState,
+    wiki: WikiContext,
+    onWikiLinkClick: (String) -> Unit,
+    onOpenNote: (NoteId) -> Unit,
     onCheckboxToggle: (position: Int, checked: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -256,7 +294,13 @@ private fun NoteReadBody(
             .verticalScroll(scrollState)
             .padding(horizontal = 20.dp, vertical = 8.dp),
     ) {
-        MarkdownBody(document = document, onCheckboxToggle = onCheckboxToggle)
+        MarkdownBody(
+            document = document,
+            onCheckboxToggle = onCheckboxToggle,
+            wiki = wiki,
+            onWikiLinkClick = onWikiLinkClick,
+        )
+        BacklinksSection(backlinks = wiki.backlinks, onOpen = onOpenNote)
     }
 }
 
@@ -372,6 +416,7 @@ private fun NoteWorkspacePreview() {
             onRequestLeave = {},
             onRetrySave = {},
             onOverwrite = {},
+            onOpenNote = {},
         )
     }
 }

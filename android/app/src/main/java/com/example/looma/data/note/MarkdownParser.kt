@@ -1,9 +1,17 @@
 package com.example.looma.data.note
 
+import com.example.looma.domain.markdown.MarkdownIndex
+
 /** Markdown 正文中的任务项，表示内容语义，而不是 UI 状态 */
 data class MarkdownChecklistItem(
     val text: String,
     val checked: Boolean,
+)
+
+/** 正文里的一条 `[[目标]]` 或 `![[目标]]`；顺序即出现顺序，重复的也保留 */
+data class MarkdownLink(
+    val target: String,
+    val embedded: Boolean,
 )
 
 /** 纯文本解析结果，不包含文件访问或页面展示状态 */
@@ -12,7 +20,7 @@ data class MarkdownMetadata(
     val excerpt: String,
     val tags: Set<String>,
     val checklist: List<MarkdownChecklistItem>,
-    val firstWikiLink: String?,
+    val links: List<MarkdownLink>,
     val firstImageReference: String?,
 )
 
@@ -41,8 +49,8 @@ internal class MarkdownParser {
             )
         }
 
-        val firstWikiLink = WIKI_LINK.find(text)?.groupValues?.get(1)
-            ?.substringBefore('|')?.substringBefore('#')?.take(40)
+        val links = MarkdownIndex.index(text, fallbackTitle).links
+            .map { MarkdownLink(target = it.target, embedded = it.embedded) }
         val firstImageReference = MARKDOWN_IMAGE.find(text)?.groupValues?.get(1)
             ?: WIKI_IMAGE.find(text)?.groupValues?.get(1)
 
@@ -51,7 +59,7 @@ internal class MarkdownParser {
             excerpt = excerpt,
             tags = TAG.findAll(text).map { it.groupValues[1] }.toSet(),
             checklist = checklist,
-            firstWikiLink = firstWikiLink,
+            links = links,
             firstImageReference = firstImageReference,
         )
     }

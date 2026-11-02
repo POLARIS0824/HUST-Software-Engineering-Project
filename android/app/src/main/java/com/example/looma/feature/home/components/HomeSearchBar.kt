@@ -76,8 +76,8 @@ import kotlinx.coroutines.launch
  * 结果跟着表面淡入，但比表面晚半拍落定，收起时按同一个函数反向播放。
  *
  * 输入框状态、展开状态、动画、键盘都由组件自己持有，
- * 对外只有 [onQueryChange]（输入 → ViewModel）和 [onNoteClick]；
- * 过滤结果由 [HomeUiState.searchResults] 提供，组件不认识仓库。
+ * 对外只有 [onQueryChange]（输入 → ViewModel）、[onSearchSubmit] / [onSearchResultClick]
+ * （写搜索历史）；过滤结果由 [HomeUiState.searchResults] 提供，组件不认识仓库。
  */
 @Composable
 internal fun HomeSearchBar(
@@ -86,7 +86,8 @@ internal fun HomeSearchBar(
     onQueryChange: (String) -> Unit,
     onToggleLayout: () -> Unit,
     onSortClick: () -> Unit,
-    onNoteClick: (NoteId) -> Unit,
+    onSearchSubmit: () -> Unit,
+    onSearchResultClick: (NoteId) -> Unit,
     onMenuClick: () -> Unit,
     onAvatarClick: () -> Unit,
 ) {
@@ -151,6 +152,7 @@ internal fun HomeSearchBar(
             colors = fieldColors,
             textStyle = LoomaTokens.type.searchText,
             onSearch = {
+                onSearchSubmit()
                 keyboard?.hide()
                 scope.launch { searchBarState.animateToCollapsed() }
             },
@@ -245,9 +247,14 @@ internal fun HomeSearchBar(
             HomeSearchResults(
                 query = state.query,
                 notes = state.searchResults,
+                recentSearches = state.recentSearches,
                 onNoteClick = { noteId ->
                     collapse()
-                    onNoteClick(noteId)
+                    onSearchResultClick(noteId)
+                },
+                onRecentSearchClick = { query ->
+                    // 只把历史填回输入框；输入变化会经 snapshotFlow 触发新的搜索
+                    textFieldState.setTextAndPlaceCursorAtEnd(query)
                 },
             )
         }
@@ -341,8 +348,43 @@ internal fun HomeSearchResults(
     query: String,
     notes: List<HomeNoteItem>,
     onNoteClick: (NoteId) -> Unit,
+    recentSearches: List<String> = emptyList(),
+    onRecentSearchClick: (String) -> Unit = {},
 ) {
     when {
+        // 输入框为空时先给最近搜索；没有历史就退回原来的引导文案
+        query.isBlank() && recentSearches.isNotEmpty() -> LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 24.dp),
+        ) {
+            item {
+                Text(
+                    text = stringResource(R.string.home_recent_searches),
+                    style = LoomaTokens.type.sectionTitle,
+                    color = LoomaTokens.colors.title,
+                    modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 4.dp),
+                )
+            }
+            items(recentSearches) { search ->
+                ListItem(
+                    headlineContent = {
+                        Text(
+                            text = search,
+                            style = LoomaTokens.type.cardTitle,
+                            color = LoomaTokens.colors.title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    },
+                    leadingContent = { LoomaIcon(R.drawable.ic_search, contentDescription = null) },
+                    colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onRecentSearchClick(search) },
+                )
+            }
+        }
+
         query.isBlank() -> HomeSearchHint(stringResource(R.string.home_search_hint))
         notes.isEmpty() -> HomeSearchHint(stringResource(R.string.home_search_no_match))
         else -> LazyColumn(

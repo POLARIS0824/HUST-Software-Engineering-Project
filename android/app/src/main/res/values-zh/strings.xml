@@ -32,6 +32,7 @@
     <string name="home_avatar_letter">L</string>
     <string name="home_search_hint">搜索标题、正文与标签</string>
     <string name="home_search_no_match">没有匹配的笔记</string>
+    <string name="home_recent_searches">最近搜索</string>
     <string name="home_create_note_description">新建笔记</string>
     <string name="home_new_folder_description">新建文件夹</string>
     <string name="home_retry">重试</string>
@@ -183,4 +184,8 @@
     <string name="editor_reload">重新加载</string>
     <string name="editor_save_failed">保存这篇笔记失败</string>
     <string name="editor_load_failed">打开这篇笔记失败</string>
+    <string name="home_snackbar_renamed_links">已重命名，更新了 %1$d 处引用</string>
+    <string name="home_snackbar_renamed_failed">已重命名，%1$d 处引用未能更新</string>
+    <string name="note_backlinks_title">反向链接 · %1$d</string>
+    <string name="note_link_missing">没有名为「%1$s」的笔记</string>
 </resources>

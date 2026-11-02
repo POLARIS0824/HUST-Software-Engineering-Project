@@ -25,7 +25,8 @@ sealed interface HomeMessage {
     data class Deleted(val count: Int, val trashIds: List<String>) : HomeMessage
     data class Restored(val count: Int) : HomeMessage
     data class Moved(val count: Int) : HomeMessage
-    data object Renamed : HomeMessage
+    /** 改名时顺手改写的引用数；有引用没改成功时也如实报出来 */
+    data class Renamed(val linksUpdated: Int, val linksFailed: Int = 0) : HomeMessage
     data object FolderCreated : HomeMessage
     data object ActionFailed : HomeMessage
     data object InvalidMoveTarget : HomeMessage
@@ -80,6 +81,8 @@ data class HomeUiState(
     /** 命中搜索框关键字的笔记，已按 [sort] 排序 */
     val searchResults: List<HomeNoteItem> = emptyList(),
     val query: String = "",
+    /** 搜索框为空时展示的最近搜索，最新在前 */
+    val recentSearches: List<String> = emptyList(),
     val isGridMode: Boolean = true,
     val sort: HomeSort = HomeSort.LAST_MODIFIED,
     val isLoading: Boolean = true,

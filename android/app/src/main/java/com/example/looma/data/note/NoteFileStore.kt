@@ -7,14 +7,11 @@ import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.model.NotePath
 import com.example.looma.domain.model.TrashedNote
 import com.example.looma.domain.model.Vault
-import com.example.looma.domain.model.VaultFolder
 import java.io.File
 import java.io.IOException
 import java.time.Instant
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.coroutineContext
 
 /** 一篇笔记在文件系统中的原始记录，仅用于 data 层 */
 internal data class StoredMarkdown(
@@ -25,12 +22,6 @@ internal data class StoredMarkdown(
     val file: File,
 )
 
-internal data class NoteFileScan(
-    val notes: List<StoredMarkdown>,
-    val folders: List<VaultFolder>,
-    val unreadableCount: Int,
-)
-
 /** 笔记在磁盘上的物理事实，供“文件属性”使用 */
 internal data class StoredNoteStats(
     val path: NotePath,
@@ -39,55 +30,15 @@ internal data class StoredNoteStats(
 )
 
 /**
- * Markdown 正文的读写与目录扫描。
+ * Markdown 正文的读写与单篇操作。
  *
  * 文件级操作（改名、移动、回收站、目录创建）都委托给 [VaultFileOps]，
  * 这一层只负责把文件变成 [StoredMarkdown] 以及原子写盘。
+ * 全库遍历不在这里：那条路径要经过索引，见 `VaultIndexer`。
  */
 internal class NoteFileStore(
     private val vaultRepository: VaultRepository,
 ) {
-    suspend fun scanNotes(): NoteFileScan = withContext(Dispatchers.IO) {
-        val vault = vaultRepository.requireCurrentVault()
-        val ops = VaultFileOps(File(vault.rootPath))
-        val root = ops.rootDir
-        val items = mutableListOf<StoredMarkdown>()
-        val folders = mutableListOf<VaultFolder>()
-        var unreadable = 0
-
-        for (file in root.walkTopDown().maxDepth(MAX_DEPTH).onEnter { directory ->
-            val inside = runCatching { ops.isInside(directory) }.getOrDefault(false)
-            inside && (directory == root || !directory.name.startsWith('.'))
-        }) {
-            coroutineContext.ensureActive()
-            if (file.isDirectory) {
-                val inside = runCatching { ops.isInside(file) }.getOrDefault(false)
-                if (file != root && inside && !file.name.startsWith('.')) {
-                    folders += VaultFolder(
-                        vaultId = vault.id,
-                        path = FolderPath(file.relativeTo(root).invariantSeparatorsPath),
-                        name = file.name,
-                    )
-                }
-                continue
-            }
-            if (!file.isFile || !file.extension.equals("md", ignoreCase = true)) continue
-            try {
-                if (!ops.isInside(file)) throw VaultFileException(VaultFileFailure.INVALID_PATH)
-                items += storedMarkdown(vault, root, file, readMarkdown(file))
-            } catch (e: kotlinx.coroutines.CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                unreadable++
-            }
-        }
-        NoteFileScan(
-            notes = items,
-            folders = folders.sortedBy { it.path.relativePath.lowercase() },
-            unreadableCount = unreadable,
-        )
-    }
-
     suspend fun readNote(id: NoteId): StoredMarkdown = withContext(Dispatchers.IO) {
         val (vault, ops) = currentVault(id.vaultId)
         val file = ops.noteFile(id.path)
@@ -102,6 +53,18 @@ internal class NoteFileStore(
             sizeBytes = file.length(),
             modifiedAt = Instant.ofEpochMilli(file.lastModified()),
         )
+    }
+
+    /** 只做 stat：正文缓存的命中判断靠它，不能顺手把整篇读出来 */
+    suspend fun modifiedAt(id: NoteId): Instant = withContext(Dispatchers.IO) {
+        val (_, ops) = currentVault(id.vaultId)
+        Instant.ofEpochMilli(ops.noteFile(id.path).lastModified())
+    }
+
+    suspend fun readText(id: NoteId): Pair<String, Instant> = withContext(Dispatchers.IO) {
+        val (_, ops) = currentVault(id.vaultId)
+        val file = ops.noteFile(id.path)
+        readMarkdown(file) to Instant.ofEpochMilli(file.lastModified())
     }
 
     suspend fun createNote(
@@ -198,20 +161,8 @@ internal class NoteFileStore(
     }
 
     /** Markdown 解析器只提供引用字符串，Store 负责验证图片文件路径 */
-    fun resolveCover(note: StoredMarkdown, reference: String?): String? {
-        val src = reference?.substringBefore('|')?.trim()?.replace("%20", " ") ?: return null
-        if (src.isBlank() || src.startsWith('/') || "://" in src || '\\' in src) return null
-        val allowed = setOf("png", "jpg", "jpeg", "webp")
-        return listOf(File(note.file.parentFile, src), File(note.root, src))
-            .firstNotNullOfOrNull { candidate ->
-                runCatching {
-                    val canonical = candidate.canonicalFile
-                    val inside = canonical.toPath().startsWith(note.root.canonicalFile.toPath())
-                    canonical.takeIf { inside && it.isFile && it.extension.lowercase() in allowed }
-                        ?.absolutePath
-                }.getOrNull()
-            }
-    }
+    fun resolveCover(note: StoredMarkdown, reference: String?): String? =
+        resolveCover(note.root, note.file, reference)
 
     private suspend fun currentVault(expected: com.example.looma.domain.model.VaultId): Pair<Vault, VaultFileOps> {
         val vault = vaultRepository.requireCurrentVault()
@@ -228,15 +179,9 @@ internal class NoteFileStore(
             file = file,
         )
 
-    private fun readMarkdown(file: File): String {
-        if (file.length() > MAX_FILE_BYTES) throw IOException("note file is too large: ${file.name}")
-        return AtomicFile(file).openRead().bufferedReader(Charsets.UTF_8).use { it.readText() }
-            .removePrefix("\uFEFF")
-    }
-
     private fun writeMarkdown(file: File, text: String) {
         val bytes = text.toByteArray(Charsets.UTF_8)
-        require(bytes.size <= MAX_FILE_BYTES) { "a note cannot exceed 2 MiB" }
+        require(bytes.size <= MAX_MARKDOWN_BYTES) { "a note cannot exceed 2 MiB" }
         val atomic = AtomicFile(file)
         val stream = atomic.startWrite()
         try {
@@ -249,8 +194,6 @@ internal class NoteFileStore(
     }
 
     private companion object {
-        const val MAX_DEPTH = 40
-        const val MAX_FILE_BYTES = 2L * 1024 * 1024
         const val UNTITLED_FALLBACK = "Untitled"
     }
 }
