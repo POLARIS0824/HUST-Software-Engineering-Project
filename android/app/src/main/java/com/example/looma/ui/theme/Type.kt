@@ -7,6 +7,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 
@@ -21,23 +22,33 @@ private fun TextStyle.loomaFlex(fontId: Int?, emphasized: Boolean = false, headi
     } else {
         fontWeight?.weight ?: 400
     }
-    val family = if (fontId == null) {
-        FontFamily.SansSerif
-    } else {
-        FontFamily(
-            Font(
-                resId = fontId,
-                weight = FontWeight(weight),
-                variationSettings = FontVariation.Settings(
-                    FontVariation.weight(weight),
-                    FontVariation.width(if (heading) 90f else 100f),
-                    FontVariation.opticalSizing(fontSize),
-                    FontVariation.Setting("ROND", if (heading) 80f else 0f),
-                ),
-            )
-        )
+    if (fontId == null) {
+        return copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight(weight))
     }
-    return copy(fontFamily = family, fontWeight = FontWeight(weight))
+
+    fun flexFont(axisWeight: Int, style: FontStyle, italic: Boolean): Font = Font(
+        resId = fontId,
+        weight = FontWeight(axisWeight),
+        style = style,
+        variationSettings = FontVariation.Settings(
+            FontVariation.weight(axisWeight),
+            FontVariation.width(if (heading) 90f else 100f),
+            FontVariation.opticalSizing(fontSize),
+            FontVariation.Setting("ROND", if (heading) 80f else 0f),
+            FontVariation.Setting("slnt", if (italic) -10f else 0f),
+        ),
+    )
+
+    // 单一字重的 FontFamily 会让 Markdown 的 **粗体** / *斜体* span 找不到对应字面，
+    // 这里补上 700 与斜体条目，渲染器才会真的换字重、换字形
+    val weights = if (weight >= 700) listOf(weight) else listOf(weight, 700)
+    val fonts = buildList {
+        for (axisWeight in weights) {
+            add(flexFont(axisWeight, FontStyle.Normal, italic = false))
+            add(flexFont(axisWeight, FontStyle.Italic, italic = true))
+        }
+    }
+    return copy(fontFamily = FontFamily(*fonts.toTypedArray()), fontWeight = FontWeight(weight))
 }
 
 /**

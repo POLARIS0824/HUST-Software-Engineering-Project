@@ -7,6 +7,8 @@ import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 
 /**
@@ -17,6 +19,10 @@ import androidx.compose.ui.platform.LocalContext
  * 2. Material 3 Expressive fallback scheme for light/dark mode
  *
  * Typography and motion remain consistent regardless of the color source.
+ *
+ * The Looma tokens are provided from the same scheme and typography,
+ * so screens resolve one set of semantic roles instead of reading the
+ * Material theme directly.
  */
 @Composable
 fun LoomaTheme(
@@ -32,11 +38,19 @@ fun LoomaTheme(
         darkTheme -> LoomaDarkColors
         else -> LoomaLightColors
     }
+    val typography = rememberLoomaTypography()
+    val colors = remember(colorScheme) { loomaColors(colorScheme) }
+    val type = remember(typography) { loomaTypography(typography) }
 
-    MaterialExpressiveTheme(
-        colorScheme = colorScheme,
-        typography = rememberLoomaTypography(),
-        motionScheme = MotionScheme.expressive(),
-        content = content,
-    )
+    CompositionLocalProvider(
+        LocalLoomaColors provides colors,
+        LocalLoomaTypography provides type,
+    ) {
+        MaterialExpressiveTheme(
+            colorScheme = colorScheme,
+            typography = typography,
+            motionScheme = MotionScheme.expressive(),
+            content = content,
+        )
+    }
 }
