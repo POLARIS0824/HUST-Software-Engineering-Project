@@ -256,7 +256,20 @@ func (a *app) noteList(c *ui.Context) {
 		notes = a.visibleNotes()
 	}
 	if len(notes) == 0 {
-		ui.Column(c).Fill().Center().Children(func() {
+		ui.Column(c).Fill().Center().Gap(t.Space(2)).Children(func() {
+			if a.catFiltered {
+				label := "未分类"
+				if a.catFilter != "" {
+					label = categoryDisplayName(a.catFilter)
+				}
+				components.Text(c, "「"+label+"」里还没有笔记").TextColor(t.TextMuted)
+				components.Text(c, "在笔记上右键「移动到分类…」，或点侧栏「未分类」把无主笔记归类。").FontSize(12).TextColor(t.TextMuted)
+				if components.Button(c, "查看全部笔记", components.ButtonGhost).Clicked() {
+					a.clearFilters()
+					a.refreshLists()
+				}
+				return
+			}
 			components.Text(c, "还没有笔记，点击左侧「＋ 新建笔记」开始记录").TextColor(t.TextMuted)
 		})
 		return
@@ -295,8 +308,12 @@ func (a *app) noteList(c *ui.Context) {
 				if n.Summary != "" {
 					components.Text(c, n.Summary).FontSize(12).TextColor(t.TextMuted).Wrap()
 				}
-				// 时间与标签分行显示：同排时标签会把时间挤成竖排换行。
-				components.Text(c, formatTime(n.UpdatedAtUtc)).FontSize(11).TextColor(t.TextMuted)
+				// 时间、分类与标签分行显示：同排时内容会把时间挤成竖排换行。
+				meta := formatTime(n.UpdatedAtUtc)
+				if n.Category != "" {
+					meta += " · 📁 " + categoryDisplayName(n.Category)
+				}
+				components.Text(c, meta).FontSize(11).TextColor(t.TextMuted)
 				if len(n.Tags) > 0 {
 					ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
 						for j, tag := range n.Tags {
@@ -322,6 +339,9 @@ func (a *app) noteList(c *ui.Context) {
 			el.OnClick(func() {
 				a.openNote(n.ID)
 			}).ContextMenu(func(m *ui.Menu) {
+				if m.Item("移动到分类…").Chosen() {
+					a.openMoveDialog(n.ID, n.Title, n.Category)
+				}
 				if m.Item("移入回收站").Chosen() {
 					a.trashWithUndo(c, n.ID, n.Title)
 				}
@@ -385,6 +405,16 @@ func (a *app) editorArea(c *ui.Context) {
 			components.Text(c, "⚠ "+a.titleWarn).FontSize(11).TextColor(t.Warning).Wrap()
 		}
 		ui.Row(c).Gap(t.Space(1)).AlignItems(ui.Center).Children(func() {
+			// 当前分类：显示最后一级目录名（未分类时显示「未分类」），
+			// 点一下把这篇笔记移动到别的分类（无分类的笔记在这里归类）。
+			catLabel := "未分类"
+			if cat := a.currentCategory(); cat != "" {
+				catLabel = categoryDisplayName(cat)
+			}
+			chip := components.Button(c, "📁 "+catLabel, components.ButtonGhost)
+			if chip.Clicked() {
+				a.openMoveDialog(a.currentID, a.currentTitle, a.currentCategory())
+			}
 			ui.Spacer(c).Grow(1)
 			if components.IconButton(c, lucide.Download(), "导出本篇", components.IconButtonPlain).Clicked() {
 				// 导出读磁盘事实源：先落盘草稿保证导出内容完整（评审 #3）。

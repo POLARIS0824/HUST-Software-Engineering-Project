@@ -46,9 +46,12 @@ type WorkspaceStats struct {
 
 // NoteSummary 是列表条目摘要。
 type NoteSummary struct {
-	ID           string   `json:"id"`
-	Title        string   `json:"title"`
-	RelativePath string   `json:"relativePath"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	RelativePath string `json:"relativePath"`
+	// Category 是相对 notes/ 的父目录（正斜杠），"" 表示未分类。
+	// 分类就是 notes/ 下的真实目录，Markdown 正文仍是唯一事实源。
+	Category     string   `json:"category"`
 	Tags         []string `json:"tags"`
 	CreatedAtUtc int64    `json:"createdAtUtc"`
 	UpdatedAtUtc int64    `json:"updatedAtUtc"`
@@ -282,6 +285,7 @@ func (n *indexedNote) toSummary() NoteSummary {
 		ID:           n.meta.NoteID,
 		Title:        n.title,
 		RelativePath: n.meta.RelativePath,
+		Category:     n.parentDir,
 		Tags:         tagNames,
 		CreatedAtUtc: n.meta.CreatedAtUtc,
 		UpdatedAtUtc: n.meta.UpdatedAtUtc,
