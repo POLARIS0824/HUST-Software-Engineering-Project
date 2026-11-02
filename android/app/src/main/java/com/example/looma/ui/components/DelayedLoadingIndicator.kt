@@ -8,7 +8,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.LoadingIndicator
-import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -40,7 +39,7 @@ fun DelayedLoadingIndicator(loading: Boolean, modifier: Modifier = Modifier) {
         ) {
             LoadingIndicator(
                 modifier = Modifier.size(20.dp),
-                color = LocalContentColor.current,
+                color = MaterialTheme.colorScheme.primary,
             )
         }
     }
