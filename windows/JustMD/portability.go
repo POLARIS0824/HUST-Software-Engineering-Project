@@ -531,6 +531,25 @@ func (v *Vault) PrepareImportFolder(parent *mygo.Window) (ImportPlan, error) {
 
 // buildImportPlan 把用户选中的文件/文件夹路径构建成导入计划，供 PrepareImport
 // 与 PrepareImportFolder 共用：目录递归展开、保留层级、逐项解码校验并标记冲突。
+// trimMarkdownExt 去掉文件名末尾的 Markdown 扩展名（大小写不敏感）。
+//
+// 为什么不能直接用 strings.TrimSuffix(base, ext)：ext 是小写化后的扩展名，
+// 而原文件名可能用大写（README.MD）。TrimSuffix 对 "README.MD" 去掉 ".md"
+// 不起作用，标题会变成 "README.MD"，入库后文件名成了 "README.MD.md"（评审遗留项）。
+func trimMarkdownExt(base string) string {
+	ext := filepath.Ext(base)
+	if ext == "" {
+		return base
+	}
+	switch strings.ToLower(ext) {
+	case ".md", ".markdown":
+		return strings.TrimSuffix(base, ext)
+	}
+	return base
+}
+
+// buildImportPlan 把用户选中的文件/文件夹路径构建成导入计划，供 PrepareImport
+// 与 PrepareImportFolder 共用：目录递归展开、保留层级、逐项解码校验并标记冲突。
 // 调用方必须持有 v.mu（会读取 v.notes 判断同名冲突）。
 func (v *Vault) buildImportPlan(paths []string) ImportPlan {
 	plan := ImportPlan{Files: []ImportFile{}}
@@ -559,7 +578,13 @@ func (v *Vault) buildImportPlan(paths []string) ImportPlan {
 		// 清洗文件名（保留相对层级），逐级清洗目录段。
 		rel := relUnder
 		dir := parentDirOfRelPath(rel)
-		baseTitle, _ := sanitizeTitle(strings.TrimSuffix(base, ext))
+		baseTitle, _ := sanitizeTitle(trimMarkdownExt(base))
+		// 空标题会生成 ".md" 这种没有名字的文件（评审遗留项）：
+		// 清单里的无标题文件（.md）清洗后标题为空，落盘就是 notes/.md。
+		// 这种情况退回默认标题，让用户看到一篇正常的笔记而不是隐藏文件。
+		if baseTitle == "" {
+			baseTitle = untitledTitle
+		}
 		cleanRel := baseTitle + ".md"
 		if dir != "" {
 			var segs []string
@@ -1023,7 +1048,15 @@ func (v *Vault) importDroppedFile(p string) AttachmentResult {
 	ext := strings.ToLower(filepath.Ext(p))
 	base := filepath.Base(p)
 	if ext == ".md" || ext == ".markdown" {
-		title, _ := sanitizeTitle(strings.TrimSuffix(base, ext))
+		// 用 trimMarkdownExt 去掉扩展名：ext 是小写化的，原文件名可能用大写
+		// （README.MD），直接 TrimSuffix(base, ext) 会去不掉，
+		// 入库后变成 "README.MD.md"（评审遗留项）。
+		title, _ := sanitizeTitle(trimMarkdownExt(base))
+		// 空标题（源文件就叫 ".md"）会生成 notes/.md 这种无名字文件，
+		// 退回默认标题（评审遗留项）。
+		if title == "" {
+			title = untitledTitle
+		}
 		f := ImportFile{SourcePath: p, FileName: base, TargetRel: title + ".md"}
 		var imported ImportResult
 		v.importAsNew(f, &imported, true)
