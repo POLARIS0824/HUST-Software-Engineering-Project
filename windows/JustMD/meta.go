@@ -46,6 +46,30 @@ type PendingOp struct {
 	OldSha           string `json:"oldSha,omitempty"`
 	NewSha           string `json:"newSha,omitempty"`
 	ExpectedRevision int64  `json:"expectedRevision"`
+	// Cascade 记录本次改名已经级联改写过的其它笔记（改写前后的正文与元数据）。
+	//
+	// 为什么需要它：改名的落盘顺序是「写 pending → 级联改写其它笔记 →
+	// 改名本篇」。若在「级联已成功、本篇尚未改名」之间崩溃，重启对账只看得到
+	// 一条 rename pending，却不知道其它笔记的正文已被改成新标题，
+	// 结果是留下指向不存在笔记的 [[新标题]] 与凭空消失的反链（评审 #2）。
+	// 把改写前的正文记进 pending，对账时就能把这一批精确回滚。
+	//
+	// 为空表示级联尚未开始，或没有可改写的笔记。
+	Cascade []PendingCascadeNote `json:"cascade,omitempty"`
+}
+
+// PendingCascadeNote 记录级联改写中某篇笔记的改写前正文与元数据，
+// 供崩溃恢复时精确回滚（评审 #2）。
+type PendingCascadeNote struct {
+	NoteID  string `json:"noteId"`
+	RelPath string `json:"relPath"`
+	// OldBody 是改写前的磁盘正文（已归一化）。
+	OldBody string `json:"oldBody"`
+	// NewBody 是级联改写准备写入的正文；对账时用它判断这一篇
+	// 到底改没改过（崩溃可能发生在级联写到一半的时候）。
+	NewBody         string `json:"newBody"`
+	OldRevision     int64  `json:"oldRevision"`
+	OldUpdatedAtUtc int64  `json:"oldUpdatedAtUtc"`
 }
 
 // metaDir 等工作区子目录的固定命名（设计 6.2）。

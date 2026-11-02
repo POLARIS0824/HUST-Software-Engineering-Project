@@ -780,11 +780,39 @@ func (v *Vault) RenameNoteReported(id string, newTitle string) (NoteDocument, Re
 	}
 
 	report := emptyRenameReport()
-	changes, err := v.cascadeUpdateLinks(id, oldTitle, actualTitle, &report)
-	if err != nil {
+	// cascadePersistErr 记录"级联记录写不进 pending"的致命错误。
+	// 记录不下来就回滚不了，崩溃后会留下破损链接，因此必须中止整个改名。
+	var cascadePersistErr error
+	// changes 是已级联改写的笔记；persistCascade 在回调里需要它来回滚，
+	// 因此先声明再由 cascadeUpdateLinks 赋值。
+	var changes []cascadeChange
+	// 崩溃安全（评审 #2）：级联每改写一篇，就把该篇的改写前正文追加进
+	// pending 文件。这样"级联已成功、本篇尚未改名"时崩溃，重启对账能
+	// 依据 pending 把这一批精确回滚，而不是留下指向不存在笔记的 [[新标题]]
+	// 与凭空消失的反链。
+	//
+	// 追加而非覆盖：pending 里已有的级联记录必须保留，
+	// 每追加一次都要重新落盘整个 pending 文件（内容很小，成本可忽略）。
+	persistCascade := func(items []PendingCascadeNote) error {
+		op.Cascade = append(op.Cascade, items...)
+		// pending 写失败时不能继续级联：记录不下来就回滚不了，
+		// 崩溃后会留下破损链接。此时中止并回滚已改写的部分。
+		if err := writePending(pendingDir, op); err != nil {
+			cascadePersistErr = ErrSaveFailed
+			return ErrSaveFailed
+		}
+		return nil
+	}
+	var cascadeErr error
+	changes, cascadeErr = v.cascadeUpdateLinks(id, oldTitle, actualTitle, &report, persistCascade)
+	if cascadeErr != nil {
+		// 级联中途失败（含 pending 记不下来）：把已改写的全部恢复回去。
 		v.rollbackCascade(changes)
 		clearPending(pendingDir, op.OperationID)
-		return NoteDocument{}, emptyRenameReport(), err
+		return NoteDocument{}, emptyRenameReport(), cascadeErr
+	}
+	if cascadePersistErr != nil {
+		return NoteDocument{}, emptyRenameReport(), cascadePersistErr
 	}
 	// rollbackAll 是后续步骤失败的统一善后：恢复级联正文 + 清掉 pending。
 	rollbackAll := func() {
@@ -831,7 +859,20 @@ type cascadeChange struct {
 	noteID  string
 	relPath string   // 改写时笔记所在路径（重命名回滚时仍是旧路径）
 	oldBody string   // 改写前的磁盘正文（已归一化）
+	newBody string   // 改写后写入的正文（用于崩溃对账时判断是否已改写）
 	meta    NoteMeta // 改写前的元数据副本
+}
+
+// pendingCascadeNote 把回滚快照转成 pending 里可序列化的形式。
+func (c cascadeChange) pendingCascadeNote() PendingCascadeNote {
+	return PendingCascadeNote{
+		NoteID:          c.noteID,
+		RelPath:         c.relPath,
+		OldBody:         c.oldBody,
+		NewBody:         c.newBody,
+		OldRevision:     c.meta.Revision,
+		OldUpdatedAtUtc: c.meta.UpdatedAtUtc,
+	}
 }
 
 // cascadeUpdateLinks 把其他笔记中解析指向 targetID 的 [[旧标题]] 原子改写为新标题。
@@ -841,7 +882,13 @@ type cascadeChange struct {
 // 若该笔记在本次会话中被外部程序改过，用户新写的内容会被静默覆盖（实测整段消失）。
 // 因此逐篇先读盘，只有「磁盘正文哈希 == 元数据记录的 ContentSha256」且
 // 「磁盘正文与内存正文一致」时才改写；否则计入 Skipped 跳过，把控制权交还用户。
-func (v *Vault) cascadeUpdateLinks(targetID, oldTitle, newTitle string, report *RenameReport) ([]cascadeChange, error) {
+//
+// 崩溃安全（评审 #2）：每改写一篇就把它的改写前正文追加进 pending 文件
+// （onCascade 回调），这样"级联已成功、本篇尚未改名"时崩溃，重启对账能
+// 依据 pending 把这一批精确回滚，而不是留下指向不存在笔记的 [[新标题]]。
+//
+// onCascade 返回错误时立即中止级联：记录不下来就回滚不了。
+func (v *Vault) cascadeUpdateLinks(targetID, oldTitle, newTitle string, report *RenameReport, onCascade func([]PendingCascadeNote) error) ([]cascadeChange, error) {
 	oldLower := foldString(oldTitle)
 	metaDir, _ := v.metaDirs()
 	changes := []cascadeChange{}
@@ -907,7 +954,16 @@ func (v *Vault) cascadeUpdateLinks(targetID, oldTitle, newTitle string, report *
 			continue
 		}
 
-		snapshot := cascadeChange{noteID: id, relPath: other.meta.RelativePath, oldBody: diskBody, meta: *other.meta}
+		snapshot := cascadeChange{noteID: id, relPath: other.meta.RelativePath, oldBody: diskBody, newBody: newBody, meta: *other.meta}
+		// 崩溃安全（评审 #2）：**先**把改写前正文记进 pending，再落盘。
+		// 顺序很重要——如果先落盘再记 pending，崩在两者之间时，
+		// 重启对账既看不到 pending 里的旧正文，磁盘上又已是新标题，
+		// 这一篇就永远回不去了。
+		if onCascade != nil {
+			if err := onCascade([]PendingCascadeNote{snapshot.pendingCascadeNote()}); err != nil {
+				return changes, err
+			}
+		}
 		if err := atomicWriteFile(abs, []byte(newBody)); err != nil {
 			return changes, ErrSaveFailed
 		}

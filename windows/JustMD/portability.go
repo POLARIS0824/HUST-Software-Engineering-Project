@@ -313,11 +313,20 @@ func (v *Vault) reconcilePending(pendingDir string, metas map[string]*NoteMeta) 
 		case "rename":
 			// 文件已改名但元数据未提交 → 补完重命名，避免被当作孤立文件另建身份。
 			m := metas[op.NoteID]
+			renamed := false
 			if m != nil && m.State == stateActive && m.RelativePath == op.OldRelPath && op.NewRelPath != "" {
 				if _, err := os.Stat(filepath.Join(v.notesDir(), filepath.FromSlash(op.NewRelPath))); err == nil {
 					m.RelativePath = op.NewRelPath
 					saveNoteMeta(metaDir, m)
+					renamed = true
 				}
+			}
+			// 崩溃窗口（评审 #2）：级联已改写其它笔记、本篇尚未改名时崩溃。
+			// pending 里记着每一篇被级联改写前的正文，此时本篇仍是旧标题，
+			// 那些笔记的 [[新标题]] 全部指向不存在的笔记、反链凭空消失。
+			// 对账时把这一批精确回滚，恢复到"什么都没发生"的状态。
+			if !renamed {
+				v.rollbackCascadeFromPending(&op, metas)
 			}
 		case "delete":
 			// 回收站副本已移除 → 补完删除（清掉元数据）；仍在 → 回退保留。
@@ -327,6 +336,50 @@ func (v *Vault) reconcilePending(pendingDir string, metas map[string]*NoteMeta) 
 			}
 		}
 		os.Remove(filepath.Join(pendingDir, e.Name()))
+	}
+}
+
+// rollbackCascadeFromPending 按 pending 记录回滚一批级联改写（评审 #2）。
+//
+// 场景：改名的落盘顺序是「写 pending → 级联改写其它笔记 → 改名本篇」。
+// 崩在「级联已完成、本篇还没改名」时，重启对账看到的是一条 rename pending，
+// 但本篇仍是旧标题，而其它笔记的正文已经被改成新标题——
+// 指向不存在笔记的 [[新标题]] 与凭空消失的反链。
+//
+// pending 里记着每一篇改写前的正文与元数据，据此可以精确回滚：
+// 只回滚**确实已经被级联改写过**的笔记（正文哈希等于改写后的内容），
+// 没改写成功的保持原样，绝不误伤用户在此之后新写的内容。
+func (v *Vault) rollbackCascadeFromPending(op *PendingOp, metas map[string]*NoteMeta) {
+	if len(op.Cascade) == 0 {
+		return
+	}
+	metaDir, _ := v.metaDirs()
+	for i := len(op.Cascade) - 1; i >= 0; i-- {
+		c := op.Cascade[i]
+		abs := filepath.Join(v.notesDir(), filepath.FromSlash(c.RelPath))
+		disk, err := os.ReadFile(abs)
+		if err != nil {
+			continue // 文件读不到：无法确认是否改写过，不动它
+		}
+		body := string(normalizeContent(disk))
+		if body != c.NewBody {
+			// 这篇要么没被改写（崩在落盘前），要么用户在崩溃后又改过它。
+			// 两种情况都不能覆盖——用户的新内容优先。
+			continue
+		}
+		if err := atomicWriteFile(abs, []byte(c.OldBody)); err != nil {
+			continue
+		}
+		// 元数据一并复原：哈希必须与回滚后的正文一致，否则下次保存会被
+		// 误判成"笔记已被其它程序修改"。
+		m := metas[c.NoteID]
+		if m == nil {
+			continue
+		}
+		m.ContentSha256 = sha256Hex([]byte(c.OldBody))
+		m.Revision = c.OldRevision
+		m.UpdatedAtUtc = c.OldUpdatedAtUtc
+		saveNoteMeta(metaDir, m)
 	}
 }
 
