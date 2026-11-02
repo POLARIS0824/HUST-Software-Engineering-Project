@@ -694,28 +694,48 @@ func (a *app) applySaveResult(id string, ver uint64, receipt SaveReceipt, err er
 		return
 	}
 	if err != nil {
-		if a.currentID == id {
-			a.saveState = saveError
-			// 记住失败时的版本号：用户之后又输入才重新启用自动保存（评审 N3）。
-			a.saveErrorVersion = ed.state.Buffer.Version()
-			// 外部修改冲突必须由用户显式确认强制覆盖，自动重试必然再失败。
-			a.saveErrorExternal = err == ErrExternalEdit
-		}
 		// 业务化提示（NFR-USE-04）：外部修改给出可操作指引，其余直接给领域措辞。
 		// 只在出错这一次提示，不做后台重试，避免提示无限刷屏。
 		switch err {
 		case ErrExternalEdit:
+			if a.currentID == id {
+				a.saveState = saveError
+				// 记住失败时的版本号：用户之后又输入才重新启用自动保存（评审 N3）。
+				a.saveErrorVersion = ed.state.Buffer.Version()
+				// 外部修改冲突必须由用户显式确认强制覆盖，自动重试必然再失败。
+				a.saveErrorExternal = true
+			}
 			a.pendingToast = "笔记已被其它程序修改：点「保存失败」可强制覆盖"
 		case ErrStaleRevision:
-			// 迟到的旧快照被领域层拦下：磁盘上已经是更新的内容，
-			// 不是失败，也不需要用户处理——把徽章恢复到"已保存"即可。
+			// 迟到的旧快照被领域层拦下：磁盘上已经是更新的内容，不是失败。
+			//
+			// 但**绝不能**在这里把当前缓冲区标记为已保存（评审 #5）：
+			// 旧实现执行 ed.saved = ed.state.Buffer.Version() + MarkSaved()，
+			// 于是编辑器里尚未落盘的新输入被误标为"已保存"，随后的 flush
+			// 看到 Version()==saved 就直接跳过——用户的新内容永远写不进磁盘，
+			// 界面上却一直显示"已保存"。
+			//
+			// 正确做法：忽略这份过期回执，让缓冲区版本与已保存版本保持各自的
+			// 真实值；未落盘的内容由下一次自动保存带走。
+			//
+			// 这里也不进入 saveError 态：这不是失败，磁盘上是更新后的正确内容。
+			// 若缓冲区确实还有未落盘的内容，状态应回到"正在输入/待保存"，
+			// 由 autosave 重新安排保存；若缓冲区已与磁盘一致则是"已保存"。
 			a.pendingToast = "已忽略一次迟到的旧保存（磁盘上已是更新内容）"
 			if a.currentID == id {
-				a.saveState = saveSaved
-				ed.saved = ed.state.Buffer.Version()
-				ed.state.Buffer.MarkSaved()
+				if ed.state.Buffer.Version() != ed.saved {
+					a.saveState = saveDirty
+					a.scheduleSave()
+				} else {
+					a.saveState = saveSaved
+				}
 			}
 		default:
+			if a.currentID == id {
+				a.saveState = saveError
+				a.saveErrorVersion = ed.state.Buffer.Version()
+				a.saveErrorExternal = false
+			}
 			a.pendingToast = err.Error()
 		}
 		return
