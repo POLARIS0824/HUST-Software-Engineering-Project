@@ -254,9 +254,14 @@ func (a *app) openNote(id string) {
 	doc, err := a.vault.OpenNote(id)
 	if err != nil || doc.Trashed {
 		// 打不开时不能静默返回（评审 W02）：用户看到的是"点了没反应"。
-		// 若正文文件已被外部删除，这是一条僵尸笔记——提示并从列表移除，
+		// 若正文文件**确实**已被外部删除，这是一条僵尸笔记——提示并从列表移除，
 		// 让用户能继续操作；否则给出具体原因。
-		if !a.vault.NoteFileExists(id) {
+		//
+		// 用 NoteVanished 而不是 !NoteFileExists（评审 #4）：权限不足、
+		// 共享冲突、网络盘断开都会让 Stat 失败，但文件其实还在。
+		// 那种情况下误删索引与元数据，笔记下次启动就变成新的 RECOVERED
+		// 身份，双链全部断开——比"点不开"严重得多。
+		if a.vault.NoteVanished(id) {
 			title, dropErr := a.vault.DropVanishedNote(id)
 			if dropErr == nil {
 				delete(a.editors, id)
@@ -790,10 +795,14 @@ func (a *app) scheduleSearch() {
 // deleteFromList 先保存草稿并确认成功，再移入回收站（评审 #2：避免丢稿）。
 // 返回是否实际执行了删除。
 func (a *app) deleteFromList(id string) bool {
-	// 正文文件已被外部删除（评审 W02）：没有草稿可保存，也没有内容可移入
+	// 正文文件**确实**已被外部删除（评审 W02）：没有草稿可保存，也没有内容可移入
 	// 回收站，直接把这条僵尸笔记从索引里清掉——不能因为文件不在了
 	// 就让用户被一条删不掉的记录卡住。
-	if !a.vault.NoteFileExists(id) {
+	//
+	// 用 NoteVanished 而不是 !NoteFileExists（评审 #4）：只有拿到明确的
+	// "文件不存在"才当作僵尸笔记；权限/共享冲突/网络盘断开时文件其实还在，
+	// 误删索引会让笔记下次启动变成新的 RECOVERED 身份、双链全断。
+	if a.vault.NoteVanished(id) {
 		title, err := a.vault.DropVanishedNote(id)
 		if err == nil {
 			delete(a.editors, id)

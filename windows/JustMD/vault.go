@@ -504,6 +504,10 @@ func (v *Vault) openNoteLocked(id string) (NoteDocument, error) {
 // NoteFileExists 判断笔记的正文文件是否仍在磁盘上（评审 W02）。
 // 内存索引在运行期不监听文件系统，外部删除 .md 后索引里会留下"僵尸笔记"：
 // 列表里还在、点不开、也删不掉。界面据此给出提示并清理索引。
+//
+// 只把 os.IsNotExist 视为"文件已消失"（评审 #4）：权限不足、共享冲突、
+// 网络盘断开都会返回别的错误，把它们当成"已删除"会误删索引与元数据——
+// 笔记下次启动就变成一条新的 RECOVERED 身份，双链全部断开。
 func (v *Vault) NoteFileExists(id string) bool {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -514,6 +518,35 @@ func (v *Vault) NoteFileExists(id string) bool {
 	abs := filepath.Join(v.notesDir(), filepath.FromSlash(n.meta.RelativePath))
 	_, err := os.Stat(abs)
 	return err == nil
+}
+
+// noteVanished 判断笔记的正文文件是否**确实**已被外部删除。
+// 返回 false 表示文件还在，或状态未知（权限/共享冲突/网络盘断开）——
+// 状态未知时一律按"还在"处理，宁可让用户看到一条打不开的记录，
+// 也不能误删索引与元数据、把笔记身份换成 RECOVERED（评审 #4）。
+func noteVanished(abs string) bool {
+	if _, err := os.Stat(abs); err != nil {
+		return os.IsNotExist(err)
+	}
+	return false
+}
+
+// NoteVanished 判断笔记的正文文件是否**确实**已被外部删除（评审 #4）。
+//
+// 与 NoteFileExists 的区别：后者只回答"文件在不在"，权限不足、共享冲突、
+// 网络盘断开都会让它返回 false（文件其实还在，只是读不到）；本方法只在
+// 拿到明确的"文件不存在"（os.IsNotExist）时才返回 true。
+// 界面用它决定"要不要把这条记录当作僵尸笔记清掉"——状态未知时必须
+// 按"还在"处理，误删索引会让笔记下次启动变成新的 RECOVERED 身份、双链全断。
+func (v *Vault) NoteVanished(id string) bool {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	n, ok := v.notes[id]
+	if !ok {
+		return false
+	}
+	abs := filepath.Join(v.notesDir(), filepath.FromSlash(n.meta.RelativePath))
+	return noteVanished(abs)
 }
 
 // DropVanishedNote 把正文文件已被外部删除的笔记从内存索引中移除（评审 W02）。
@@ -528,8 +561,8 @@ func (v *Vault) DropVanishedNote(id string) (string, error) {
 		return "", ErrNoteNotFound
 	}
 	abs := filepath.Join(v.notesDir(), filepath.FromSlash(n.meta.RelativePath))
-	if _, err := os.Stat(abs); err == nil {
-		// 文件还在，不是僵尸笔记，不做处理。
+	if !noteVanished(abs) {
+		// 文件还在，或状态未知（评审 #4）：不是僵尸笔记，不做处理。
 		return "", ErrNoteNotFound
 	}
 	title := n.title
