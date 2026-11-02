@@ -1,5 +1,7 @@
 package com.example.looma.data.note
 
+import com.example.looma.domain.markdown.MarkdownIndex
+
 /** Markdown 正文中的任务项，表示内容语义，而不是 UI 状态 */
 data class MarkdownChecklistItem(
     val text: String,
@@ -47,17 +49,8 @@ internal class MarkdownParser {
             )
         }
 
-        val links = WIKI_REFERENCE.findAll(text)
-            .mapNotNull { match ->
-                // 别名与标题锚点不属于目标笔记，索引只需要可匹配的 path
-                match.groupValues[2]
-                    .substringBefore('|')
-                    .substringBefore('#')
-                    .trim()
-                    .takeIf { it.isNotEmpty() }
-                    ?.let { MarkdownLink(target = it, embedded = match.groupValues[1].isNotEmpty()) }
-            }
-            .toList()
+        val links = MarkdownIndex.index(text, fallbackTitle).links
+            .map { MarkdownLink(target = it.target, embedded = it.embedded) }
         val firstImageReference = MARKDOWN_IMAGE.find(text)?.groupValues?.get(1)
             ?: WIKI_IMAGE.find(text)?.groupValues?.get(1)
 
@@ -97,7 +90,6 @@ internal class MarkdownParser {
         val HEADING = Regex("""^#{1,6}\s+.+""")
         val CHECKLIST = Regex("""^\s*[-*+]\s+\[([ xX])\]\s+(.+)$""")
         val TAG = Regex("""(?<![\p{L}\p{N}])#([\p{L}\p{N}_/-]+)""")
-        val WIKI_REFERENCE = Regex("""(!?)\[\[([^]]+)]]""")
         val MARKDOWN_IMAGE = Regex("""!\[[^]]*]\(([^)]+)\)""")
         val WIKI_IMAGE = Regex("""!\[\[([^]]+)]]""")
         val WIKI_LINK = Regex("""(?<!!)\[\[([^]]+)]]""")

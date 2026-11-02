@@ -10,7 +10,7 @@ data class MarkdownCheckbox(
  * 一次解析的结果，渲染和写回共用。
  *
  * [source] 是文件原文，[body] 是去掉 frontmatter 的正文，[bodyStart] 是正文在原文里的起点。
- * [checkboxes] 的位置都是原文坐标，写回文件时不用再换算。
+ * [checkboxes] 与 [links] 的位置都是原文坐标，写回文件时不用再换算。
  */
 data class MarkdownDocument(
     val source: String,
@@ -18,6 +18,7 @@ data class MarkdownDocument(
     val bodyStart: Int,
     val title: String,
     val checkboxes: List<MarkdownCheckbox>,
+    val links: List<MarkdownLinkSpan> = emptyList(),
 )
 
 /**

@@ -28,6 +28,7 @@ object MarkdownIndex {
             bodyStart = body.start,
             title = facts.title?.takeIf { it.isNotBlank() } ?: fallbackTitle,
             checkboxes = facts.checkboxes,
+            links = WikiLinks.occurrences(body.text, body.start, facts.code),
         )
     }
 
@@ -38,6 +39,15 @@ object MarkdownIndex {
 
     private fun walk(node: ASTNode, text: String, base: Int, facts: Facts) {
         when (node.type) {
+            // 代码块与行内代码里的 [[..]] 是示例，不是链接；整棵子树都不再往下找
+            MarkdownElementTypes.CODE_FENCE,
+            MarkdownElementTypes.CODE_BLOCK,
+            MarkdownElementTypes.CODE_SPAN,
+            -> {
+                facts.code += node.startOffset until node.endOffset
+                return
+            }
+
             MarkdownElementTypes.ATX_1,
             MarkdownElementTypes.SETEXT_1,
             -> if (facts.title == null) facts.title = headingText(node, text)
@@ -74,6 +84,8 @@ object MarkdownIndex {
     private class Facts {
         var title: String? = null
         val checkboxes = mutableListOf<MarkdownCheckbox>()
+        /** 代码区间，坐标与 [MarkdownDocument.body] 一致 */
+        val code = mutableListOf<IntRange>()
     }
 
     private data class Body(val text: String, val start: Int)

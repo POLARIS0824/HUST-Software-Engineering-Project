@@ -78,4 +78,31 @@ class MarkdownIndexTest {
         assertEquals(1, document.checkboxes.size)
         assertEquals("[ ]", fenced.substring(document.checkboxes.single().range.first, document.checkboxes.single().range.first + 3))
     }
+
+    @Test
+    fun `wiki links in fenced and inline code are not links`() {
+        val text = """
+            # 标题
+
+            真正的 [[NoteA]] 引用。
+
+            ```
+            [[Fenced]]
+            ```
+
+            行内 `[[Inline]]` 只是示例。
+        """.trimIndent()
+
+        assertEquals(listOf("NoteA"), MarkdownIndex.index(text, "兜底").links.map { it.target })
+    }
+
+    @Test
+    fun `wiki link ranges point into the original source`() {
+        val document = MarkdownIndex.index(source, "兜底标题")
+        val span = document.links.single()
+
+        assertEquals("[[另一篇笔记|别名]]", source.substring(span.range.first, span.range.last + 1))
+        assertEquals("另一篇笔记", source.substring(span.targetRange.first, span.targetRange.last + 1))
+        assertEquals("别名", span.alias)
+    }
 }
