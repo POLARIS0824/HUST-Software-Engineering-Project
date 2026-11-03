@@ -33,7 +33,7 @@ internal fun HomeSelectionBar(
         title = {
             Text(
                 text = stringResource(R.string.home_selection_count, state.selection.size),
-                style = LoomaTokens.type.sheetTitle,
+                style = LoomaTokens.type.pageTitle,
                 color = LoomaTokens.colors.title,
             )
         },

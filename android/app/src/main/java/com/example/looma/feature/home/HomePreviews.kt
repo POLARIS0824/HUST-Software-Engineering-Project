@@ -163,7 +163,7 @@ private fun HomeSearchResultsPreview() {
                 Text(
                     text = "搜索 Java",
                     modifier = Modifier.padding(20.dp),
-                    style = LoomaTokens.type.sheetTitle,
+                    style = LoomaTokens.type.pageTitle,
                 )
                 HomeSearchResults(
                     query = "Java",

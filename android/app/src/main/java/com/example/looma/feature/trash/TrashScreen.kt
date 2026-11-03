@@ -106,7 +106,7 @@ fun TrashScreen(
                 title = {
                     Text(
                         text = stringResource(R.string.trash_title),
-                        style = LoomaTokens.type.sheetTitle,
+                        style = LoomaTokens.type.pageTitle,
                         color = LoomaTokens.colors.title,
                     )
                 },

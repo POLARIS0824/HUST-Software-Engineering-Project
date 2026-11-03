@@ -1,5 +1,6 @@
 package com.example.looma.feature.note
 
+import com.example.looma.domain.markdown.ImageContext
 import com.example.looma.domain.markdown.isEffectivelyEmpty
 import com.example.looma.domain.wiki.WikiContext
 import java.time.Instant
@@ -25,6 +26,8 @@ data class NoteUiState(
     val keepEmptyNotes: Boolean = true,
     /** 正文里每个 `[[目标]]` 解析到哪篇笔记，以及谁链接到这里；空表示还没读到 */
     val wiki: WikiContext = WikiContext.Empty,
+    /** 正文图片的解析坐标；空表示还没有库，图片一律不加载 */
+    val imageContext: ImageContext? = null,
 ) {
     val isDirty: Boolean get() = !isLoading && content != savedContent
 

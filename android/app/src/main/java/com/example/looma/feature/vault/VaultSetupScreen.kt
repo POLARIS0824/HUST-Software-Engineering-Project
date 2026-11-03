@@ -51,6 +51,7 @@ import androidx.compose.ui.unit.dp
 import com.example.looma.R
 import com.example.looma.ui.components.DelayedLoadingIndicator
 import com.example.looma.ui.theme.LoomaTheme
+import com.example.looma.ui.theme.LoomaTokens
 
 /**
  * 纯 UI：从外部接收状态、向外部通知事件
@@ -191,7 +192,7 @@ private fun VaultSetupHeader() {
         Spacer(Modifier.height(24.dp))
         Text(
             text = stringResource(R.string.vault_setup_title),
-            style = MaterialTheme.typography.headlineLargeEmphasized,
+            style = LoomaTokens.type.heroTitle,
             modifier = Modifier.semantics { heading() },
         )
         Spacer(Modifier.height(12.dp))

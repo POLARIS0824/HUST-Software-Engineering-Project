@@ -65,7 +65,7 @@ fun LoomaDrawer(
                     val appName = stringResource(R.string.app_name)
                     Text(
                         text = appName,
-                        style = LoomaTokens.type.sheetTitle,
+                        style = LoomaTokens.type.pageTitle,
                         color = LoomaTokens.colors.title,
                     )
                     // 笔记库和 App 同名时只显示一次，避免标题重复
@@ -85,7 +85,7 @@ fun LoomaDrawer(
                         label = {
                             Text(
                                 text = stringResource(destination.label),
-                                style = LoomaTokens.type.sheetOption,
+                                style = LoomaTokens.type.body,
                             )
                         },
                         icon = {

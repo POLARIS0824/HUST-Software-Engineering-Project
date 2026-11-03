@@ -18,6 +18,9 @@
             android:name="android.permission.WRITE_EXTERNAL_STORAGE"
             android:maxSdkVersion="29" />
 
+    <!-- 正文里的图床图片是 http(s) 引用，没有这条权限只能看到本地图片 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
             android:allowBackup="false"
             android:icon="@mipmap/ic_launcher"

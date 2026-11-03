@@ -94,7 +94,7 @@ internal fun HomeFilesGrid(
                 item(span = StaggeredGridItemSpan.FullLine) {
                     Text(
                         text = stringResource(R.string.home_empty_folder),
-                        style = LoomaTokens.type.emptyState,
+                        style = LoomaTokens.type.supporting,
                         color = LoomaTokens.colors.muted,
                         modifier = Modifier.fillMaxWidth().padding(vertical = 24.dp),
                     )

@@ -2,6 +2,7 @@ package com.example.looma.data.note
 
 import android.util.AtomicFile
 import com.example.looma.data.vault.VaultRepository
+import com.example.looma.domain.markdown.ImageContext
 import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.model.NotePath
@@ -43,6 +44,15 @@ internal class NoteFileStore(
         val (vault, ops) = currentVault(id.vaultId)
         val file = ops.noteFile(id.path)
         storedMarkdown(vault, ops.rootDir, file, readMarkdown(file))
+    }
+
+    /** 解析正文图片只需要两个路径，不必把正文再读一遍 */
+    suspend fun imageContext(id: NoteId): ImageContext? = withContext(Dispatchers.IO) {
+        val (_, ops) = currentVault(id.vaultId)
+        ImageContext(
+            vaultRoot = ops.rootDir.absolutePath,
+            noteFile = ops.noteFile(id.path).absolutePath,
+        )
     }
 
     suspend fun noteStats(id: NoteId): StoredNoteStats = withContext(Dispatchers.IO) {

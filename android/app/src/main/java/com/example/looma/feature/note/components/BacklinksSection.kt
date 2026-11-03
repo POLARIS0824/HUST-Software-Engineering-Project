@@ -47,7 +47,7 @@ fun BacklinksSection(
             backlinks.forEach { backlink ->
                 Text(
                     text = backlink.title,
-                    style = type.markdownBody,
+                    style = type.body,
                     color = colors.accent,
                     maxLines = 2,
                     modifier = Modifier

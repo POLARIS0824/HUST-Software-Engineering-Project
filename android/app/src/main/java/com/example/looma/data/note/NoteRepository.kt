@@ -6,6 +6,7 @@ import com.example.looma.data.index.NoteIndex
 import com.example.looma.data.index.VaultIndexer
 import com.example.looma.data.index.indexedNote
 import com.example.looma.data.vault.VaultRepository
+import com.example.looma.domain.markdown.ImageContext
 import com.example.looma.domain.markdown.MarkdownIndex
 import com.example.looma.domain.markdown.WikiLinks
 import com.example.looma.domain.model.FolderPath
@@ -73,6 +74,9 @@ class NoteRepository internal constructor(
     }
 
     suspend fun readNote(id: NoteId): Note = toNote(fileStore.readNote(id))
+
+    /** 正文图片按库根与笔记位置解析，UI 只负责渲染 */
+    suspend fun imageContext(id: NoteId): ImageContext? = fileStore.imageContext(id)
 
     /**
      * 只读索引拼出的双链快照：正文里的目标各解析到哪篇笔记，哪几篇又引用了它。

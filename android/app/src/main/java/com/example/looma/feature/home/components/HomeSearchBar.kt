@@ -150,7 +150,7 @@ internal fun HomeSearchBar(
             // 展开时长出去的那一圈只有左右各 8dp
             modifier = Modifier.fillMaxWidth(),
             colors = fieldColors,
-            textStyle = LoomaTokens.type.searchText,
+            textStyle = LoomaTokens.type.body,
             onSearch = {
                 onSearchSubmit()
                 keyboard?.hide()
@@ -225,7 +225,13 @@ internal fun HomeSearchBar(
             }
         },
         actions = {
-            Box(Modifier.graphicsLayer { alpha = 1f - searchBarState.progress }) {
+            // 头像与胶囊之间留出和左侧抽屉按钮一样的空档；顶栏本身只给 4dp 边距，
+            // 24dp 图标自带 12dp 内缩，40dp 头像没有，所以这里补回来
+            Box(
+                Modifier
+                    .graphicsLayer { alpha = 1f - searchBarState.progress }
+                    .padding(start = 8.dp, end = 8.dp),
+            ) {
                 HomeAvatarButton(onClick = onAvatarClick)
             }
         },
@@ -267,7 +273,7 @@ private fun HomeSearchPlaceholder(text: String) {
         text = text,
         // 占位文字不需要被读屏重复朗读
         modifier = Modifier.clearAndSetSemantics {},
-        style = LoomaTokens.type.searchText,
+        style = LoomaTokens.type.body,
         color = LoomaTokens.colors.muted,
         maxLines = 1,
     )
@@ -303,7 +309,6 @@ private fun HomeAvatarButton(onClick: () -> Unit) {
     Surface(
         onClick = onClick,
         modifier = Modifier
-            .padding(end = 4.dp)
             .size(40.dp)
             .semantics { contentDescription = avatarDescription },
         shape = CircleShape,
@@ -429,6 +434,6 @@ private fun HomeSearchHint(text: String) {
     // 靠上而不是居中：展开时结果区的高度一直在长，居中会把提示文字一路往下带；
     // 靠上之后它只跟着结果区一起淡入上浮，不会自己往下漂
     Box(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = 24.dp)) {
-        Text(text, style = LoomaTokens.type.emptyState, color = LoomaTokens.colors.muted)
+        Text(text, style = LoomaTokens.type.supporting, color = LoomaTokens.colors.muted)
     }
 }

@@ -10,7 +10,6 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.sp
 
 @Immutable
 data class LoomaColors(
@@ -30,23 +29,42 @@ data class LoomaColors(
     val error: Color,
 )
 
-/** 首页的排版刻度，字号与行高集中在这里调整 */
+/**
+ * 首页与核心界面的排版刻度。
+ *
+ * 每个字段就是一个 Material 3 角色，这里不再二次调字号、行高和字重；
+ * 角色名写在各字段的注释里，方便和 m3.material.io 的类型刻度对表。
+ * 需要新样式时先找对应的 M3 角色，找不到再讨论要不要加字段。
+ */
 @Immutable
 data class LoomaTypography(
+    /**
+     * headline large emphasized 叠品牌字重。唯一一处偏离 M3 的地方：
+     * 引导页标题要压得住整屏，M3 的 emphasized 只到 Medium。
+     */
+    val heroTitle: TextStyle,
+    /** title large emphasized */
+    val pageTitle: TextStyle,
+    /** title medium emphasized */
     val sectionTitle: TextStyle,
+    /** label medium emphasized，配等宽数字 */
     val count: TextStyle,
+    /** title medium */
     val cardTitle: TextStyle,
+    /** body small */
     val cardBody: TextStyle,
+    /** label medium，配等宽数字 */
     val cardMeta: TextStyle,
+    /** title small */
     val folderName: TextStyle,
+    /** body medium，导航路径 */
     val breadcrumb: TextStyle,
-    val sheetTitle: TextStyle,
-    val sheetOption: TextStyle,
-    val searchText: TextStyle,
-    val emptyState: TextStyle,
+    /** body large，正文、搜索输入、列表选项 */
+    val body: TextStyle,
+    /** body medium，空状态与次要提示 */
+    val supporting: TextStyle,
+    /** title medium emphasized，头像首字母 */
     val avatar: TextStyle,
-    /** Markdown 阅读正文；标题比例与行距由它推导 */
-    val markdownBody: TextStyle,
 )
 
 fun loomaColors(scheme: ColorScheme): LoomaColors = LoomaColors(
@@ -67,27 +85,25 @@ fun loomaColors(scheme: ColorScheme): LoomaColors = LoomaColors(
 )
 
 fun loomaTypography(base: Typography): LoomaTypography = LoomaTypography(
-    sectionTitle = base.titleMedium.metric(size = 16, line = 24, weight = FontWeight.SemiBold),
-    count = base.labelMedium.metric(size = 12, line = 16),
-    cardTitle = base.titleMedium.metric(size = 16, line = 22, weight = FontWeight.SemiBold),
-    cardBody = base.bodySmall.metric(size = 12, line = 18),
-    cardMeta = base.labelMedium.metric(size = 12, line = 16),
-    folderName = base.titleSmall.metric(size = 15, line = 20, weight = FontWeight.Medium),
-    breadcrumb = base.bodyMedium.metric(size = 13, line = 18),
-    sheetTitle = base.titleLarge.metric(size = 22, line = 28, weight = FontWeight.Medium),
-    sheetOption = base.bodyLarge.metric(size = 16, line = 22),
-    searchText = base.bodyLarge.metric(size = 16, line = 22),
-    emptyState = base.bodySmall.metric(size = 14, line = 20),
-    avatar = base.titleMedium.metric(size = 16, line = 20, weight = FontWeight.SemiBold),
-    markdownBody = base.bodyLarge.metric(size = 16, line = 24),
+    heroTitle = base.headlineLargeEmphasized.copy(fontWeight = FontWeight(BRAND_HERO_WEIGHT)),
+    pageTitle = base.titleLargeEmphasized,
+    sectionTitle = base.titleMediumEmphasized,
+    count = base.labelMediumEmphasized.copy(fontFeatureSettings = TABULAR_FIGURES),
+    cardTitle = base.titleMedium,
+    cardBody = base.bodySmall,
+    cardMeta = base.labelMedium.copy(fontFeatureSettings = TABULAR_FIGURES),
+    folderName = base.titleSmall,
+    breadcrumb = base.bodyMedium,
+    body = base.bodyLarge,
+    supporting = base.bodyMedium,
+    avatar = base.titleMediumEmphasized,
 )
 
-private fun TextStyle.metric(size: Int, line: Int, weight: FontWeight? = null): TextStyle =
-    copy(
-        fontSize = size.sp,
-        lineHeight = line.sp,
-        fontWeight = weight ?: fontWeight,
-    )
+/** 缺省值在 Android 上按 1 处理，这里写全是为了不依赖那个约定 */
+internal const val TABULAR_FIGURES = "\"tnum\" 1"
+
+/** Google Sans Flex 的 wght 轴到 1000，750 比 M3 的 Bold 再重半档 */
+private const val BRAND_HERO_WEIGHT = 750
 
 /** 默认值只服务于没有 LoomaTheme 包裹的 Preview 与测试 */
 val LocalLoomaColors = staticCompositionLocalOf { loomaColors(lightColorScheme()) }

@@ -63,7 +63,7 @@ import org.intellij.markdown.ast.getTextInNode
  * 渲染库与本项目之间的唯一适配层。
  *
  * 字号刻度对齐 Obsidian「Things」主题：正文 16 / 行高 1.5，
- * 标题按 1.7 / 1.5 / 1.2 / 1.1 / 1 / 0.9 倍缩放，标题不再比正文大两个量级。
+ * 标题与代码的倍数见 [RATIOS]，标题不再比正文大两个量级。
  * 复选框和列表符号都换成固定宽度列，行内首行文字与标记因此对齐。
  */
 @Immutable
@@ -73,10 +73,64 @@ data class LoomaMarkdownTheme(
     val padding: MarkdownPadding,
 )
 
+private data class MarkdownRatios(
+    val h1: Float,
+    val h2: Float,
+    val h3: Float,
+    val h4: Float,
+    val h5: Float,
+    val h6: Float,
+    val code: Float,
+    val lineHeight: Float,
+)
+
+/** 标题与代码相对正文的倍数，比例只在这张表里出现一次 */
+private val RATIOS = MarkdownRatios(
+    h1 = 1.7f,
+    h2 = 1.5f,
+    h3 = 1.2f,
+    h4 = 1.1f,
+    h5 = 1f,
+    h6 = 0.9f,
+    code = 0.9f,
+    lineHeight = 1.35f,
+)
+
+/** 正文之外的刻度，全部由正文基准推导，换主题只改基准 */
+@Immutable
+internal data class LoomaMarkdownScale(
+    val h1: TextStyle,
+    val h2: TextStyle,
+    val h3: TextStyle,
+    val h4: TextStyle,
+    val h5: TextStyle,
+    val h6: TextStyle,
+    val code: TextStyle,
+    val inlineCode: TextStyle,
+)
+
+internal fun loomaMarkdownScale(base: TextStyle): LoomaMarkdownScale = LoomaMarkdownScale(
+    h1 = base.scaled(RATIOS.h1, FontWeight.Bold),
+    h2 = base.scaled(RATIOS.h2, FontWeight.Bold),
+    h3 = base.scaled(RATIOS.h3, FontWeight.SemiBold),
+    h4 = base.scaled(RATIOS.h4, FontWeight.SemiBold),
+    h5 = base.scaled(RATIOS.h5, FontWeight.SemiBold),
+    h6 = base.scaled(RATIOS.h6, FontWeight.SemiBold),
+    code = base.copy(fontSize = base.fontSize * RATIOS.code),
+    inlineCode = base.copy(fontSize = base.fontSize * RATIOS.code),
+)
+
+/** 行高跟着字号一起缩，标题因此不会比正文松 */
+private fun TextStyle.scaled(ratio: Float, weight: FontWeight): TextStyle {
+    val size = fontSize.value * ratio
+    return copy(fontSize = size.sp, lineHeight = (size * RATIOS.lineHeight).sp, fontWeight = weight)
+}
+
 /** 正文、卡片预览各自传入基准字号，标题比例与间距都从这一个基准推导 */
 @Composable
 fun loomaMarkdownTheme(base: TextStyle, compact: Boolean = false): LoomaMarkdownTheme {
     val colors = LoomaTokens.colors
+    val scale = remember(base) { loomaMarkdownScale(base) }
     return LoomaMarkdownTheme(
         colors = markdownColor(
             text = colors.title,
@@ -94,15 +148,15 @@ fun loomaMarkdownTheme(base: TextStyle, compact: Boolean = false): LoomaMarkdown
             ordered = base,
             bullet = base,
             quote = base.copy(fontStyle = FontStyle.Italic),
-            code = base.copy(fontSize = base.fontSize * 0.9f),
-            inlineCode = base.copy(fontSize = base.fontSize * 0.9f),
+            code = scale.code,
+            inlineCode = scale.inlineCode,
             table = base,
-            h1 = base.scaled(1.7f, FontWeight.Bold),
-            h2 = base.scaled(1.5f, FontWeight.Bold),
-            h3 = base.scaled(1.2f, FontWeight.SemiBold),
-            h4 = base.scaled(1.1f, FontWeight.SemiBold),
-            h5 = base.scaled(1f, FontWeight.SemiBold),
-            h6 = base.scaled(0.9f, FontWeight.SemiBold).copy(color = colors.muted),
+            h1 = scale.h1,
+            h2 = scale.h2,
+            h3 = scale.h3,
+            h4 = scale.h4,
+            h5 = scale.h5,
+            h6 = scale.h6.copy(color = colors.muted),
         ),
         padding = markdownPadding(
             block = if (compact) 4.dp else 10.dp,
@@ -309,10 +363,4 @@ private fun CheckboxMarker(
 private fun lineHeightOf(style: TextStyle): Dp {
     val resolved = if (style.lineHeight.isSp) style.lineHeight.value else style.fontSize.value * 1.5f
     return with(LocalDensity.current) { resolved.sp.toDp() }
-}
-
-/** Obsidian Things 的标题比例；行高统一取 1.35 倍字号 */
-private fun TextStyle.scaled(ratio: Float, weight: FontWeight): TextStyle {
-    val size = fontSize.value * ratio
-    return copy(fontSize = size.sp, lineHeight = (size * 1.35f).sp, fontWeight = weight)
 }

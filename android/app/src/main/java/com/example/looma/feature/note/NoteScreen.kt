@@ -25,6 +25,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,11 +46,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.looma.R
+import com.example.looma.data.note.resolveImageSource
 import com.example.looma.domain.markdown.MarkdownEditing
 import com.example.looma.domain.markdown.MarkdownIndex
 import com.example.looma.domain.markdown.TextSelection
@@ -62,6 +63,7 @@ import com.example.looma.feature.note.components.NoteLeaveDialog
 import com.example.looma.feature.note.components.NoteSaveBanner
 import com.example.looma.feature.note.components.NoteTopBar
 import com.example.looma.ui.components.LoomaLoadingIndicator
+import com.example.looma.ui.markdown.LocalImageSourceResolver
 import com.example.looma.ui.markdown.MarkdownBody
 import com.example.looma.ui.theme.LoomaTheme
 import com.example.looma.ui.theme.LoomaTokens
@@ -103,16 +105,31 @@ fun NoteRoute(
             modifier = modifier,
         )
 
-        else -> NoteWorkspace(
-            state = state,
-            fallbackTitle = fallbackTitle,
-            onContentChanged = viewModel::onContentChanged,
-            onRequestLeave = requestLeave,
-            onRetrySave = viewModel::retrySave,
-            onOverwrite = viewModel::overwrite,
-            onOpenNote = onOpenNote,
-            modifier = modifier,
-        )
+        else -> {
+            // 图片引用依赖库根与笔记位置，解析规则在 data 层，UI 只拿到结果
+            val imageContext = state.imageContext
+            val resolver = remember(imageContext) {
+                if (imageContext == null) {
+                    { _: String -> null }
+                } else {
+                    { link: String ->
+                        resolveImageSource(imageContext.vaultRoot, imageContext.noteFile, link)
+                    }
+                }
+            }
+            CompositionLocalProvider(LocalImageSourceResolver provides resolver) {
+                NoteWorkspace(
+                    state = state,
+                    fallbackTitle = fallbackTitle,
+                    onContentChanged = viewModel::onContentChanged,
+                    onRequestLeave = requestLeave,
+                    onRetrySave = viewModel::retrySave,
+                    onOverwrite = viewModel::overwrite,
+                    onOpenNote = onOpenNote,
+                    modifier = modifier,
+                )
+            }
+        }
     }
 
     if (state.leaveBlocked) {
@@ -318,10 +335,8 @@ private fun NoteEditor(
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 12.dp)
             .focusRequester(focusRequester),
-        textStyle = MaterialTheme.typography.bodyLarge.copy(
-            color = LoomaTokens.colors.title,
-            lineHeight = 26.sp,
-        ),
+        // 行高与 Markdown 阅读态同一档，编辑态和阅读态切换时文字不会上下跳
+        textStyle = LoomaTokens.type.body.copy(color = LoomaTokens.colors.title),
         cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         scrollState = scrollState,
         decorator = TextFieldDecorator { innerTextField ->
@@ -329,7 +344,7 @@ private fun NoteEditor(
                 if (buffer.text.isEmpty()) {
                     Text(
                         text = placeholder,
-                        style = MaterialTheme.typography.bodyLarge.copy(lineHeight = 26.sp),
+                        style = LoomaTokens.type.body,
                         color = LoomaTokens.colors.muted,
                     )
                 }
@@ -393,6 +408,7 @@ private fun NoteLoadErrorScreen(
         ) {
             Text(
                 text = stringResource(R.string.editor_load_failed),
+                style = LoomaTokens.type.supporting,
                 color = MaterialTheme.colorScheme.error,
             )
             TextButton(onClick = onRetry) { Text(stringResource(R.string.editor_reload)) }

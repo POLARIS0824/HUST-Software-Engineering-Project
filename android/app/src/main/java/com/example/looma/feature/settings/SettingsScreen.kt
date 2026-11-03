@@ -136,7 +136,7 @@ fun SettingsScreen(
                 title = {
                     Text(
                         text = stringResource(R.string.settings_title),
-                        style = LoomaTokens.type.sheetTitle,
+                        style = LoomaTokens.type.pageTitle,
                         color = LoomaTokens.colors.title,
                     )
                 },
@@ -346,7 +346,7 @@ private fun ThemePresetDialog(
                         ThemeSwatch(preset = preset, useWallpaper = false)
                         Text(
                             text = themeName(preset),
-                            style = LoomaTokens.type.sheetOption,
+                            style = LoomaTokens.type.body,
                             color = LoomaTokens.colors.title,
                             modifier = Modifier.weight(1f),
                         )
@@ -390,7 +390,7 @@ private fun LanguageDialog(
                     ) {
                         Text(
                             text = languageName(language),
-                            style = LoomaTokens.type.sheetOption,
+                            style = LoomaTokens.type.body,
                             color = LoomaTokens.colors.title,
                             modifier = Modifier.weight(1f),
                         )
@@ -517,7 +517,7 @@ private fun SettingsRow(
 private fun SettingsSectionHeader(title: String) {
     Text(
         text = title,
-        style = MaterialTheme.typography.titleSmall,
+        style = LoomaTokens.type.sectionTitle,
         color = LoomaTokens.colors.muted,
         modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 2.dp),
     )

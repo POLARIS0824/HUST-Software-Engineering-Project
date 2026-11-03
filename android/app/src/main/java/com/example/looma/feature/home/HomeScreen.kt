@@ -356,7 +356,7 @@ private fun HomeSortSheet(current: HomeSort, onSelect: (HomeSort) -> Unit) {
     Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
         Text(
             text = stringResource(R.string.home_sort_sheet_title),
-            style = LoomaTokens.type.sheetTitle,
+            style = LoomaTokens.type.pageTitle,
             color = LoomaTokens.colors.title,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp),
         )
@@ -398,7 +398,7 @@ private fun HomeSortOption(label: String, selected: Boolean, onClick: () -> Unit
             Spacer(Modifier.width(16.dp))
             Text(
                 text = label,
-                style = LoomaTokens.type.sheetOption,
+                style = LoomaTokens.type.body,
                 color = LoomaTokens.colors.title,
             )
         }
@@ -424,7 +424,7 @@ private fun HomeContent(
             state.files.isAtRoot && state.files.isEmpty -> HomeCentered {
                 Text(
                     text = stringResource(R.string.home_empty_vault),
-                    style = LoomaTokens.type.emptyState,
+                    style = LoomaTokens.type.supporting,
                     color = LoomaTokens.colors.muted,
                 )
             }

@@ -2,6 +2,7 @@ package com.example.looma.ui.markdown
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
@@ -10,6 +11,7 @@ import androidx.compose.ui.text.style.TextDecoration
 import com.example.looma.domain.markdown.MarkdownDocument
 import com.example.looma.domain.wiki.WikiContext
 import com.example.looma.ui.theme.LoomaTokens
+import com.mikepenz.markdown.compose.LocalImageTransformer
 import com.mikepenz.markdown.compose.Markdown
 
 /**
@@ -31,7 +33,7 @@ fun MarkdownBody(
 ) {
     val currentToggle = rememberUpdatedState(onCheckboxToggle)
     val currentLinkClick = rememberUpdatedState(onWikiLinkClick)
-    val theme = loomaMarkdownTheme(base = LoomaTokens.type.markdownBody)
+    val theme = loomaMarkdownTheme(base = LoomaTokens.type.body)
     val dividerColor = LoomaTokens.colors.divider
     val accent = LoomaTokens.colors.accent
     val muted = LoomaTokens.colors.muted
@@ -49,14 +51,18 @@ fun MarkdownBody(
         )
     }
 
-    Markdown(
-        content = document.body,
-        colors = theme.colors,
-        typography = theme.typography,
-        padding = theme.padding,
-        components = components,
-        // 勾选复选框会整段重解析；保留上一帧内容，页面不会闪成空白、滚动位置也不会被拉回顶部
-        retainState = true,
-        modifier = modifier.fillMaxWidth(),
-    )
+    // 渲染库的图片插槽默认是空实现；接上真正的解码器之后正文图片才会出现
+    val transformer = remember { LoomaImageTransformer() }
+    CompositionLocalProvider(LocalImageTransformer provides transformer) {
+        Markdown(
+            content = document.body,
+            colors = theme.colors,
+            typography = theme.typography,
+            padding = theme.padding,
+            components = components,
+            // 勾选复选框会整段重解析；保留上一帧内容，页面不会闪成空白、滚动位置也不会被拉回顶部
+            retainState = true,
+            modifier = modifier.fillMaxWidth(),
+        )
+    }
 }

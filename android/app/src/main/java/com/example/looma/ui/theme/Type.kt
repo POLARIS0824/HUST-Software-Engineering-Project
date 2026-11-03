@@ -11,20 +11,23 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 
+/** M3 只规定字号、行高、字重和字距；宽度与圆润度是产品自己的品牌轴 */
+private const val HEADING_WIDTH = 90f
+private const val TEXT_WIDTH = 100f
+private const val HEADING_ROUND = 80f
+private const val TEXT_ROUND = 0f
+
 /**
- * FitLog ui 分支的 Google Sans Flex 字重、字宽、光学尺寸与圆润度设置
- * 没有 google_sans_flex.ttf 时使用系统 SansSerif，不影响编译
- * 将字体文件放进 res/font 后无需修改 Kotlin 源码
+ * 把 Google Sans Flex 装进 Material 3 的各档角色。
+ *
+ * 字重沿用角色自带的值。emphasized 角色的加粗量由 M3 的 token 给出，
+ * 这里再叠一次就会把 title large emphasized 的 Medium 顶成 Bold，
+ * 于是页面标题和分组标题一样粗。
+ * 没有 google_sans_flex.ttf 时退回系统 SansSerif，字号与字重都不动。
  */
-private fun TextStyle.loomaFlex(fontId: Int?, emphasized: Boolean = false, heading: Boolean = false): TextStyle {
-    val weight = if (emphasized) {
-        if (heading) 750 else 700
-    } else {
-        fontWeight?.weight ?: 400
-    }
-    if (fontId == null) {
-        return copy(fontFamily = FontFamily.SansSerif, fontWeight = FontWeight(weight))
-    }
+internal fun TextStyle.loomaFlex(fontId: Int?, heading: Boolean = false): TextStyle {
+    val weight = fontWeight?.weight ?: 400
+    if (fontId == null) return copy(fontFamily = FontFamily.SansSerif)
 
     fun flexFont(axisWeight: Int, style: FontStyle, italic: Boolean): Font = Font(
         resId = fontId,
@@ -32,9 +35,9 @@ private fun TextStyle.loomaFlex(fontId: Int?, emphasized: Boolean = false, headi
         style = style,
         variationSettings = FontVariation.Settings(
             FontVariation.weight(axisWeight),
-            FontVariation.width(if (heading) 90f else 100f),
+            FontVariation.width(if (heading) HEADING_WIDTH else TEXT_WIDTH),
             FontVariation.opticalSizing(fontSize),
-            FontVariation.Setting("ROND", if (heading) 80f else 0f),
+            FontVariation.Setting("ROND", if (heading) HEADING_ROUND else TEXT_ROUND),
             FontVariation.Setting("slnt", if (italic) -10f else 0f),
         ),
     )
@@ -48,7 +51,7 @@ private fun TextStyle.loomaFlex(fontId: Int?, emphasized: Boolean = false, headi
             add(flexFont(axisWeight, FontStyle.Italic, italic = true))
         }
     }
-    return copy(fontFamily = FontFamily(*fonts.toTypedArray()), fontWeight = FontWeight(weight))
+    return copy(fontFamily = FontFamily(*fonts.toTypedArray()))
 }
 
 /**
@@ -79,21 +82,21 @@ fun rememberLoomaTypography(): Typography {
             labelLarge = base.labelLarge.loomaFlex(id),
             labelMedium = base.labelMedium.loomaFlex(id),
             labelSmall = base.labelSmall.loomaFlex(id),
-            displayLargeEmphasized = base.displayLargeEmphasized.loomaFlex(id, true, true),
-            displayMediumEmphasized = base.displayMediumEmphasized.loomaFlex(id, true, true),
-            displaySmallEmphasized = base.displaySmallEmphasized.loomaFlex(id, true, true),
-            headlineLargeEmphasized = base.headlineLargeEmphasized.loomaFlex(id, true, true),
-            headlineMediumEmphasized = base.headlineMediumEmphasized.loomaFlex(id, true, true),
-            headlineSmallEmphasized = base.headlineSmallEmphasized.loomaFlex(id, true, true),
-            titleLargeEmphasized = base.titleLargeEmphasized.loomaFlex(id, true),
-            titleMediumEmphasized = base.titleMediumEmphasized.loomaFlex(id, true),
-            titleSmallEmphasized = base.titleSmallEmphasized.loomaFlex(id, true),
-            bodyLargeEmphasized = base.bodyLargeEmphasized.loomaFlex(id, true),
-            bodyMediumEmphasized = base.bodyMediumEmphasized.loomaFlex(id, true),
-            bodySmallEmphasized = base.bodySmallEmphasized.loomaFlex(id, true),
-            labelLargeEmphasized = base.labelLargeEmphasized.loomaFlex(id, true),
-            labelMediumEmphasized = base.labelMediumEmphasized.loomaFlex(id, true),
-            labelSmallEmphasized = base.labelSmallEmphasized.loomaFlex(id, true),
+            displayLargeEmphasized = base.displayLargeEmphasized.loomaFlex(id, heading = true),
+            displayMediumEmphasized = base.displayMediumEmphasized.loomaFlex(id, heading = true),
+            displaySmallEmphasized = base.displaySmallEmphasized.loomaFlex(id, heading = true),
+            headlineLargeEmphasized = base.headlineLargeEmphasized.loomaFlex(id, heading = true),
+            headlineMediumEmphasized = base.headlineMediumEmphasized.loomaFlex(id, heading = true),
+            headlineSmallEmphasized = base.headlineSmallEmphasized.loomaFlex(id, heading = true),
+            titleLargeEmphasized = base.titleLargeEmphasized.loomaFlex(id),
+            titleMediumEmphasized = base.titleMediumEmphasized.loomaFlex(id),
+            titleSmallEmphasized = base.titleSmallEmphasized.loomaFlex(id),
+            bodyLargeEmphasized = base.bodyLargeEmphasized.loomaFlex(id),
+            bodyMediumEmphasized = base.bodyMediumEmphasized.loomaFlex(id),
+            bodySmallEmphasized = base.bodySmallEmphasized.loomaFlex(id),
+            labelLargeEmphasized = base.labelLargeEmphasized.loomaFlex(id),
+            labelMediumEmphasized = base.labelMediumEmphasized.loomaFlex(id),
+            labelSmallEmphasized = base.labelSmallEmphasized.loomaFlex(id),
         )
     }
 }

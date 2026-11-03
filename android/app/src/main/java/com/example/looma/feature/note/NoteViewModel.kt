@@ -52,6 +52,8 @@ class NoteViewModel(
                 val keepEmptyNotes = settingsRepository.settings.first().keepEmptyNotes
                 // 索引只是缓存：读它失败不该让笔记打不开，链接退化成全部未解析即可
                 val wiki = runCatching { repository.wikiContext(noteId) }.getOrDefault(WikiContext.Empty)
+                // 路径也同理：拿不到时图片不显示，正文照常打开
+                val imageContext = runCatching { repository.imageContext(noteId) }.getOrNull()
                 _uiState.update {
                     it.copy(
                         content = note.content,
@@ -64,6 +66,7 @@ class NoteViewModel(
                         isConflict = false,
                         keepEmptyNotes = keepEmptyNotes,
                         wiki = wiki,
+                        imageContext = imageContext,
                     )
                 }
             } catch (e: CancellationException) {

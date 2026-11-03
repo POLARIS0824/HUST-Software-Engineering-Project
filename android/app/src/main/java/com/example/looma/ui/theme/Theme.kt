@@ -2,6 +2,7 @@ package com.example.looma.ui.theme
 
 import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialExpressiveTheme
 import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.dynamicDarkColorScheme
@@ -21,9 +22,11 @@ import com.example.looma.data.settings.ThemePreset
  *
  * Typography and motion remain consistent regardless of the color source.
  *
- * The Looma tokens are provided from the same scheme and typography,
- * so screens resolve one set of semantic roles instead of reading the
- * Material theme directly.
+ * The Looma tokens are projected from the same scheme and typography,
+ * so the shared surface roles resolve from one place. A one-off editorial
+ * moment (onboarding hero, dialog heading) may still name an M3 role
+ * directly; what no screen may do is invent a size, weight or family.
+ * `verifyTypography` fails the build on exactly that.
  */
 @Composable
 fun LoomaTheme(
@@ -46,6 +49,9 @@ fun LoomaTheme(
     CompositionLocalProvider(
         LocalLoomaColors provides colors,
         LocalLoomaTypography provides type,
+        // 根节点也必须给内容色：不带 Surface 的页面里，裸 Text 会退回默认的纯黑，
+        // 深色模式下就成了黑底黑字
+        LocalContentColor provides colorScheme.onBackground,
     ) {
         MaterialExpressiveTheme(
             colorScheme = colorScheme,
