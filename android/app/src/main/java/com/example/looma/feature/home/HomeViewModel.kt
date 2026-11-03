@@ -112,7 +112,14 @@ class HomeViewModel(
     /** 打开文件夹；未知路径直接忽略，避免把状态带到快照之外 */
     fun openFolder(path: FolderPath) {
         if (!index.contains(path)) return
-        _uiState.update { it.copy(files = index.files(path, it.sort)) }
+        _uiState.update {
+            it.copy(
+                files = index.files(path, it.sort),
+                selection = emptySet(),
+                selectedItems = emptyList(),
+                selectedFolder = null,
+            )
+        }
     }
 
     /** 返回上一级；已经在根目录时什么也不做，交给系统返回键 */
@@ -217,11 +224,18 @@ class HomeViewModel(
         state.copy(
             selection = selection,
             selectedItems = state.notes.selected(selection, state.sort),
+            selectedFolder = null,
         )
     }
 
     fun clearSelection() = _uiState.update {
-        it.copy(selection = emptySet(), selectedItems = emptyList(), dialog = null, dialogError = null)
+        it.copy(
+            selection = emptySet(),
+            selectedItems = emptyList(),
+            selectedFolder = null,
+            dialog = null,
+            dialogError = null,
+        )
     }
 
     // ---- 对话框 ----
@@ -280,10 +294,16 @@ class HomeViewModel(
         }
     }
 
-    // ---- 文件夹操作：长按卡片打开菜单，三个动作都走同一条对话框 → 刷新路径 ----
+    // ---- 文件夹操作：长按进入和笔记相同的顶栏，三个动作都走对话框 → 刷新路径 ----
 
-    fun startFolderActions(folder: HomeFolderItem) = _uiState.update {
-        it.copy(dialog = HomeFileDialog.FolderActions(folder), dialogError = null)
+    /** 长按文件夹：进入它自己的选择态，和笔记多选互斥 */
+    fun selectFolder(folder: HomeFolderItem) = _uiState.update {
+        it.copy(
+            selectedFolder = folder,
+            selection = emptySet(),
+            selectedItems = emptyList(),
+            dialogError = null,
+        )
     }
 
     fun startFolderRename() {
@@ -476,6 +496,7 @@ class HomeViewModel(
                 dialogError = null,
                 selection = emptySet(),
                 selectedItems = emptyList(),
+                selectedFolder = null,
                 message = message,
             )
         }
@@ -484,8 +505,7 @@ class HomeViewModel(
     private fun HomeUiState.singleSelection(): HomeNoteItem? =
         selectedItems.singleOrNull()
 
-    private fun HomeUiState.folderActions(): HomeFolderItem? =
-        (dialog as? HomeFileDialog.FolderActions)?.folder
+    private fun HomeUiState.folderActions(): HomeFolderItem? = selectedFolder
 
     companion object {
         fun factory(

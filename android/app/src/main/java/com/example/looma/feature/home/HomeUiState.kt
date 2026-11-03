@@ -44,7 +44,6 @@ sealed interface HomeFileDialog {
     data object NewFolder : HomeFileDialog
 
     /** 文件夹卡片长按或“更多”打开的小菜单 */
-    data class FolderActions(val folder: HomeFolderItem) : HomeFileDialog
     data class RenameFolder(val path: FolderPath, val initialName: String) : HomeFileDialog
     data class MoveFolder(
         val path: FolderPath,
@@ -119,13 +118,19 @@ data class HomeUiState(
     val selection: Set<String> = emptySet(),
     /** 选中项按当前排序展开，UI 直接读 */
     val selectedItems: List<HomeNoteItem> = emptyList(),
+    /**
+     * 长按文件夹后进入的动作目标。
+     *
+     * 和笔记多选互斥：顶栏只有一个，文件夹只支持单个，所以两边不能同时有值。
+     */
+    val selectedFolder: HomeFolderItem? = null,
     val dialog: HomeFileDialog? = null,
     val dialogError: HomeFileError? = null,
     val isActionRunning: Boolean = false,
     val message: HomeMessage? = null,
 ) {
     val isBrowsing: Boolean get() = !files.isAtRoot
-    val isSelecting: Boolean get() = selection.isNotEmpty()
+    val isSelecting: Boolean get() = selection.isNotEmpty() || selectedFolder != null
 }
 
 internal fun List<HomeNoteItem>.matching(query: String): List<HomeNoteItem> {

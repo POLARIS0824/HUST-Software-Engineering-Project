@@ -3,6 +3,12 @@ package com.example.looma.feature.home
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +29,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LargeFloatingActionButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SearchBarDefaults
@@ -53,6 +60,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
@@ -64,7 +72,6 @@ import com.example.looma.domain.model.NoteId
 import com.example.looma.feature.home.components.HomeBreadcrumb
 import com.example.looma.feature.home.components.HomeDeleteFolderDialog
 import com.example.looma.feature.home.components.HomeFilesGrid
-import com.example.looma.feature.home.components.HomeFolderActionsDialog
 import com.example.looma.feature.home.components.HomeMoveFolderDialog
 import com.example.looma.feature.home.components.HomePropertiesDialog
 import com.example.looma.feature.home.components.HomeSearchBar
@@ -87,7 +94,7 @@ data class HomeActions(
     val onNavigateUp: () -> Unit = {},
     val onCreateNoteClick: () -> Unit = {},
     val onCreateFolderClick: () -> Unit = {},
-    val onFolderActions: (HomeFolderItem) -> Unit = {},
+    val onFolderLongClick: (HomeFolderItem) -> Unit = {},
     val onRenameFolderClick: () -> Unit = {},
     val onMoveFolderClick: () -> Unit = {},
     val onDeleteFolderClick: () -> Unit = {},
@@ -173,7 +180,7 @@ fun HomeRoute(
             onNavigateUp = viewModel::navigateUp,
             onCreateNoteClick = { viewModel.createNote(untitledTitle) },
             onCreateFolderClick = viewModel::startNewFolder,
-            onFolderActions = viewModel::startFolderActions,
+            onFolderLongClick = viewModel::selectFolder,
             onRenameFolderClick = viewModel::startFolderRename,
             onMoveFolderClick = viewModel::startFolderMove,
             onDeleteFolderClick = viewModel::startFolderDelete,
@@ -213,6 +220,8 @@ fun HomeScreen(
     var sortSheetVisible by rememberSaveable { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val pullToRefreshState = rememberPullToRefreshState()
+    // 顶栏切换的动效曲线取自主题，和搜索条用的同一套 expressive 参数
+    val topBarMotion = MaterialTheme.motionScheme
     val undoLabel = stringResource(R.string.home_undo)
     val messageText = state.message?.let { homeMessageText(it) }
     LaunchedEffect(state.message) {
@@ -238,27 +247,54 @@ fun HomeScreen(
             modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
             containerColor = LoomaTokens.colors.page,
             topBar = {
-                if (state.isSelecting) {
-                    HomeSelectionBar(
-                        state = state,
-                        onCloseClick = actions.onClearSelection,
-                        onRenameClick = actions.onRenameClick,
-                        onMoveClick = actions.onMoveClick,
-                        onInfoClick = actions.onInfoClick,
-                        onDeleteClick = actions.onDeleteClick,
-                    )
-                } else {
-                    HomeSearchBar(
-                        state = state,
-                        scrollBehavior = scrollBehavior,
-                        onQueryChange = actions.onQueryChange,
-                        onToggleLayout = actions.onToggleLayout,
-                        onSortClick = { sortSheetVisible = true },
-                        onSearchSubmit = actions.onSearchSubmit,
-                        onSearchResultClick = actions.onSearchResultClick,
-                        onMenuClick = actions.onMenuClick,
-                        onAvatarClick = actions.onSettingsClick,
-                    )
+                // 选择态与搜索态换顶栏时用主题里的 expressive 动效：淡入加一点上移，
+                // 和搜索条自己的 morph 是同一套弹簧参数，不会一个生硬一个顺滑
+                AnimatedContent(
+                    targetState = state.isSelecting,
+                    transitionSpec = {
+                        val spatial = topBarMotion.defaultSpatialSpec<IntOffset>()
+                        val effects = topBarMotion.defaultEffectsSpec<Float>()
+                        (fadeIn(effects) + slideInVertically(spatial) { -it / 4 })
+                            .togetherWith(fadeOut(effects) + slideOutVertically(spatial) { it / 4 })
+                    },
+                    label = "home-top-bar",
+                ) { selecting ->
+                    val folder = state.selectedFolder
+                    if (selecting && folder != null) {
+                        HomeSelectionBar(
+                            title = folder.name,
+                            showRename = true,
+                            showInfo = false,
+                            onCloseClick = actions.onClearSelection,
+                            onRenameClick = actions.onRenameFolderClick,
+                            onMoveClick = actions.onMoveFolderClick,
+                            onInfoClick = {},
+                            onDeleteClick = actions.onDeleteFolderClick,
+                        )
+                    } else if (selecting) {
+                        HomeSelectionBar(
+                            title = stringResource(R.string.home_selection_count, state.selection.size),
+                            showRename = state.selection.size == 1,
+                            showInfo = state.selection.size == 1,
+                            onCloseClick = actions.onClearSelection,
+                            onRenameClick = actions.onRenameClick,
+                            onMoveClick = actions.onMoveClick,
+                            onInfoClick = actions.onInfoClick,
+                            onDeleteClick = actions.onDeleteClick,
+                        )
+                    } else {
+                        HomeSearchBar(
+                            state = state,
+                            scrollBehavior = scrollBehavior,
+                            onQueryChange = actions.onQueryChange,
+                            onToggleLayout = actions.onToggleLayout,
+                            onSortClick = { sortSheetVisible = true },
+                            onSearchSubmit = actions.onSearchSubmit,
+                            onSearchResultClick = actions.onSearchResultClick,
+                            onMenuClick = actions.onMenuClick,
+                            onAvatarClick = actions.onSettingsClick,
+                        )
+                    }
                 }
             },
             floatingActionButton = {
@@ -350,14 +386,6 @@ private fun HomeFileDialogs(state: HomeUiState, actions: HomeActions) {
             error = state.dialogError,
             busy = state.isActionRunning,
             onConfirm = actions.onConfirmNewFolder,
-            onDismiss = actions.onDialogDismiss,
-        )
-
-        is HomeFileDialog.FolderActions -> HomeFolderActionsDialog(
-            folderName = dialog.folder.name,
-            onRename = actions.onRenameFolderClick,
-            onMove = actions.onMoveFolderClick,
-            onDelete = actions.onDeleteFolderClick,
             onDismiss = actions.onDialogDismiss,
         )
 
@@ -501,10 +529,11 @@ private fun HomeContent(
                         files = state.files,
                         isGridMode = state.isGridMode,
                         selection = state.selection,
+                        selectedFolder = state.selectedFolder?.path,
                         scrollRecentsToStart = state.scrollRecentsToStart,
                         onRecentsScrolled = actions.onRecentsScrolled,
                         onFolderClick = actions.onFolderClick,
-                        onFolderActions = actions.onFolderActions,
+                        onFolderLongClick = actions.onFolderLongClick,
                         onNoteClick = { note ->
                             if (state.isSelecting) {
                                 actions.onToggleSelection(note)
