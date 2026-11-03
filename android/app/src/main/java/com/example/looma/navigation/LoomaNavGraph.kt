@@ -147,6 +147,9 @@ fun LoomaNavGraph(
                     HomeRoute(
                         viewModel = homeViewModel,
                         onOpenNote = { noteId -> backStack.add(LoomaRoute.Note.from(noteId)) },
+                        onCreatedNote = { noteId ->
+                            backStack.add(LoomaRoute.Note.from(noteId, startInEdit = true))
+                        },
                         onMenuClick = { scope.launch { drawerState.open() } },
                         onSettingsClick = {
                             if (backStack.lastOrNull() != LoomaRoute.Settings) {
@@ -192,6 +195,7 @@ fun LoomaNavGraph(
                         fallbackTitle = route.relativePath
                             .substringAfterLast('/')
                             .substringBeforeLast('.'),
+                        startInEdit = route.startInEdit,
                         onNavigateUp = { if (backStack.size > 1) backStack.removeLastOrNull() },
                         onOpenNote = { noteId -> backStack.add(LoomaRoute.Note.from(noteId)) },
                     )

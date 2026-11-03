@@ -8,8 +8,10 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.unit.sp
 import com.example.looma.domain.markdown.MarkdownDocument
 import com.example.looma.domain.wiki.WikiContext
+import com.example.looma.ui.theme.BODY_LINE_HEIGHT
 import com.example.looma.ui.theme.LoomaTokens
 import com.mikepenz.markdown.compose.LocalImageTransformer
 import com.mikepenz.markdown.compose.Markdown
@@ -33,7 +35,9 @@ fun MarkdownBody(
 ) {
     val currentToggle = rememberUpdatedState(onCheckboxToggle)
     val currentLinkClick = rememberUpdatedState(onWikiLinkClick)
-    val theme = loomaMarkdownTheme(base = LoomaTokens.type.body)
+    val theme = loomaMarkdownTheme(
+        base = LoomaTokens.type.body.copy(lineHeight = BODY_LINE_HEIGHT.sp),
+    )
     val dividerColor = LoomaTokens.colors.divider
     val accent = LoomaTokens.colors.accent
     val muted = LoomaTokens.colors.muted

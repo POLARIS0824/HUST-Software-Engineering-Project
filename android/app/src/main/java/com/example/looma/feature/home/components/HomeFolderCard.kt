@@ -1,5 +1,6 @@
 package com.example.looma.feature.home.components
 
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.SegmentedListItem
 import androidx.compose.material3.Surface
@@ -18,7 +20,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.example.looma.R
@@ -27,21 +31,35 @@ import com.example.looma.feature.home.HomeFolderItem
 import com.example.looma.ui.components.LoomaIcon
 import com.example.looma.ui.theme.LoomaTokens
 
-/** 网格里的文件夹：图标加名称，没有数量与预览 */
+/**
+ * 网格里的文件夹：图标加名称，没有数量与预览。
+ *
+ * 点击打开文件夹，长按或右侧“更多”打开重命名 / 移动 / 删除菜单。
+ */
 @Composable
 internal fun HomeFolderCard(
     item: HomeFolderItem,
     onClick: () -> Unit,
+    onActionsClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val shape = RoundedCornerShape(20.dp)
+    val actionsLabel = stringResource(R.string.home_folder_actions_description)
     Surface(
-        onClick = onClick,
-        modifier = modifier.fillMaxWidth().height(68.dp),
-        shape = RoundedCornerShape(20.dp),
+        modifier = modifier
+            .fillMaxWidth()
+            .height(68.dp)
+            .clip(shape)
+            .combinedClickable(
+                onLongClickLabel = actionsLabel,
+                onClick = onClick,
+                onLongClick = onActionsClick,
+            ),
+        shape = shape,
         color = LoomaTokens.colors.card,
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             LoomaIcon(
@@ -57,7 +75,9 @@ internal fun HomeFolderCard(
                 color = LoomaTokens.colors.title,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
+            FolderActionsButton(onClick = onActionsClick)
         }
     }
 }
@@ -68,6 +88,7 @@ internal fun HomeFolderCard(
 internal fun HomeFolderGroup(
     folders: List<HomeFolderItem>,
     onFolderClick: (FolderPath) -> Unit,
+    onFolderActions: (HomeFolderItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (folders.isEmpty()) return
@@ -88,6 +109,9 @@ internal fun HomeFolderGroup(
                         tint = Color.Unspecified,
                     )
                 },
+                trailingContent = {
+                    FolderActionsButton(onClick = { onFolderActions(folder) })
+                },
             ) {
                 Text(
                     text = folder.name,
@@ -98,5 +122,17 @@ internal fun HomeFolderGroup(
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun FolderActionsButton(onClick: () -> Unit) {
+    IconButton(onClick = onClick) {
+        LoomaIcon(
+            iconRes = R.drawable.ic_more_vert,
+            contentDescription = stringResource(R.string.home_folder_actions_description),
+            modifier = Modifier.size(22.dp),
+            tint = LoomaTokens.colors.muted,
+        )
     }
 }

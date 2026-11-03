@@ -51,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -61,7 +62,10 @@ import com.example.looma.data.vault.VaultStorageAccess
 import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.NoteId
 import com.example.looma.feature.home.components.HomeBreadcrumb
+import com.example.looma.feature.home.components.HomeDeleteFolderDialog
 import com.example.looma.feature.home.components.HomeFilesGrid
+import com.example.looma.feature.home.components.HomeFolderActionsDialog
+import com.example.looma.feature.home.components.HomeMoveFolderDialog
 import com.example.looma.feature.home.components.HomePropertiesDialog
 import com.example.looma.feature.home.components.HomeSearchBar
 import com.example.looma.feature.home.components.HomeSelectionBar
@@ -83,6 +87,13 @@ data class HomeActions(
     val onNavigateUp: () -> Unit = {},
     val onCreateNoteClick: () -> Unit = {},
     val onCreateFolderClick: () -> Unit = {},
+    val onFolderActions: (HomeFolderItem) -> Unit = {},
+    val onRenameFolderClick: () -> Unit = {},
+    val onMoveFolderClick: () -> Unit = {},
+    val onDeleteFolderClick: () -> Unit = {},
+    val onConfirmRenameFolder: (String) -> Unit = {},
+    val onConfirmMoveFolder: (FolderPath) -> Unit = {},
+    val onConfirmDeleteFolder: () -> Unit = {},
     val onToggleSelection: (HomeNoteItem) -> Unit = {},
     val onClearSelection: () -> Unit = {},
     val onRenameClick: () -> Unit = {},
@@ -109,6 +120,7 @@ data class HomeActions(
 fun HomeRoute(
     viewModel: HomeViewModel,
     onOpenNote: (NoteId) -> Unit,
+    onCreatedNote: (NoteId) -> Unit,
     onMenuClick: () -> Unit,
     onSettingsClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -134,7 +146,7 @@ fun HomeRoute(
     // 新建成功是一次性事件：Route 负责导航，ViewModel 只交出一个 NoteId
     LaunchedEffect(state.createdNote) {
         state.createdNote?.let { noteId ->
-            onOpenNote(noteId)
+            onCreatedNote(noteId)
             viewModel.onCreatedNoteOpened()
         }
     }
@@ -161,6 +173,13 @@ fun HomeRoute(
             onNavigateUp = viewModel::navigateUp,
             onCreateNoteClick = { viewModel.createNote(untitledTitle) },
             onCreateFolderClick = viewModel::startNewFolder,
+            onFolderActions = viewModel::startFolderActions,
+            onRenameFolderClick = viewModel::startFolderRename,
+            onMoveFolderClick = viewModel::startFolderMove,
+            onDeleteFolderClick = viewModel::startFolderDelete,
+            onConfirmRenameFolder = viewModel::confirmRenameFolder,
+            onConfirmMoveFolder = viewModel::confirmMoveFolder,
+            onConfirmDeleteFolder = viewModel::confirmDeleteFolder,
             onToggleSelection = viewModel::toggleSelection,
             onClearSelection = viewModel::clearSelection,
             onRenameClick = viewModel::startRename,
@@ -333,6 +352,43 @@ private fun HomeFileDialogs(state: HomeUiState, actions: HomeActions) {
             onConfirm = actions.onConfirmNewFolder,
             onDismiss = actions.onDialogDismiss,
         )
+
+        is HomeFileDialog.FolderActions -> HomeFolderActionsDialog(
+            folderName = dialog.folder.name,
+            onRename = actions.onRenameFolderClick,
+            onMove = actions.onMoveFolderClick,
+            onDelete = actions.onDeleteFolderClick,
+            onDismiss = actions.onDialogDismiss,
+        )
+
+        is HomeFileDialog.RenameFolder -> HomeTextInputDialog(
+            title = stringResource(R.string.home_folder_rename_title),
+            hint = stringResource(R.string.home_folder_rename_hint),
+            initialValue = dialog.initialName,
+            confirmLabel = stringResource(R.string.dialog_save),
+            error = state.dialogError,
+            busy = state.isActionRunning,
+            onConfirm = actions.onConfirmRenameFolder,
+            onDismiss = actions.onDialogDismiss,
+        )
+
+        is HomeFileDialog.MoveFolder -> HomeMoveFolderDialog(
+            folderName = dialog.folderName,
+            targets = dialog.targets,
+            error = state.dialogError,
+            busy = state.isActionRunning,
+            onSelect = actions.onConfirmMoveFolder,
+            onDismiss = actions.onDialogDismiss,
+        )
+
+        is HomeFileDialog.DeleteFolder -> HomeDeleteFolderDialog(
+            folderName = dialog.folderName,
+            noteCount = dialog.noteCount,
+            error = state.dialogError,
+            busy = state.isActionRunning,
+            onConfirm = actions.onConfirmDeleteFolder,
+            onDismiss = actions.onDialogDismiss,
+        )
     }
 }
 
@@ -347,6 +403,13 @@ private fun homeMessageText(message: HomeMessage): String = when (message) {
         else -> stringResource(R.string.home_snackbar_renamed)
     }
     HomeMessage.FolderCreated -> stringResource(R.string.home_snackbar_folder_created)
+    HomeMessage.FolderRenamed -> stringResource(R.string.home_folder_snackbar_renamed)
+    HomeMessage.FolderMoved -> stringResource(R.string.home_folder_snackbar_moved)
+    is HomeMessage.FolderDeleted -> if (message.notes > 0) {
+        pluralStringResource(R.plurals.home_folder_snackbar_deleted, message.notes, message.notes)
+    } else {
+        stringResource(R.string.home_folder_snackbar_deleted_empty)
+    }
     HomeMessage.ActionFailed -> stringResource(R.string.home_error_action)
     HomeMessage.InvalidMoveTarget -> stringResource(R.string.home_move_invalid_target)
 }
@@ -441,6 +504,7 @@ private fun HomeContent(
                         scrollRecentsToStart = state.scrollRecentsToStart,
                         onRecentsScrolled = actions.onRecentsScrolled,
                         onFolderClick = actions.onFolderClick,
+                        onFolderActions = actions.onFolderActions,
                         onNoteClick = { note ->
                             if (state.isSelecting) {
                                 actions.onToggleSelection(note)

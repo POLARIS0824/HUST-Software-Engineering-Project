@@ -1,6 +1,8 @@
-# JustMD Windows 版交接文档
+# Looma（原 JustMD）Windows 版交接文档
 
-> 2026-11-01 晚更新（在当晚"缺陷修复轮"之后），取代同路径早前版本。
+> 2026-11-02 更新：Windows 产品名已从 JustMD 改为 **Looma**（与 Android 版一致），
+> 应用名/窗口标题/exe 与安装包名/用户数据目录一起改；旧版配置会自动迁移。
+> 课程项目名与需求基线文档仍是 JustMD。
 > 读完本文 + 根目录 `AGENTS.md` + `windows/AGENTS.md` 即可继续开发，不需要翻聊天记录。
 
 ## 1. 项目背景（30 秒版）
@@ -13,7 +15,7 @@ Windows 版位于 `windows/JustMD/`：**MyGo 原生 UI**（`package ui`，GPU �
 Onevra 组件库（小组指定，队友要求"不要用 webview"）。两轮迭代：第一版 Vue3+WebView2 已完整删除。
 
 **PR #1**：https://github.com/POLARIS0824/HUST-Software-Engineering-Project/pull/1
-（open，等队友合并；建议 Squash 合并，PR 描述中已注明）。
+（已合并；后续改动走新分支 + 新 PR，例如 PR #3 图标（已合并）、PR #4 分类、PR #5 更名）。
 
 ## 2. 协作规则（必须遵守）
 
@@ -27,20 +29,20 @@ Onevra 组件库（小组指定，队友要求"不要用 webview"）。两轮迭
 ## 3. 技术栈与运行
 
 ```
-模块:        justmd (Go 1.27.3，go.mod 内 tool 指令)
+模块:        justmd (Go 1.27.3，go.mod 内 tool 指令；模块名是内部标识，未随产品更名)
 框架:        github.com/egoist/mygo v0.7.3  (原生 UI 模式)
 组件库:      github.com/oneo-me/onevra/source v0.2026.16
 其他依赖:    golang.org/x/text (GBK 导入转码)
-配置:        mygo.json（name/identifier/out=build；原生模式无前端构建链）
+配置:        mygo.json（name=Looma / slug=looma / identifier=com.hust.looma.windows / out=build）
 ```
 
 ```bash
 cd windows/JustMD
 go run .                      # 开发运行（注意：mygo dev 会被杀毒软件锁 exe）
-CGO_ENABLED=0 go test ./...   # 全部测试（必须无 cgo，178 个用例，约 14 秒）
+CGO_ENABLED=0 go test ./...   # 全部测试（必须无 cgo，204 个用例，约 16 秒）
 go vet . && go tool mygo vet .
 gofmt -l .                    # 必须无输出
-go build -o justmd-test.exe . # 构建可运行程序（本地测试用，勿提交）
+go build -o looma-test.exe .  # 构建可运行程序（本地测试用，勿提交）
 ```
 
 CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo vet，
@@ -59,8 +61,10 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 | `meta.go` | 开放 JSON 元数据 + pending 崩溃恢复日志 |
 | `atomic.go` | 原子写、规范化、sha256、`safeRelPath`、`uniqueRelPath` |
 | `sanitize.go` | 文件名清洗 |
+| `category.go` | 分类（= `notes/` 下的真实目录）：`ListCategories`/`UnfiledNoteCount`/`CreateCategory`/`MoveNoteToCategory`/`DeleteCategory`（移动只搬文件、不改名；先写 pending，失败回滚，仅能删空分类） |
 | `portability.go` | 导入（`decodeImportedText` 唯一解码入口 / 文件夹导入 / 冲突三选一 / 路径二次校验）、`writeVaultZip` ZIP 导出、装载与崩溃对账（哈希校准、元数据择优）、拖放导入（目录递归、附件查重） |
 | `errors.go` | 领域错误（中文业务化措辞） |
+| `migration.go` | 产品更名（JustMD → Looma）的用户数据兼容：把旧用户目录的配置/窗口状态复制到新目录（只复制、不覆盖、不删旧文件） |
 
 ### UI 层（MyGo 原生 + Onevra）
 
@@ -73,6 +77,7 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 | `view_pages.go` | 回收站、设置页、确认弹窗、导入冲突弹窗 |
 | `shred.go` | 删除笔记的"碎纸机"动画：`shredAnim`（进度/时长）+ `shredEffect`（`ui.Effect`，把行渲染成位图后按竖条切片下落/旋转/淡出） |
 | `icon.go` | 应用图标：`//go:embed resources/icon.png` + `applyWindowIcon`（`Window.SetIcon`），让开发运行也有窗口/任务栏图标；打包时由 MyGo 嵌入 exe/安装包资源 |
+| `view_category.go` | 分类界面：侧栏分类树（含「未分类」）、分类/标签过滤互斥、右键或胶囊打开移动弹窗、新建/删除分类弹窗 |
 | `*_test.go` | 领域测试 + `view_test` 回归 + `usersim*` 用户流程模拟 |
 
 ## 5. 本阶段已完成的工作（2026-10-30 ~ 11-01）
@@ -115,11 +120,6 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
    删除时把列表行按竖条切片、错峰下落旋转淡出，播完才真正移入回收站。用 MyGo 的
    `Element.Effect` + `Painter.ImageRegion/Transform/Clip` 实现，不截屏、不加浮层；
    系统"减少动态效果"时直接删除。代码在 `shred.go`，决策见第 6 节第 17 条。
-10. **应用图标换成 Looma 图标资源**（2026-11-02，尺寸证据 `docs/app-icon-2026-11-02.png`）：
-   `resources/icon.png` 换为 Looma 的 1024 方图（透明画布 + 白色圆角卡片），`mygo.json`
-   显式 `"icon"`；打包时 MyGo 生成 16~256 多尺寸 `.ico` 嵌入 exe 与 NSIS 安装包，
-   运行期 `icon.go` 再用 `go:embed` + `Window.SetIcon` 设置窗口图标（覆盖 `go run .`）。
-   已实测从 exe/安装包提取 16/32/48/256 四档图标均为新图标；细节见核实记录。
 8. **PR #1 第二轮评审整改**（2026-11-01 晚，评审 W01~W14 / N1~N5）：新增 19 个回归用例
    （共 148 个）。修掉的主要问题：列表行按行错峰导致新建笔记时相邻行重叠（保留位移动画、
    去掉错峰）、保存乱序静默覆盖新内容（写入序号 + `ErrStaleRevision`）、外部删 `.md`
@@ -141,6 +141,21 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
    低优先级：`README.MD` 后缀、空标题兜底"未命名笔记"、别名里的 `#` 被误删、
    标题里的 `[ ]` 生成非法 markdown、标签树无滚动。
    细节见 `windows/docs/verification-record.md` 的"缺陷修复轮（2026-11-02）"一节。
+11. **产品更名 JustMD → Looma**（2026-11-02）：应用名（`app.SetName`）、窗口标题、
+    `mygo.json` 的 `name`/`slug`/`identifier`（`com.hust.looma.windows`）、
+    exe 与安装包名（`Looma.exe` / `looma-setup-*.exe`）、用户数据目录（`%APPDATA%\Looma`）、
+    配置文件名（`looma-config.json`）、导出默认文件名（`Looma_Backup_*.zip`）、
+    原子写临时前缀（`.looma-*.tmp`）、阅读页内部链接 scheme（`looma-note://`/`looma-open://`）
+    一起改。**旧版本用户数据自动迁移**：`migration.go` 在首次启动时把
+    `%APPDATA%\JustMD` 的配置与窗口状态复制到新目录（只复制、不覆盖、不删旧文件），
+    用户不需要重新选择知识库。笔记数据格式完全不变；导出包 manifest 的 `generator`
+    仍为基线 4.7 规定的 `"JustMD v1.1"`（跨平台格式标识，不随产品名变化）。
+12. **笔记分类（真实文件夹）**（2026-11-02，界面证据 `docs/category-2026-11-02.png`）：
+    分类 = `notes/` 下的真实目录（可多级），不是独立数据库字段；移动笔记只搬 `.md`，
+    不改文件名/标题（改名会破坏双链），导出 ZIP 与导入文件夹天然保留层级。
+    侧栏「分类」树含「未分类」入口，右键卡片或编辑区「📁 分类」胶囊打开移动弹窗；
+    分类与标签过滤互斥；在分类视图里新建笔记直接落进该分类；删除分类只允许空目录。
+    领域实现见 `category.go`，界面见 `view_category.go`，决策见第 6 节第 25 条。
 
 ## 6. 关键设计决策（接手者不要轻易推翻）
 
@@ -219,6 +234,19 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
     视图层（`view_notes.go`）不直接调 `os.ReadFile`（见本目录 `AGENTS.md` 的分层约定）。
 23. **多级标签父节点计数是整棵子树去重后的笔记数**（评审 W14）：
     `#复习计划/第一章` 的父节点 `#复习计划` 不再显示 0。同一篇笔记在同一子树里只算一次。
+24. **产品名是 Looma，格式/项目名仍是 JustMD**：应用名、窗口标题、exe/安装包、用户数据目录
+    用 Looma；Go 模块名（`justmd`）与导出包 manifest 的 `generator`（基线 4.7 的
+    `"JustMD v1.1"`）保持不变——前者只是内部标识，后者是跨平台导出格式的字段，
+    改名会让 Android 版解析不一致。改用户数据目录后必须保留 `migration.go` 的迁移逻辑
+    （只复制旧目录的配置/窗口状态，不覆盖新数据、不删旧文件），否则升级用户会丢工作区选择。
+25. **分类就是 `notes/` 下的真实目录**，不引入数据库字段或侧边索引文件：
+    这样 Markdown 文件仍是唯一事实源（BR-01），导出 ZIP/导入文件夹天然带层级，
+    用户用资源管理器整理目录也能被正确读回。移动笔记**只搬文件、绝不改文件名/标题**
+    （改名会波及双链；目标分类已有同名笔记时返回 `ErrCategoryConflict` 让用户自己决定），
+    所以移动不推进 `Revision`/`UpdatedAtUtc`。写盘顺序与崩溃对账和改名同型：
+    先写 `pending kind=move`，再搬文件、提交 meta，失败回滚；`loadWorkspace` 有 move 分支。
+    分类删除只允许空目录（`ErrCategoryNotEmpty`），绝不递归删。分类过滤与标签过滤互斥，
+    避免两个过滤叠加后列表空得莫名其妙。
 
 ## 7. 测试与调试工具链
 
@@ -245,7 +273,7 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 ## 8. 验证状态（诚实版）
 
 **已验证**（细节见 `windows/docs/verification-record.md`）：
-- `gofmt`/`go vet`/`go tool mygo vet`/`CGO_ENABLED=0 go test ./...` 全绿（178 用例）；
+- `gofmt`/`go vet`/`go tool mygo vet`/`CGO_ENABLED=0 go test ./...` 全绿（204 用例）；
   上一轮 CI（windows-latest）全绿，本轮改动需 push 后再看 CI 结果。
 - **本轮（2026-11-02）PR #1 第三轮整改的 8 个变更文件逐一做了变异测试**：把修复代码改回缺陷版本，
   对应回归用例必须 FAIL；改回后必须 PASS——确认 29 个新用例不会出现"测试通过但 bug 还在"的假阳性。
@@ -261,9 +289,16 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
   错峰下落、淡出；用例覆盖"动画期间不删→播完入回收站→撤销恢复"、ReduceMotion 直接删除、
   切页立即结算、碎纸中段像素与静止画面不同。窗口模式的观感仍需人工确认（无头渲染与 GPU 绘制
   的采样略有差异）。
-- **应用图标**：`go tool mygo build` 实跑成功，从 `JustMD.exe` 与 NSIS 安装包各提取
+- **应用图标**：`go tool mygo build` 实跑成功，从 exe 与 NSIS 安装包各提取
   16/32/48/256 四档图标均为 Looma 新图标（尺寸证据 `docs/app-icon-2026-11-02.png`）；
   `TestAppIconEmbedded` 覆盖嵌入图标的完整性。资源管理器/开始菜单的实际显示需安装后人工确认。
+- **产品更名 JustMD → Looma**：`go tool mygo build` 产出 `Looma.exe` 与
+  `looma-setup-0.2.0-amd64.exe`；实机启动窗口标题为 "Looma"；
+  首次启动自动从 `%APPDATA%\JustMD` 迁移出 `looma-config.json` 与 `window-state.json`
+  （工作区指针、窗口位置都保留，旧目录未删除）；迁移用例 4 个通过。安装包安装流程未执行。
+- **笔记分类**：领域 12 + 界面 11 个回归用例覆盖树/计数/建删、移动（保留标题正文双链、
+  同名冲突不动文件、幂等、移回未分类）、崩溃对账 `move`、过滤与空状态、新建笔记落入当前分类；
+  `ui.Tester` 证据 `docs/category-2026-11-02.png`。分类重命名/拖拽移动未实现。
 
 **明确没做/没验证**（也是下一步）：
 - 真实中文 IME 专项（常规中文输入与 IME 组合输入标题实测正常，未做系统性用例）、
@@ -293,3 +328,4 @@ CI：`.github/workflows/windows-ci.yml`（windows-latest：gofmt/vet/test/mygo v
 - `windows/docs/technical-selection.md` — 为什么原生 UI/Onevra、平台差异
 - `windows/docs/verification-record.md` — **已验证/未验证的唯一权威来源**
 - `android/docs/` — 需求基线（改需求先看这里，编号不要乱造）
+

@@ -20,4 +20,10 @@ var (
 	// 记录已无对应文件（僵尸笔记），需要从索引中移除。
 	ErrNoteVanished = errors.New("笔记文件已被外部删除")
 	ErrNoWorkspace  = errors.New("尚未选择知识库文件夹")
+	// ErrCategoryConflict 表示目标分类里已有同名笔记。分类移动只搬文件、不改名，
+	// 所以遇到同名必须拒绝而不是像新建那样自动加序号——改名会让所有指向
+	// 这篇笔记的 [[双链]] 失效。
+	ErrCategoryConflict = errors.New("目标分类里已有同名笔记")
+	// ErrCategoryNotEmpty 表示分类目录里还有笔记或子分类，不允许删除。
+	ErrCategoryNotEmpty = errors.New("分类里还有笔记或子分类")
 )

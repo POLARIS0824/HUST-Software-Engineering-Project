@@ -10,21 +10,26 @@ import com.example.looma.data.note.NoteRepository
 import com.example.looma.data.settings.SettingsRepository
 import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.wiki.WikiContext
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 /**
  * 笔记页的"文档会话"：加载、自动保存、离开前冲刷。
  *
- * 阅读和编辑共用同一份缓冲区，所以不存在两个页面各读一次盘、互相看不到对方修改的问题。
+ * 阅读和编辑共用同一份正文，所以不存在两个页面各读一次盘、互相看不到对方修改的问题。
  * 正文缓冲区和光标属于 Compose 的 TextFieldState，不进入 ViewModel。
+ *
+ * 保存节奏是节流而不是防抖：第一次改动起每 [SAVE_INTERVAL_MS] 落盘一次，
+ * 一直打字也最多丢一个间隔的内容，不会等到用户停手才写。
+ * 生命周期离开前台时另外冲刷一次，并且先把缓冲区写进草稿区，
+ * 进程被杀之后下次打开还能捞回来。
  */
 class NoteViewModel(
     private val repository: NoteRepository,
@@ -35,7 +40,7 @@ class NoteViewModel(
     val uiState: StateFlow<NoteUiState> = _uiState.asStateFlow()
 
     private var loadJob: Job? = null
-    private var debounceJob: Job? = null
+    private var saveTick: Job? = null
     private var saveJob: Job? = null
     private var saveRequested = false
     private var forceNextSave = false
@@ -48,7 +53,7 @@ class NoteViewModel(
         loadJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, loadFailed = false) }
             try {
-                val note = repository.readNote(noteId)
+                val opened = repository.openNote(noteId)
                 val keepEmptyNotes = settingsRepository.settings.first().keepEmptyNotes
                 // 索引只是缓存：读它失败不该让笔记打不开，链接退化成全部未解析即可
                 val wiki = runCatching { repository.wikiContext(noteId) }.getOrDefault(WikiContext.Empty)
@@ -56,9 +61,9 @@ class NoteViewModel(
                 val imageContext = runCatching { repository.imageContext(noteId) }.getOrNull()
                 _uiState.update {
                     it.copy(
-                        content = note.content,
-                        savedContent = note.content,
-                        modifiedAt = note.modifiedAt,
+                        content = opened.note.content,
+                        savedContent = opened.note.content,
+                        modifiedAt = opened.note.modifiedAt,
                         isLoading = false,
                         saveState = NoteSaveState.Idle,
                         saveFailed = false,
@@ -67,6 +72,8 @@ class NoteViewModel(
                         keepEmptyNotes = keepEmptyNotes,
                         wiki = wiki,
                         imageContext = imageContext,
+                        restoredDraft = opened.restoredDraft,
+                        reloadToken = it.reloadToken + 1,
                     )
                 }
             } catch (e: CancellationException) {
@@ -95,7 +102,7 @@ class NoteViewModel(
         }
     }
 
-    /** 缓冲区每次变化都会到这里；700ms 没有新输入才真正写盘 */
+    /** 正文每次变化都会到这里；落盘由节流定时器决定，不等输入停下 */
     fun onContentChanged(value: String) {
         val current = _uiState.value
         if (current.content == value) return
@@ -104,30 +111,89 @@ class NoteViewModel(
                 content = value,
                 saveState = if (it.isConflict) NoteSaveState.Failed else NoteSaveState.Pending,
                 saveFailed = if (it.isConflict) it.saveFailed else false,
+                restoredDraft = false,
             )
         }
         if (current.isConflict) return
+        scheduleSave()
+    }
 
-        saveRequested = true
-        debounceJob?.cancel()
-        debounceJob = viewModelScope.launch {
-            delay(AUTOSAVE_DELAY_MS)
+    /**
+     * 重试保存。先重新 stat 一次：修改时间没变说明刚才是临时失败，可以再写；
+     * 变了说明别人改过文件，直接转入冲突，不能拿旧内容把对方覆盖掉。
+     */
+    fun retrySave() {
+        viewModelScope.launch {
+            val disk = runCatching { repository.modifiedAtOf(noteId) }.getOrNull()
+            val known = _uiState.value.modifiedAt
+            if (disk != null && known != null && disk != known) {
+                _uiState.update {
+                    it.copy(isConflict = true, saveFailed = true, saveState = NoteSaveState.Failed)
+                }
+                return@launch
+            }
+            saveRequested = true
             ensureSaveLoop()
         }
     }
 
-    fun retrySave() {
-        saveRequested = true
-        ensureSaveLoop()
+    /** 外部改动冲突时用户选择以本地内容为准：先把磁盘那一份留档，再覆盖 */
+    fun overwrite() {
+        viewModelScope.launch {
+            repository.backupConflict(noteId)
+            forceNextSave = true
+            _uiState.update {
+                it.copy(isConflict = false, saveFailed = false, saveState = NoteSaveState.Pending)
+            }
+            retrySave()
+        }
     }
 
-    /** 外部改动冲突时用户选择以本地内容为准 */
-    fun overwrite() {
-        forceNextSave = true
+    /** 冲突时放弃本地改动，改读磁盘上的版本 */
+    fun reloadFromDisk() {
+        loadJob?.cancel()
+        saveTick?.cancel()
+        saveTick = null
+        saveRequested = false
         _uiState.update {
-            it.copy(isConflict = false, saveFailed = false, saveState = NoteSaveState.Pending)
+            it.copy(isConflict = false, saveFailed = false, saveState = NoteSaveState.Idle)
         }
-        retrySave()
+        loadJob = viewModelScope.launch {
+            try {
+                val opened = repository.openNote(noteId)
+                _uiState.update {
+                    it.copy(
+                        content = opened.note.content,
+                        savedContent = opened.note.content,
+                        modifiedAt = opened.note.modifiedAt,
+                        saveState = NoteSaveState.Idle,
+                        saveFailed = false,
+                        isConflict = false,
+                        restoredDraft = opened.restoredDraft,
+                        reloadToken = it.reloadToken + 1,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _uiState.update { it.copy(saveFailed = true, saveState = NoteSaveState.Failed) }
+            }
+        }
+    }
+
+    /**
+     * 界面离开前台时调用：先把缓冲区存成草稿，再立即冲刷一次。
+     *
+     * 草稿写成功而保存失败时，下次打开会读到草稿；保存成功则把草稿删掉。
+     */
+    fun onEnterBackground() {
+        val state = _uiState.value
+        if (state.isLoading || !state.isDirty) return
+        viewModelScope.launch {
+            runCatching { repository.writeDraft(noteId, state.content) }
+            saveRequested = true
+            ensureSaveLoop()
+        }
     }
 
     /**
@@ -139,7 +205,8 @@ class NoteViewModel(
         if (leaving) return
         leaving = true
         if (force) forceNextSave = true
-        debounceJob?.cancel()
+        saveTick?.cancel()
+        saveTick = null
         saveRequested = true
         ensureSaveLoop()
         viewModelScope.launch {
@@ -183,6 +250,19 @@ class NoteViewModel(
         _uiState.update { it.copy(leaveBlocked = false) }
     }
 
+    /** 一次只跑一个节流定时器：持续输入时每隔一个间隔写一次，而不是一直往后推 */
+    private fun scheduleSave() {
+        if (saveTick?.isActive == true) return
+        saveTick = viewModelScope.launch {
+            delay(SAVE_INTERVAL_MS)
+            saveTick = null
+            if (_uiState.value.isDirty && !_uiState.value.isConflict) {
+                saveRequested = true
+                ensureSaveLoop()
+            }
+        }
+    }
+
     private fun ensureSaveLoop() {
         if (saveJob?.isActive == true) return
         saveJob = viewModelScope.launch {
@@ -218,6 +298,7 @@ class NoteViewModel(
                         NoteSaveState.Pending
                     },
                     isConflict = false,
+                    restoredDraft = false,
                 )
             }
             true
@@ -241,7 +322,8 @@ class NoteViewModel(
     }
 
     companion object {
-        private const val AUTOSAVE_DELAY_MS = 700L
+        /** 一直输入时最多丢这么多内容；比防抖的"停手才写"可靠 */
+        private const val SAVE_INTERVAL_MS = 2_000L
 
         fun factory(
             repository: NoteRepository,

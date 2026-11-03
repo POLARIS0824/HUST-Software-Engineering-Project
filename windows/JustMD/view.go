@@ -42,7 +42,7 @@ func (a *app) leftView(c *ui.Context) {
 		body.Children(func() {
 			item := navItem(c, "全部笔记", lucide.FileText(), sidebarCount(len(a.notes)))
 			if item.Clicked() {
-				a.tagFilter = ""
+				a.clearFilters()
 				a.setView(viewNotes)
 			}
 			if a.navSelection() == "notes" {
@@ -50,7 +50,7 @@ func (a *app) leftView(c *ui.Context) {
 			}
 			item = navItem(c, "回收站", lucide.Trash(), sidebarCount(len(a.trash)))
 			if item.Clicked() {
-				a.tagFilter = ""
+				a.clearFilters()
 				a.setView(viewTrash)
 			}
 			if a.navSelection() == "trash" {
@@ -58,30 +58,35 @@ func (a *app) leftView(c *ui.Context) {
 			}
 			item = navItem(c, "设置与数据", lucide.Settings(), nil)
 			if item.Clicked() {
-				a.tagFilter = ""
+				a.clearFilters()
 				a.setView(viewSettings)
 			}
 			if a.navSelection() == "settings" {
 				sel = item
 			}
 
-			if len(a.tags) > 0 {
-				components.SidebarSection(c, "标签", func() {
-					// 标签树放进可滚动区域（评审遗留项）：
-					// 标签多时（几十个以上）侧栏被撑开，标签树被挤出
-					// 视口底部，用户滚动主内容区也看不到它。
-					// 固定最大高度 + 滚动，保证导航项始终可见。
-					ui.Scroll(c).Grow(1).FillWidth().MinWidth(0).Children(func() {
+			// 分类与标签都在可滚动区域里：条目多时侧栏被撑开，导航项与
+			// 下面的分区都会被挤出视口，必须共用同一个滚动容器。
+			ui.Scroll(c).Grow(1).FillWidth().MinWidth(0).Children(func() {
+				components.SidebarSection(c, "分类", func() {
+					a.categoryTree(c, &sel)
+				})
+				if len(a.tags) > 0 {
+					components.SidebarSection(c, "标签", func() {
 						a.tagTree(c, &sel)
 					})
-				})
-			}
+				}
+			})
 		})
 	})
 }
 
-// navSelection 返回当前选中的侧栏项：有标签过滤时选标签，否则选导航页。
+// navSelection 返回当前选中的侧栏项：分类 > 标签 > 导航页。
+// 分类与标签互斥（toggle 时互相清除），所以不会同时出现两个选中项。
 func (a *app) navSelection() string {
+	if a.catFiltered {
+		return "cat:" + a.catFilter
+	}
 	if a.tagFilter != "" {
 		return "tag:" + a.tagFilter
 	}
@@ -158,13 +163,7 @@ func (a *app) tagTree(c *ui.Context, sel *ui.Element) {
 				item := components.SidebarItemWithSlots(c, label, false,
 					sidebarIcon(lucide.Hash()), sidebarCount(node.Count))
 				if item.Clicked() {
-					a.view = viewNotes
-					if a.tagFilter == node.Path {
-						a.tagFilter = ""
-					} else {
-						a.tagFilter = node.Path
-					}
-					a.refreshLists()
+					a.toggleTagFilter(node.Path)
 				}
 				if a.navSelection() == "tag:"+node.Path {
 					*sel = item
@@ -223,10 +222,11 @@ func (a *app) handleShortcuts(c *ui.Context) {
 	}
 }
 
-// overlays 构建悬浮层：确认弹窗、导入冲突、忙碌提示、Toast。
+// overlays 构建悬浮层：确认弹窗、导入冲突、分类弹窗、忙碌提示、Toast。
 func (a *app) overlays(c *ui.Context) {
 	a.confirmDialog(c)
 	a.importDialog(c)
+	a.categoryDialog(c)
 	if a.busy != "" {
 		// 忙碌状态作为内容顶部的一行提示（避免遮挡交互）。
 		th := c.Theme()

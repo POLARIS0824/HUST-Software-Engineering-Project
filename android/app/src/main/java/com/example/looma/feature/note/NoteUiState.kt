@@ -28,6 +28,10 @@ data class NoteUiState(
     val wiki: WikiContext = WikiContext.Empty,
     /** 正文图片的解析坐标；空表示还没有库，图片一律不加载 */
     val imageContext: ImageContext? = null,
+    /** 打开时正文来自一份没落盘的草稿，界面提示一次让用户知道 */
+    val restoredDraft: Boolean = false,
+    /** 每换一次正文来源就加一，界面据此重建输入缓冲区 */
+    val reloadToken: Int = 0,
 ) {
     val isDirty: Boolean get() = !isLoading && content != savedContent
 

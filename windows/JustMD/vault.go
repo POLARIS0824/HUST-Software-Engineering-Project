@@ -46,9 +46,12 @@ type WorkspaceStats struct {
 
 // NoteSummary 是列表条目摘要。
 type NoteSummary struct {
-	ID           string   `json:"id"`
-	Title        string   `json:"title"`
-	RelativePath string   `json:"relativePath"`
+	ID           string `json:"id"`
+	Title        string `json:"title"`
+	RelativePath string `json:"relativePath"`
+	// Category 是相对 notes/ 的父目录（正斜杠），"" 表示未分类。
+	// 分类就是 notes/ 下的真实目录，Markdown 正文仍是唯一事实源。
+	Category     string   `json:"category"`
 	Tags         []string `json:"tags"`
 	CreatedAtUtc int64    `json:"createdAtUtc"`
 	UpdatedAtUtc int64    `json:"updatedAtUtc"`
@@ -135,7 +138,10 @@ func OpenVault() (*Vault, error) {
 	if err != nil {
 		return nil, err
 	}
-	v.cfgPath = filepath.Join(dir, "justmd-config.json")
+	// 品牌更名兼容：旧版（JustMD）的配置与窗口状态迁到新目录，见 migration.go。
+	// 只在新目录还没有数据时生效，失败不影响启动。
+	_, _ = migrateLegacyUserData(dir)
+	v.cfgPath = filepath.Join(dir, appConfigFile)
 	data, err := os.ReadFile(v.cfgPath)
 	if err == nil {
 		var cfg vaultConfig
@@ -166,7 +172,7 @@ func (v *Vault) GetWorkspace() WorkspaceInfo {
 func (v *Vault) ChooseWorkspace(parent *mygo.Window) (WorkspaceInfo, error) {
 	paths, err := mygo.Dialog.Open(mygo.OpenDialogOptions{
 		Parent:            parent,
-		Title:             "选择 JustMD 知识库文件夹",
+		Title:             "选择 Looma 知识库文件夹",
 		Directory:         true,
 		CreateDirectories: true,
 	})
@@ -279,6 +285,7 @@ func (n *indexedNote) toSummary() NoteSummary {
 		ID:           n.meta.NoteID,
 		Title:        n.title,
 		RelativePath: n.meta.RelativePath,
+		Category:     n.parentDir,
 		Tags:         tagNames,
 		CreatedAtUtc: n.meta.CreatedAtUtc,
 		UpdatedAtUtc: n.meta.UpdatedAtUtc,
@@ -1407,8 +1414,8 @@ func (v *Vault) ReadNoteAsset(id, url string) ([]byte, error) {
 
 // readerScheme 已解析/未解析双链在阅读源中的协议前缀。
 const (
-	readerSchemeNote = "justmd-note://" // 目标为 noteID
-	readerSchemeOpen = "justmd-open://" // 目标为待创建/歧义的标题
+	readerSchemeNote = "looma-note://" // 目标为 noteID
+	readerSchemeOpen = "looma-open://" // 目标为待创建/歧义的标题
 )
 
 // RenderReaderSource 返回阅读页用的正文：把 [[双链]] 改写为 Markdown 链接

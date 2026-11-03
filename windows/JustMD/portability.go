@@ -328,6 +328,20 @@ func (v *Vault) reconcilePending(pendingDir string, metas map[string]*NoteMeta) 
 			if !renamed {
 				v.rollbackCascadeFromPending(&op, metas)
 			}
+		case "move":
+			// 文件已搬到新分类目录、元数据未提交 → 补完移动（与 rename 分支同型）：
+			// MoveNoteToCategory 的顺序是「写 pending → 建目录/os.Rename → 提交 meta」，
+			// 崩在「文件已搬走、meta 仍是旧路径」时，若不对账，文件会被当成孤立文件
+			// 另建 RECOVERED 身份（noteID 与双链全部漂移），旧路径那条元数据则变成
+			// 永远指不到文件的孤儿。这里只认"新路径确实存在"这一条证据。
+			m := metas[op.NoteID]
+			if m != nil && m.State == stateActive && m.RelativePath == op.OldRelPath && op.NewRelPath != "" {
+				if _, err := os.Stat(filepath.Join(v.notesDir(), filepath.FromSlash(op.NewRelPath))); err == nil {
+					m.RelativePath = op.NewRelPath
+					saveNoteMeta(metaDir, m)
+				}
+			}
+			// 文件仍在旧路径（或两边都不在）→ 操作未推进，回退保留原路径。
 		case "delete":
 			// 回收站副本已移除 → 补完删除（清掉元数据）；仍在 → 回退保留。
 			if _, err := os.Stat(filepath.Join(v.trashDir(), op.NoteID+".md")); err != nil {
@@ -891,6 +905,8 @@ func (v *Vault) writeVaultZip(w io.Writer) error {
 	sort.Strings(attRels)
 
 	// 基线 4.7：generator 固定 "JustMD v1.1"，schemaVersion "1.0"。
+	// 注意：这是**导出包格式**的标识（Android 与 Windows 共用同一份需求基线与格式），
+	// 不随 Windows 产品改名 Looma 而变化；改名会导致跨平台导出的清单解析不一致。
 	manifest := ExportManifest{
 		Generator:       "JustMD v1.1",
 		ExportTimestamp: time.Now().Format("2006-01-02T15:04:05Z07:00"),
@@ -976,7 +992,7 @@ func (v *Vault) ExportVault(parent *mygo.Window) (string, error) {
 	path, err := mygo.Dialog.Save(mygo.SaveDialogOptions{
 		Parent:      parent,
 		Title:       "导出完整知识库为 ZIP",
-		DefaultPath: fmt.Sprintf("JustMD_Backup_%s.zip", time.Now().Format("20060102T150405")),
+		DefaultPath: fmt.Sprintf("Looma_Backup_%s.zip", time.Now().Format("20060102T150405")),
 		Filters:     []mygo.FileFilter{{Name: "ZIP 归档", Extensions: []string{"zip"}}},
 	})
 	if err != nil || path == "" {

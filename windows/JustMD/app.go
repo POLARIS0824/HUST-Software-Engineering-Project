@@ -62,12 +62,19 @@ type app struct {
 	win   *mygo.Window
 
 	// 路由与列表缓存。
-	view      string // viewNotes / viewTrash / viewSettings
-	notes     []NoteSummary
-	trash     []NoteSummary
-	tags      []TagNode
-	sort      string
-	tagFilter string // 选中标签的小写全路径，"" 为不过滤
+	view         string // viewNotes / viewTrash / viewSettings
+	notes        []NoteSummary
+	trash        []NoteSummary
+	tags         []TagNode
+	categories   []CategoryNode // 分类树（notes/ 下的真实目录）
+	unfiledCount int            // 未分类（notes/ 根目录）的笔记数
+	sort         string
+	tagFilter    string // 选中标签的小写全路径，"" 为不过滤
+	catFilter    string // 选中分类路径；与 catFiltered 配合，"" 单独表示未分类
+	catFiltered  bool
+
+	// 分类弹窗：移动笔记到分类，或从侧栏新建分类（noteID 为空即仅新建）。
+	catDialog catDialogState
 
 	// 搜索。
 	query       string
@@ -113,6 +120,14 @@ type app struct {
 	shred        *shredAnim
 	statsVersion uint64
 
+	// 批量删除状态。
+	//
+	// batchMode 表示正处于批量删除状态：笔记列表每行标题右侧显示复选框，
+	// 列表下方显示「确认」「取消」两个按钮。
+	batchMode bool
+	// batchPicked 是被勾选的笔记 ID 集合。map 的值无意义，只看键。
+	batchPicked map[string]bool
+
 	// 反链面板。
 	backlinks     []BacklinkItem
 	showBacklinks bool
@@ -145,14 +160,25 @@ type confirmState struct {
 	cancelLabel string
 }
 
+// catDialogState 是分类弹窗的状态：一个弹窗两种用途——
+// noteID 非空 = 把该笔记移动到分类；noteID 为空 = 只新建分类。
+type catDialogState struct {
+	open      bool
+	noteID    string
+	noteTitle string
+	target    string // 选中的分类路径；"" 表示未分类（根目录）
+	newName   string // 新建分类输入（支持多级 a/b）
+}
+
 func newApp(vault *Vault) *app {
 	return &app{
-		vault:     vault,
-		view:      viewNotes,
-		sort:      "updated_desc",
-		editors:   map[string]*noteEditor{},
-		mode:      "edit",
-		saveState: saveSaved,
+		vault:       vault,
+		view:        viewNotes,
+		sort:        "updated_desc",
+		editors:     map[string]*noteEditor{},
+		mode:        "edit",
+		saveState:   saveSaved,
+		batchPicked: map[string]bool{},
 	}
 }
 
@@ -180,12 +206,15 @@ func (a *app) bootstrap() {
 	}
 }
 
-// refreshLists 重新拉取列表、标签与回收站缓存。
+// refreshLists 重新拉取列表、标签、分类与回收站缓存。
 func (a *app) refreshLists() {
 	a.notes = a.vault.ListNotes(a.sort)
 	a.trash = a.vault.ListTrash()
 	a.tags = a.vault.ListTags()
+	a.categories = a.vault.ListCategories()
+	a.unfiledCount = a.vault.UnfiledNoteCount()
 	a.dropMissingTagFilter()
+	a.dropMissingCategoryFilter()
 }
 
 // dropMissingTagFilter 清掉已不存在的标签过滤：删掉最后一篇带该标签的笔记后，
@@ -211,6 +240,40 @@ func tagPathExists(nodes []TagNode, path string) bool {
 	return false
 }
 
+// dropMissingCategoryFilter 分类被删除（或改名）后清掉过滤：
+// 否则列表空着、侧栏却没有任何选中项，用户不知道是过滤残留还是笔记没了。
+func (a *app) dropMissingCategoryFilter() {
+	if !a.catFiltered || a.catFilter == "" {
+		return // 未分类（根目录）永远存在，不需要校验
+	}
+	if categoryPathExists(a.categories, a.catFilter) {
+		return
+	}
+	a.catFiltered = false
+	a.catFilter = ""
+}
+
+// categoryPathExists 在分类树里查找路径。
+func categoryPathExists(nodes []CategoryNode, path string) bool {
+	for _, n := range nodes {
+		if n.Path == path || categoryPathExists(n.Children, path) {
+			return true
+		}
+	}
+	return false
+}
+
+// categoryDisplayName 返回分类的展示名：最后一级目录名；根目录显示「未分类」。
+func categoryDisplayName(path string) string {
+	if path == "" {
+		return "未分类"
+	}
+	if i := strings.LastIndex(path, "/"); i >= 0 {
+		return path[i+1:]
+	}
+	return path
+}
+
 // refreshReaderSnapshot 在笔记集合变化后重算阅读快照：
 // 快照里的已解析双链指向 noteID，目标被删除/回收后仍会保留旧链接，
 // 点进去会提示"尚未创建"并建出以 noteID 命名的垃圾笔记。
@@ -221,24 +284,51 @@ func (a *app) refreshReaderSnapshot() {
 	a.readerSrc = a.vault.RenderReaderSource(a.currentID)
 }
 
-// visibleNotes 返回按标签过滤后的列表。
-// 匹配按层级边界：选中「a」命中「a」与「a/b」，但不命中「ab」
-// （前缀匹配会把无关标签算进来，徽章数与列表条数对不上）。
+// visibleNotes 返回按标签与分类过滤后的列表。
+// 标签匹配按层级边界：选中「a」命中「a」与「a/b」，但不命中「ab」；
+// 分类按目录子树匹配：选中「课程」命中「课程」及「课程/软件工程」。
+// 两个过滤同时生效（AND），但界面里选中其中一个时会清掉另一个。
 func (a *app) visibleNotes() []NoteSummary {
-	if a.tagFilter == "" {
+	if a.tagFilter == "" && !a.catFiltered {
 		return a.notes
 	}
-	out := []NoteSummary{}
+	out := make([]NoteSummary, 0, len(a.notes))
 	for _, n := range a.notes {
-		for _, t := range n.Tags {
-			lower := strings.ToLower(t)
-			if lower == a.tagFilter || strings.HasPrefix(lower, a.tagFilter+"/") {
-				out = append(out, n)
-				break
-			}
+		if a.catFiltered && !noteInCategory(n, a.catFilter) {
+			continue
 		}
+		if a.tagFilter != "" && !noteHasTag(n, a.tagFilter) {
+			continue
+		}
+		out = append(out, n)
 	}
 	return out
+}
+
+// noteInCategory 判断笔记是否属于该分类（含子分类）；path=="" 表示未分类。
+func noteInCategory(n NoteSummary, path string) bool {
+	if path == "" {
+		return n.Category == ""
+	}
+	return n.Category == path || strings.HasPrefix(n.Category, path+"/")
+}
+
+// noteHasTag 判断笔记是否有该标签（含子标签）。
+func noteHasTag(n NoteSummary, filter string) bool {
+	for _, t := range n.Tags {
+		lower := strings.ToLower(t)
+		if lower == filter || strings.HasPrefix(lower, filter+"/") {
+			return true
+		}
+	}
+	return false
+}
+
+// clearFilters 清空标签与分类过滤（切导航页时用）。
+func (a *app) clearFilters() {
+	a.tagFilter = ""
+	a.catFilter = ""
+	a.catFiltered = false
 }
 
 // ---- 笔记动作 ----------------------------------------------------------------
@@ -317,6 +407,13 @@ func (a *app) createNote() {
 	doc, err := a.vault.CreateNote("")
 	if err != nil {
 		return
+	}
+	// 正在按分类过滤时，新建的笔记直接落进该分类：否则用户刚"进入分类"
+	// 点新建，笔记却出现在未分类里，还得多一步移动。
+	if a.catFiltered && a.catFilter != "" {
+		if moved, moveErr := a.vault.MoveNoteToCategory(doc.ID, a.catFilter); moveErr == nil {
+			doc = moved
+		}
 	}
 	a.refreshLists()
 	a.openNote(doc.ID)
@@ -420,6 +517,96 @@ func (a *app) commitRename(title string) {
 		return
 	}
 	a.titleWarn = ""
+}
+
+// ---- 分类（notes/ 下的真实文件夹）--------------------------------------------
+
+// toggleCategoryFilter 选中/取消分类过滤（再点同一分类即取消）。
+// 分类与标签互斥：选中分类会清掉标签过滤，避免两个过滤叠加后列表空得莫名其妙。
+func (a *app) toggleCategoryFilter(path string) {
+	a.view = viewNotes
+	a.tagFilter = ""
+	if a.catFiltered && a.catFilter == path {
+		a.catFiltered = false
+		a.catFilter = ""
+	} else {
+		a.catFiltered = true
+		a.catFilter = path
+	}
+	a.refreshLists()
+}
+
+// toggleTagFilter 选中/取消标签过滤（再点同一标签即取消）；与分类互斥。
+func (a *app) toggleTagFilter(path string) {
+	a.view = viewNotes
+	a.catFiltered = false
+	a.catFilter = ""
+	if a.tagFilter == path {
+		a.tagFilter = ""
+	} else {
+		a.tagFilter = path
+	}
+	a.refreshLists()
+}
+
+// openMoveDialog 打开"移动到分类"弹窗；currentCategory 是笔记当前所在分类。
+func (a *app) openMoveDialog(id, title, currentCategory string) {
+	a.catDialog = catDialogState{open: true, noteID: id, noteTitle: title, target: currentCategory}
+}
+
+// openNewCategoryDialog 从侧栏打开"新建分类"弹窗。
+func (a *app) openNewCategoryDialog() {
+	a.catDialog = catDialogState{open: true}
+}
+
+// moveNoteToCategory 把笔记移到分类（path=="" 表示移回未分类/根目录）。
+// 只搬文件、标题与正文不变，所以编辑器和双链都不需要重建。
+func (a *app) moveNoteToCategory(id, path string) error {
+	doc, err := a.vault.MoveNoteToCategory(id, path)
+	if err != nil {
+		a.pendingToast = "移动失败：" + err.Error()
+		return err
+	}
+	if a.currentID == id {
+		a.currentRel = doc.RelativePath
+	}
+	a.refreshLists()
+	a.pendingToast = "已把「" + doc.Title + "」移动到「" + categoryDisplayName(path) + "」"
+	return nil
+}
+
+// createCategory 新建分类（支持多级 a/b），返回领域层清洗后的规范路径。
+func (a *app) createCategory(path string) (string, error) {
+	cleaned, err := a.vault.CreateCategory(path)
+	if err != nil {
+		a.pendingToast = "新建分类失败：" + err.Error()
+		return "", err
+	}
+	a.refreshLists()
+	return cleaned, nil
+}
+
+// deleteCategory 删除空分类；分类里还有笔记/子分类时由领域层拒绝。
+func (a *app) deleteCategory(path string) error {
+	if err := a.vault.DeleteCategory(path); err != nil {
+		a.pendingToast = "删除分类失败：" + err.Error()
+		return err
+	}
+	if a.catFiltered && a.catFilter == path {
+		a.catFiltered = false
+		a.catFilter = ""
+	}
+	a.refreshLists()
+	a.pendingToast = "已删除分类「" + categoryDisplayName(path) + "」"
+	return nil
+}
+
+// currentCategory 返回当前笔记所在分类（无打开笔记时为 ""）。
+func (a *app) currentCategory() string {
+	if a.currentID == "" {
+		return ""
+	}
+	return parentDirOfRelPath(a.currentRel)
 }
 
 // ---- 自动保存（FR-EDIT-04/05/06、BR-04/05）------------------------------------
@@ -852,6 +1039,158 @@ func (a *app) deleteFromList(id string) bool {
 	delete(a.editors, id)
 	a.refreshLists()
 	a.refreshReaderSnapshot()
+	return true
+}
+
+// ---- 批量删除（bulk delete）---------------------------------------------------
+
+// enterBatchMode 进入批量删除状态：笔记列表每行标题右侧出现复选框，
+// 列表下方出现「确认」「取消」两个按钮。
+//
+// 进入时清空上一次的勾选：用户上一次勾了哪几篇与这一次无关，
+// 沿用旧勾选会让用户误删没打算删的笔记。
+func (a *app) enterBatchMode() {
+	a.batchMode = true
+	a.batchPicked = map[string]bool{}
+}
+
+// exitBatchMode 退出批量删除状态并清空勾选。
+func (a *app) exitBatchMode() {
+	a.batchMode = false
+	a.batchPicked = map[string]bool{}
+}
+
+// toggleBatchPick 勾选/取消勾选一篇笔记。
+func (a *app) toggleBatchPick(id string) {
+	if a.batchPicked == nil {
+		a.batchPicked = map[string]bool{}
+	}
+	if a.batchPicked[id] {
+		delete(a.batchPicked, id)
+		return
+	}
+	a.batchPicked[id] = true
+}
+
+// batchVisibleIDs 返回当前列表里可见的笔记 ID，按显示顺序。
+//
+// 检索态显示的是检索结果而不是全部笔记，因此两态要分别取：
+// 否则用户在检索结果里勾了 2 篇，批量删除却把全部笔记都算进去。
+func (a *app) batchVisibleIDs() []string {
+	ids := []string{}
+	if a.query != "" && strings.TrimSpace(a.query) != "" {
+		for _, h := range a.hits {
+			ids = append(ids, h.NoteID)
+		}
+		return ids
+	}
+	for _, n := range a.visibleNotes() {
+		ids = append(ids, n.ID)
+	}
+	return ids
+}
+
+// batchPickedIDs 返回被勾选的笔记 ID，按当前列表顺序排列。
+//
+// 顺序取自当前可见列表：批量删除要按用户看到的顺序处理，
+// 便于与"勾了哪几篇"对上；勾选集里可能残留已被外部删除或
+// 过滤掉的笔记 ID，这些不在列表里，不参与删除。
+func (a *app) batchPickedIDs() []string {
+	ids := []string{}
+	for _, id := range a.batchVisibleIDs() {
+		if a.batchPicked[id] {
+			ids = append(ids, id)
+		}
+	}
+	return ids
+}
+
+// batchDeleteSelected 删除被勾选的笔记并退出批量删除状态。
+//
+// 删除语义与单篇删除一致：移入回收站（可撤销），不是彻底删除。
+// 逐篇独立处理：一篇失败（保存失败、磁盘错误）不影响其余，
+// 失败原因汇总提示，不静默吞掉。
+//
+// 碎纸机动画不用于批量删除：一次只播一篇，逐篇播会让 N 篇笔记
+// 排队等动画，删除十几篇就变成十几秒的等待；批量删除以效率为先。
+func (a *app) batchDeleteSelected() {
+	ids := a.batchPickedIDs()
+	if len(ids) == 0 {
+		a.pendingToast = "请先勾选要删除的笔记"
+		return
+	}
+	// 退出批量删除状态：无论删除结果如何都退出，避免用户面对
+	// 一堆已经删掉的复选框继续点「确认」。
+	a.exitBatchMode()
+
+	deleted := 0
+	failed := 0
+	firstErr := ""
+	for _, id := range ids {
+		if a.deleteFromListQuiet(id) {
+			deleted++
+			continue
+		}
+		failed++
+		if firstErr == "" {
+			firstErr = id
+		}
+	}
+	a.refreshLists()
+	a.refreshReaderSnapshot()
+
+	switch {
+	case failed == 0:
+		a.pendingToast = "已将 " + itoa(deleted) + " 篇笔记移入回收站"
+	case deleted == 0:
+		a.pendingToast = "删除失败：" + a.batchDeleteReason(firstErr)
+	default:
+		a.pendingToast = "已删除 " + itoa(deleted) + " 篇，" + itoa(failed) + " 篇失败：" + a.batchDeleteReason(firstErr)
+	}
+}
+
+// batchDeleteReason 返回某篇笔记删除失败的原因（用户可读）。
+func (a *app) batchDeleteReason(id string) string {
+	if id == "" {
+		return "未知原因"
+	}
+	for _, n := range a.notes {
+		if n.ID == id {
+			return "「" + n.Title + "」删除失败"
+		}
+	}
+	return "部分笔记删除失败"
+}
+
+// deleteFromListQuiet 走单篇删除的完整链路，但不弹提示：
+// 批量删除要自己汇总结果，逐篇弹提示会刷屏。
+//
+// 与 deleteFromList 的差别只有"是否提示"，删除语义完全一致：
+// 先落盘草稿（评审 #2），再移入回收站。
+func (a *app) deleteFromListQuiet(id string) bool {
+	if a.vault.NoteVanished(id) {
+		// 正文文件已被外部删除：没有内容可移入回收站，
+		// 把这条僵尸笔记从索引里清掉即可。
+		if _, err := a.vault.DropVanishedNote(id); err == nil {
+			delete(a.editors, id)
+			if a.currentID == id {
+				a.currentID = ""
+				a.backlinks = nil
+			}
+			return true
+		}
+	}
+	if !a.flushSaveNote(id) {
+		return false
+	}
+	if _, err := a.vault.TrashNote(id); err != nil {
+		return false
+	}
+	if a.currentID == id {
+		a.currentID = ""
+		a.backlinks = nil
+	}
+	delete(a.editors, id)
 	return true
 }
 

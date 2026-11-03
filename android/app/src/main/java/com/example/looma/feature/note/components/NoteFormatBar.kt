@@ -42,6 +42,7 @@ internal fun NoteFormatBar(
     onCommand: (MarkdownCommand) -> Unit,
     onUndo: () -> Unit,
     onRedo: () -> Unit,
+    onWikiLink: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -81,6 +82,21 @@ internal fun NoteFormatBar(
                 GroupDivider()
                 InsertActions.forEach { action ->
                     FormatButton(action, formatState, onCommand)
+                }
+                GroupDivider()
+                // 双链要先选目标笔记，不是纯文本命令，所以单独一个按钮打开候选面板
+                IconButton(
+                    onClick = onWikiLink,
+                    modifier = Modifier.size(48.dp),
+                    colors = IconButtonDefaults.iconButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    ),
+                ) {
+                    LoomaIcon(
+                        iconRes = R.drawable.ic_editor_wikilink,
+                        contentDescription = stringResource(R.string.editor_wikilink),
+                        modifier = Modifier.size(22.dp),
+                    )
                 }
             }
         }

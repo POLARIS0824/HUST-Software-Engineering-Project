@@ -64,16 +64,16 @@ func TestRenderReaderSourceRewritesLinks(t *testing.T) {
 	mustSave(t, v, a.ID, "参见 [[B|点这里]] 与 [[缺失]]。\n\n```\n[[代码区]]\n```\n")
 
 	src := v.RenderReaderSource(a.ID)
-	if !strings.Contains(src, "[点这里](justmd-note://"+target.ID+")") {
+	if !strings.Contains(src, "[点这里](looma-note://"+target.ID+")") {
 		t.Fatalf("已解析链接应指向 noteID: %q", src)
 	}
-	if !strings.Contains(src, "[缺失](justmd-open://") {
+	if !strings.Contains(src, "[缺失](looma-open://") {
 		t.Fatalf("未解析链接应指向编码标题: %q", src)
 	}
-	if strings.Contains(strings.Split(src, "```")[1], "justmd-") {
+	if strings.Contains(strings.Split(src, "```")[1], "looma-") {
 		t.Fatalf("代码区内不应改写: %q", src)
 	}
-	if body := v.readBody(v.notes[a.ID].meta); strings.Contains(body, "justmd-") {
+	if body := v.readBody(v.notes[a.ID].meta); strings.Contains(body, "looma-") {
 		t.Fatalf("阅读改写不得回写正文: %q", body)
 	}
 }

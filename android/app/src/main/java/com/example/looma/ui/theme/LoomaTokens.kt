@@ -105,6 +105,9 @@ internal const val TABULAR_FIGURES = "\"tnum\" 1"
 /** Google Sans Flex 的 wght 轴到 1000，750 比 M3 的 Bold 再重半档 */
 private const val BRAND_HERO_WEIGHT = 750
 
+/** 正文行高：编辑态与 Markdown 阅读态共用，切换模式时文字不会上下跳 */
+internal const val BODY_LINE_HEIGHT = 26
+
 /** 默认值只服务于没有 LoomaTheme 包裹的 Preview 与测试 */
 val LocalLoomaColors = staticCompositionLocalOf { loomaColors(lightColorScheme()) }
 val LocalLoomaTypography = staticCompositionLocalOf { loomaTypography(Typography()) }

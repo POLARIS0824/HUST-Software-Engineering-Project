@@ -1,5 +1,6 @@
-// JustMD Windows —— 基于 MyGo 原生 UI（package ui，无 WebView）与
+// Looma Windows —— 基于 MyGo 原生 UI（package ui，无 WebView）与
 // Onevra 组件库的本地优先 Markdown 笔记与知识管理工具。
+// （课程项目名仍为 JustMD；Windows 产品名与 Android 版统一为 Looma。）
 //
 // 开发：go run .        打包：go tool mygo build
 package main
@@ -14,7 +15,8 @@ import (
 func main() {
 	app := mygo.App
 	// 先设置应用名：决定用户数据目录（配置文件位置）。
-	app.SetName("JustMD")
+	// 从 JustMD 改名后，旧目录由 migrateLegacyUserData 兼容迁移。
+	app.SetName("Looma")
 
 	vault, err := OpenVault()
 	if err != nil {
@@ -66,7 +68,7 @@ func main() {
 		}
 
 		shell := sidebar.NewShell(sidebar.ShellOptions{
-			Title:     "JustMD",
+			Title:     "Looma",
 			Width:     width,
 			Height:    height,
 			MinWidth:  minW,

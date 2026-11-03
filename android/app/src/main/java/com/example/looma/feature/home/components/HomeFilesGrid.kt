@@ -43,6 +43,7 @@ internal fun HomeFilesGrid(
     scrollRecentsToStart: Boolean,
     onRecentsScrolled: () -> Unit,
     onFolderClick: (FolderPath) -> Unit,
+    onFolderActions: (HomeFolderItem) -> Unit,
     onNoteClick: (HomeNoteItem) -> Unit,
     onNoteLongClick: (HomeNoteItem) -> Unit,
     modifier: Modifier = Modifier,
@@ -79,7 +80,7 @@ internal fun HomeFilesGrid(
                         topPadding = 12.dp,
                     )
                 }
-                folderSection(files.folders, isGridMode, onFolderClick)
+                folderSection(files.folders, isGridMode, onFolderClick, onFolderActions)
             }
             if (files.notes.isNotEmpty()) {
                 item(span = StaggeredGridItemSpan.FullLine) {
@@ -100,7 +101,7 @@ internal fun HomeFilesGrid(
                     )
                 }
             }
-            folderSection(files.folders, isGridMode, onFolderClick)
+            folderSection(files.folders, isGridMode, onFolderClick, onFolderActions)
         }
 
         items(
@@ -122,6 +123,7 @@ private fun LazyStaggeredGridScope.folderSection(
     folders: List<HomeFolderItem>,
     isGridMode: Boolean,
     onFolderClick: (FolderPath) -> Unit,
+    onFolderActions: (HomeFolderItem) -> Unit,
 ) {
     if (folders.isEmpty()) return
     if (isGridMode) {
@@ -129,11 +131,19 @@ private fun LazyStaggeredGridScope.folderSection(
             items = folders,
             key = { "folder:${it.path.relativePath}" },
         ) { folder ->
-            HomeFolderCard(item = folder, onClick = { onFolderClick(folder.path) })
+            HomeFolderCard(
+                item = folder,
+                onClick = { onFolderClick(folder.path) },
+                onActionsClick = { onFolderActions(folder) },
+            )
         }
     } else {
         item(span = StaggeredGridItemSpan.FullLine) {
-            HomeFolderGroup(folders = folders, onFolderClick = onFolderClick)
+            HomeFolderGroup(
+                folders = folders,
+                onFolderClick = onFolderClick,
+                onFolderActions = onFolderActions,
+            )
         }
     }
 }
