@@ -33,17 +33,18 @@ import com.example.looma.ui.theme.LoomaTokens
  * 文件夹永远排在笔记前面；根目录额外插入“最近”一行。
  * 列表形态把当前层的文件夹收进一张分组卡片，网格形态每列各自一张卡片，
  * 所以列数只由 isGridMode 决定，列表按钮在根目录和文件夹内都有效。
- * 选择集合只影响笔记卡片的描边与底色。
+ * 选择态只影响被选中卡片的描边：笔记可以多选，文件夹长按后单选。
  */
 @Composable
 internal fun HomeFilesGrid(
     files: HomeFilesState,
     isGridMode: Boolean,
     selection: Set<String>,
+    selectedFolder: FolderPath?,
     scrollRecentsToStart: Boolean,
     onRecentsScrolled: () -> Unit,
     onFolderClick: (FolderPath) -> Unit,
-    onFolderActions: (HomeFolderItem) -> Unit,
+    onFolderLongClick: (HomeFolderItem) -> Unit,
     onNoteClick: (HomeNoteItem) -> Unit,
     onNoteLongClick: (HomeNoteItem) -> Unit,
     modifier: Modifier = Modifier,
@@ -80,7 +81,7 @@ internal fun HomeFilesGrid(
                         topPadding = 12.dp,
                     )
                 }
-                folderSection(files.folders, isGridMode, onFolderClick, onFolderActions)
+                folderSection(files.folders, isGridMode, selectedFolder, onFolderClick, onFolderLongClick)
             }
             if (files.notes.isNotEmpty()) {
                 item(span = StaggeredGridItemSpan.FullLine) {
@@ -101,7 +102,7 @@ internal fun HomeFilesGrid(
                     )
                 }
             }
-            folderSection(files.folders, isGridMode, onFolderClick, onFolderActions)
+            folderSection(files.folders, isGridMode, selectedFolder, onFolderClick, onFolderLongClick)
         }
 
         items(
@@ -122,8 +123,9 @@ internal fun HomeFilesGrid(
 private fun LazyStaggeredGridScope.folderSection(
     folders: List<HomeFolderItem>,
     isGridMode: Boolean,
+    selectedFolder: FolderPath?,
     onFolderClick: (FolderPath) -> Unit,
-    onFolderActions: (HomeFolderItem) -> Unit,
+    onFolderLongClick: (HomeFolderItem) -> Unit,
 ) {
     if (folders.isEmpty()) return
     if (isGridMode) {
@@ -133,16 +135,18 @@ private fun LazyStaggeredGridScope.folderSection(
         ) { folder ->
             HomeFolderCard(
                 item = folder,
+                isSelected = folder.path == selectedFolder,
                 onClick = { onFolderClick(folder.path) },
-                onActionsClick = { onFolderActions(folder) },
+                onLongClick = { onFolderLongClick(folder) },
             )
         }
     } else {
         item(span = StaggeredGridItemSpan.FullLine) {
             HomeFolderGroup(
                 folders = folders,
+                selected = selectedFolder,
                 onFolderClick = onFolderClick,
-                onFolderActions = onFolderActions,
+                onFolderLongClick = onFolderLongClick,
             )
         }
     }

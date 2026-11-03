@@ -195,9 +195,6 @@
 
     <!-- Folder actions -->
     <string name="home_folder_actions_description">Folder actions</string>
-    <string name="home_folder_action_rename">Rename</string>
-    <string name="home_folder_action_move">Move</string>
-    <string name="home_folder_action_delete">Delete</string>
     <string name="home_folder_rename_title">Rename folder</string>
     <string name="home_folder_rename_hint">Folder name</string>
     <string name="home_folder_move_title">Move “%1$s”</string>

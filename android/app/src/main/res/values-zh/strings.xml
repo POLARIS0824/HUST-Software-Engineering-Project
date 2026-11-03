@@ -195,9 +195,6 @@
 
     <!-- Folder actions -->
     <string name="home_folder_actions_description">文件夹操作</string>
-    <string name="home_folder_action_rename">重命名</string>
-    <string name="home_folder_action_move">移动</string>
-    <string name="home_folder_action_delete">删除</string>
     <string name="home_folder_rename_title">重命名文件夹</string>
     <string name="home_folder_rename_hint">文件夹名称</string>
     <string name="home_folder_move_title">将「%1$s」移动到</string>

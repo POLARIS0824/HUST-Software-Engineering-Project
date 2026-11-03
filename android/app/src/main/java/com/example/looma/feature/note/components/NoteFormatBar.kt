@@ -3,20 +3,17 @@ package com.example.looma.feature.note.components
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconToggleButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,55 +46,49 @@ internal fun NoteFormatBar(
         modifier = modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.surfaceContainer,
     ) {
-        Column {
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(52.dp)
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp)
+                .horizontalScroll(rememberScrollState())
+                .padding(horizontal = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            HistoryButton(
+                icon = R.drawable.ic_editor_undo,
+                label = R.string.editor_undo,
+                enabled = canUndo,
+                onClick = onUndo,
+            )
+            HistoryButton(
+                icon = R.drawable.ic_editor_redo,
+                label = R.string.editor_redo,
+                enabled = canRedo,
+                onClick = onRedo,
+            )
+            // 双链要先选目标笔记，不是纯文本命令，所以单独一个按钮打开候选面板。
+            // 排在加粗前面：它是最高频的插入动作，横滑时不应该被推到屏幕外
+            IconButton(
+                onClick = onWikiLink,
+                modifier = Modifier.size(48.dp),
+                colors = IconButtonDefaults.iconButtonColors(
+                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                ),
             ) {
-                HistoryButton(
-                    icon = R.drawable.ic_editor_undo,
-                    label = R.string.editor_undo,
-                    enabled = canUndo,
-                    onClick = onUndo,
+                LoomaIcon(
+                    iconRes = R.drawable.ic_editor_wikilink,
+                    contentDescription = stringResource(R.string.editor_wikilink),
+                    modifier = Modifier.size(22.dp),
                 )
-                HistoryButton(
-                    icon = R.drawable.ic_editor_redo,
-                    label = R.string.editor_redo,
-                    enabled = canRedo,
-                    onClick = onRedo,
-                )
-                GroupDivider()
-                InlineActions.forEach { action ->
-                    FormatButton(action, formatState, onCommand)
-                }
-                GroupDivider()
-                BlockActions.forEach { action ->
-                    FormatButton(action, formatState, onCommand)
-                }
-                GroupDivider()
-                InsertActions.forEach { action ->
-                    FormatButton(action, formatState, onCommand)
-                }
-                GroupDivider()
-                // 双链要先选目标笔记，不是纯文本命令，所以单独一个按钮打开候选面板
-                IconButton(
-                    onClick = onWikiLink,
-                    modifier = Modifier.size(48.dp),
-                    colors = IconButtonDefaults.iconButtonColors(
-                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    ),
-                ) {
-                    LoomaIcon(
-                        iconRes = R.drawable.ic_editor_wikilink,
-                        contentDescription = stringResource(R.string.editor_wikilink),
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
+            }
+            InlineActions.forEach { action ->
+                FormatButton(action, formatState, onCommand)
+            }
+            BlockActions.forEach { action ->
+                FormatButton(action, formatState, onCommand)
+            }
+            InsertActions.forEach { action ->
+                FormatButton(action, formatState, onCommand)
             }
         }
     }
@@ -249,14 +240,4 @@ private fun FormatButton(
             modifier = Modifier.size(22.dp),
         )
     }
-}
-
-@Composable
-private fun GroupDivider() {
-    VerticalDivider(
-        modifier = Modifier
-            .padding(horizontal = 4.dp)
-            .height(24.dp),
-        color = MaterialTheme.colorScheme.outlineVariant,
-    )
 }
