@@ -149,17 +149,17 @@ internal class VaultFileOps(root: File) {
      * 文件夹里还有非 Markdown 文件时，对应目录不算“空了”，会留在原处。
      * 任何一步搬运失败都直接抛出，后续笔记与目录保持原样。
      *
-     * @return 实际移入回收站的笔记数
+     * @return 移入回收站的记录 id，撤回时按这些 id 把笔记搬回原路径
      */
-    fun deleteFolder(path: FolderPath): Int {
+    fun deleteFolder(path: FolderPath): List<String> {
         val directory = folderDirectory(path)
         if (directory == root) throw VaultFileException(VaultFileFailure.INVALID_PATH)
         if (!directory.isDirectory) throw VaultFileException(VaultFileFailure.NOT_FOUND)
         val notes = mutableListOf<File>()
         collectNotes(directory, notes)
-        notes.forEach { note -> trash(note) }
+        val trashIds = notes.map { note -> trash(note).trashId }
         deleteEmptyDirectories(directory)
-        return notes.size
+        return trashIds
     }
 
     /** 改名，目标同名时拒绝，避免悄悄覆盖别人的笔记 */
@@ -237,18 +237,19 @@ internal class VaultFileOps(root: File) {
     }
 
     /** 彻底删除一条回收站记录，正文与元数据一起删掉，不可恢复 */
-    fun deletePermanently(trashId: String) {
-        val record = trashed().firstOrNull { it.trashId == trashId }
-            ?: throw VaultFileException(VaultFileFailure.NOT_FOUND)
+    fun deletePermanently(trashId: String) = deletePermanently(recordOf(trashId))
+
+    /** 彻底删除一条已经查到的记录，不再重扫回收站目录 */
+    internal fun deletePermanently(record: TrashRecord) {
         if (!record.file.delete()) throw VaultFileException(VaultFileFailure.IO)
         record.metaFile.delete()
     }
 
     /** 回到原路径；原位置已有同名文件时拒绝，交由用户先处理冲突 */
-    fun restore(trashId: String): File {
-        if (!UUID_PATTERN.matches(trashId)) throw VaultFileException(VaultFileFailure.INVALID_PATH)
-        val record = trashed().firstOrNull { it.trashId == trashId }
-            ?: throw VaultFileException(VaultFileFailure.NOT_FOUND)
+    fun restore(trashId: String): File = restore(recordOf(trashId))
+
+    /** 恢复一条已经查到的记录，不再重扫回收站目录 */
+    internal fun restore(record: TrashRecord): File {
         val destination = File(root, record.originalPath.relativePath).canonicalFile
         if (!isInside(destination) || destination == root) {
             throw VaultFileException(VaultFileFailure.INVALID_PATH)
@@ -260,6 +261,16 @@ internal class VaultFileOps(root: File) {
         if (!record.file.renameTo(destination)) throw VaultFileException(VaultFileFailure.IO)
         record.metaFile.delete()
         return destination
+    }
+
+    /**
+     * 按 id 查出记录。回收站要逐个读 .properties，所以批量操作拿到 [trashed] 快照后
+     * 直接走记录版的重载，不要为每一篇再调一次单 id 版。
+     */
+    private fun recordOf(trashId: String): TrashRecord {
+        if (!UUID_PATTERN.matches(trashId)) throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        return trashed().firstOrNull { it.trashId == trashId }
+            ?: throw VaultFileException(VaultFileFailure.NOT_FOUND)
     }
 
     private fun readTrashRecord(trashDir: File, metaFile: File): TrashRecord? = runCatching {

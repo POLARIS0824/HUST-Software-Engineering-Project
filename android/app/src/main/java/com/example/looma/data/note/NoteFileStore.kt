@@ -78,22 +78,28 @@ internal class NoteFileStore(
         readMarkdown(file) to Instant.ofEpochMilli(file.lastModified())
     }
 
+    /**
+     * 建一篇只有文件名的空笔记。
+     *
+     * 不写占位标题：标题是用户写下的内容，占位只属于界面。这样「什么都没写」的笔记
+     * 在磁盘上真的是空的，丢弃时不会留下一行假的 H1，界面也就不会显示成文件名加序号。
+     */
     suspend fun createNote(
         title: String,
-        initialContent: String? = null,
         folder: FolderPath = FolderPath.Root,
     ): StoredMarkdown = withContext(Dispatchers.IO) {
         val vault = vaultRepository.requireCurrentVault()
         val ops = VaultFileOps(File(vault.rootPath))
         val file = ops.newNoteFile(folder, title, fallbackName = UNTITLED_FALLBACK)
-        val text = initialContent ?: "# ${title.trim().ifBlank { UNTITLED_FALLBACK }}\n\n"
-        try {
-            writeMarkdown(file, text)
-        } catch (e: Exception) {
-            file.delete()
-            throw e
-        }
-        storedMarkdown(vault, ops.rootDir, file, text)
+        storedMarkdown(vault, ops.rootDir, file, "")
+    }
+
+    /** 永久删除一篇笔记，不进回收站；用于丢弃从未写入内容的空白笔记 */
+    suspend fun discardNote(id: NoteId) = withContext(Dispatchers.IO) {
+        val (_, ops) = currentVault(id.vaultId)
+        val file = ops.noteFile(id.path)
+        if (!file.delete()) throw VaultFileException(VaultFileFailure.IO)
+        draftFile(ops.rootDir, id.path).delete()
     }
 
     suspend fun saveNote(
@@ -170,6 +176,30 @@ internal class NoteFileStore(
         val file = ops.restore(trashId)
         storedMarkdown(vault, ops.rootDir, file, readMarkdown(file))
     }
+
+    /**
+     * 批量恢复：回收站快照只读一次，批量操作共用，避免每篇都重扫一遍目录。
+     *
+     * 单篇冲突或 IO 失败只计数、不中断整批；正文先按回收站里的那一份读，
+     * 读不出来就整篇算失败，原文件仍留在回收站。
+     */
+    suspend fun restoreNotes(trashIds: List<String>): Pair<List<StoredMarkdown>, TrashBulkOutcome> =
+        withContext(Dispatchers.IO) {
+            val vault = vaultRepository.requireCurrentVault()
+            val ops = VaultFileOps(File(vault.rootPath))
+            bulkOverTrash(ops, trashIds) { record ->
+                val content = readMarkdown(record.file)
+                storedMarkdown(vault, ops.rootDir, ops.restore(record), content)
+            }
+        }
+
+    /** 批量彻底删除：同样只扫一次回收站，单条删不掉时只算这一条失败 */
+    suspend fun deleteTrashedNotes(trashIds: List<String>): TrashBulkOutcome =
+        withContext(Dispatchers.IO) {
+            val vault = vaultRepository.requireCurrentVault()
+            val ops = VaultFileOps(File(vault.rootPath))
+            bulkOverTrash(ops, trashIds) { record -> ops.deletePermanently(record) }.second
+        }
 
     /** Markdown 解析器只提供引用字符串，Store 负责验证图片文件路径 */
     fun resolveCover(note: StoredMarkdown, reference: String?): String? =
@@ -257,6 +287,36 @@ internal class NoteFileStore(
         const val DRAFT_DIRECTORY = ".looma/drafts"
         const val CONFLICT_DIRECTORY = ".looma/conflicts"
     }
+}
+
+/**
+ * 回收站批量操作的骨架：快照只扫一次（每个 `.properties` 都要读，逐篇重扫是 O(N²)），
+ * 单条冲突或 IO 失败只计数，不让整批中断。
+ *
+ * @param action 单条操作，抛出的 [IOException] 记一次失败
+ * @return 成功项与成败计数，顺序跟 [trashIds] 一致
+ */
+internal fun <T> bulkOverTrash(
+    ops: VaultFileOps,
+    trashIds: List<String>,
+    action: (TrashRecord) -> T,
+): Pair<List<T>, TrashBulkOutcome> {
+    val records = ops.trashed().associateBy { it.trashId }
+    val results = mutableListOf<T>()
+    var failed = 0
+    for (trashId in trashIds) {
+        val record = records[trashId]
+        if (record == null) {
+            failed++
+            continue
+        }
+        try {
+            results += action(record)
+        } catch (e: IOException) {
+            failed++
+        }
+    }
+    return results to TrashBulkOutcome(results.size, failed)
 }
 
 /** `文件夹/名字.md` → `名字`，用于没有可读标题时的兜底 */

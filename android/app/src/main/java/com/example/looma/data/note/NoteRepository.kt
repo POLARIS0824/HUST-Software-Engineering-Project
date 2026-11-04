@@ -119,10 +119,9 @@ class NoteRepository internal constructor(
 
     suspend fun createNote(
         title: String,
-        initialContent: String? = null,
         folder: FolderPath = FolderPath.Root,
     ): Note {
-        val stored = fileStore.createNote(title, initialContent, folder)
+        val stored = fileStore.createNote(title, folder)
         textCache.put(stored.id, stored.modifiedAt, stored.content)
         writeThrough(IndexDelta(stored.id.vaultId, upserts = listOf(indexedOf(stored))))
         return toNote(stored)
@@ -155,6 +154,18 @@ class NoteRepository internal constructor(
         return trashed
     }
 
+    /**
+     * 丢弃一篇从未写入内容的空白笔记：文件直接删掉，不进回收站。
+     *
+     * 这是「不保存」而不是「删除」，所以不能复用 [deleteNote]：回收站里不该出现
+     * 用户根本没写过的空文件。
+     */
+    suspend fun discardNote(id: NoteId) {
+        fileStore.discardNote(id)
+        textCache.remove(id)
+        writeThrough(IndexDelta(id.vaultId, removed = listOf(id.path)))
+    }
+
     suspend fun listTrashedNotes(): List<TrashedNote> = fileStore.listTrashedNotes()
 
     suspend fun restoreNote(trashId: String): Note {
@@ -166,6 +177,25 @@ class NoteRepository internal constructor(
 
     /** 从回收站彻底删除，不可恢复 */
     suspend fun deleteTrashedNote(trashId: String) = fileStore.deleteTrashedNote(trashId)
+
+    /**
+     * 批量恢复：索引与正文缓存逐篇写穿，失败的只计数。
+     *
+     * 单篇冲突不会打断整批，所以恢复出来的每一篇都要单独补进缓存与索引；
+     * 写索引失败依旧不让已经搬回文件的笔记算失败。
+     */
+    suspend fun restoreTrashedNotes(trashIds: List<String>): TrashBulkOutcome {
+        val (restored, outcome) = fileStore.restoreNotes(trashIds)
+        for (stored in restored) {
+            textCache.put(stored.id, stored.modifiedAt, stored.content)
+            writeThrough(IndexDelta(stored.id.vaultId, upserts = listOf(indexedOf(stored))))
+        }
+        return outcome
+    }
+
+    /** 批量彻底删除，不可恢复 */
+    suspend fun deleteTrashedNotes(trashIds: List<String>): TrashBulkOutcome =
+        fileStore.deleteTrashedNotes(trashIds)
 
     /** 文件属性：磁盘大小与修改时间来自文件，字数与任务数来自正文 */
     suspend fun properties(id: NoteId): NoteProperties = withContext(Dispatchers.Default) {

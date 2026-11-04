@@ -322,7 +322,7 @@ class VaultFileOpsTest {
 
         val trashed = ops.deleteFolder(FolderPath("项目"))
 
-        assertEquals(2, trashed)
+        assertEquals(2, trashed.size)
         assertFalse(File(root, "项目").exists())
         assertEquals(
             setOf("项目/计划.md", "项目/周报/第 1 周.md"),
@@ -338,7 +338,7 @@ class VaultFileOpsTest {
 
         val trashed = ops.deleteFolder(FolderPath("项目"))
 
-        assertEquals(1, trashed)
+        assertEquals(1, trashed.size)
         assertEquals("项目/计划.md", ops.trashed().single().originalPath.relativePath)
         // 点目录整棵跳过：笔记原样保留，文件夹因此不算空，也不会被删掉
         assertTrue(File(root, "项目/.looma/私货.md").isFile)
@@ -353,7 +353,7 @@ class VaultFileOpsTest {
 
         val trashed = ops.deleteFolder(FolderPath("项目"))
 
-        assertEquals(1, trashed)
+        assertEquals(1, trashed.size)
         assertFalse(File(root, "项目/计划.md").exists())
         assertTrue(File(root, "项目/封面.png").isFile)
         assertTrue(File(root, "项目").isDirectory)
