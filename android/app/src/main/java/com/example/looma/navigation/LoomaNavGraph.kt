@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -148,7 +149,7 @@ fun LoomaNavGraph(
                         viewModel = homeViewModel,
                         onOpenNote = { noteId -> backStack.add(LoomaRoute.Note.from(noteId)) },
                         onCreatedNote = { noteId ->
-                            backStack.add(LoomaRoute.Note.from(noteId, startInEdit = true))
+                            backStack.add(LoomaRoute.Note.from(noteId, isNew = true))
                         },
                         onMenuClick = { scope.launch { drawerState.open() } },
                         onSettingsClick = {
@@ -188,14 +189,19 @@ fun LoomaNavGraph(
                         path = NotePath(route.relativePath),
                     )
                     val noteViewModel: NoteViewModel = viewModel(
-                        factory = NoteViewModel.factory(noteRepository, settingsRepository, noteId),
+                        factory = NoteViewModel.factory(
+                            repository = noteRepository,
+                            settingsRepository = settingsRepository,
+                            noteId = noteId,
+                            isNewNote = route.isNew,
+                        ),
                     )
                     NoteRoute(
                         viewModel = noteViewModel,
-                        fallbackTitle = route.relativePath
-                            .substringAfterLast('/')
-                            .substringBeforeLast('.'),
-                        startInEdit = route.startInEdit,
+                        // 没有一级标题的笔记显示占位文案，而不是文件名：文件名是存储细节，
+                        // 它带的去重序号不该变成用户看到的标题
+                        fallbackTitle = stringResource(R.string.home_untitled_note),
+                        isNew = route.isNew,
                         onNavigateUp = { if (backStack.size > 1) backStack.removeLastOrNull() },
                         onOpenNote = { noteId -> backStack.add(LoomaRoute.Note.from(noteId)) },
                     )

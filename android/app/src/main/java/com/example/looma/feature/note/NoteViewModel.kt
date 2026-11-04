@@ -35,8 +35,9 @@ class NoteViewModel(
     private val repository: NoteRepository,
     private val settingsRepository: SettingsRepository,
     private val noteId: NoteId,
+    isNewNote: Boolean,
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(NoteUiState())
+    private val _uiState = MutableStateFlow(NoteUiState(isNewNote = isNewNote))
     val uiState: StateFlow<NoteUiState> = _uiState.asStateFlow()
 
     private var loadJob: Job? = null
@@ -230,14 +231,15 @@ class NoteViewModel(
     /**
      * 离开笔记的统一入口。
      *
-     * 干净状态下也要处理「误触新建」：按设置把空白笔记送进回收站，
+     * 干净状态下也要处理「误触新建」：按设置把没写过的空白笔记直接丢弃，
      * 因此返回键在会丢弃空笔记时也要接管，而不是直接退栈。
      */
     fun requestLeave(onLeave: () -> Unit) {
         val state = _uiState.value
         when {
             state.willDiscardEmpty -> viewModelScope.launch {
-                runCatching { repository.deleteNote(noteId) }
+                // 不保存，也不进回收站：用户根本没写过这篇笔记
+                runCatching { repository.discardNote(noteId) }
                 onLeave()
             }
             state.needsLeaveGuard -> saveThenLeave(onSaved = onLeave)
@@ -329,8 +331,9 @@ class NoteViewModel(
             repository: NoteRepository,
             settingsRepository: SettingsRepository,
             noteId: NoteId,
+            isNewNote: Boolean = false,
         ): ViewModelProvider.Factory = viewModelFactory {
-            initializer { NoteViewModel(repository, settingsRepository, noteId) }
+            initializer { NoteViewModel(repository, settingsRepository, noteId, isNewNote) }
         }
     }
 }

@@ -20,7 +20,6 @@ import androidx.compose.foundation.text.input.TextFieldDecorator
 import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
 import androidx.compose.foundation.text.input.rememberTextFieldState
-import androidx.compose.foundation.text.input.selectAll
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
@@ -46,8 +45,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.input.pointer.PointerEventPass
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalResources
@@ -100,7 +97,7 @@ fun NoteRoute(
     onNavigateUp: () -> Unit,
     onOpenNote: (NoteId) -> Unit,
     modifier: Modifier = Modifier,
-    startInEdit: Boolean = false,
+    isNew: Boolean = false,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val requestLeave = { viewModel.requestLeave(onLeave = onNavigateUp) }
@@ -143,7 +140,7 @@ fun NoteRoute(
                 NoteWorkspace(
                     state = state,
                     fallbackTitle = fallbackTitle,
-                    startInEdit = startInEdit,
+                    isNew = isNew,
                     onContentChanged = viewModel::onContentChanged,
                     onRequestLeave = requestLeave,
                     onRetrySave = viewModel::retrySave,
@@ -180,7 +177,7 @@ fun NoteRoute(
 private fun NoteWorkspace(
     state: NoteUiState,
     fallbackTitle: String,
-    startInEdit: Boolean,
+    isNew: Boolean,
     onContentChanged: (String) -> Unit,
     onRequestLeave: () -> Unit,
     onRetrySave: () -> Unit,
@@ -194,12 +191,17 @@ private fun NoteWorkspace(
     // 再发给 ViewModel，刚重载完的笔记立刻又变成"有未保存修改"。
     val loaded = remember(state.reloadToken) { EditorDocument.split(state.content) }
     val buffers = key(state.reloadToken) {
+        // 光标落在正文末尾：打开一篇笔记是为了接着写，而不是从头找位置
         rememberTextFieldState(initialText = loaded.title) to
-            rememberTextFieldState(initialText = loaded.body, initialSelection = TextRange(0))
+            rememberTextFieldState(
+                initialText = loaded.body,
+                initialSelection = TextRange(loaded.body.length),
+            )
     }
     val titleBuffer = buffers.first
     val bodyBuffer = buffers.second
-    var mode by rememberSaveable { mutableStateOf(if (startInEdit) NoteMode.Edit else NoteMode.Read) }
+    // 笔记一律先进入编辑态：阅读是切换过去的另一种呈现，不是默认落点
+    var mode by rememberSaveable { mutableStateOf(NoteMode.Edit) }
     var linkPanelOpen by rememberSaveable { mutableStateOf(false) }
     val readScroll = rememberScrollState()
     val editScroll = rememberScrollState()
@@ -234,8 +236,8 @@ private fun NoteWorkspace(
 
     LaunchedEffect(mode) {
         if (mode == NoteMode.Edit) {
-            // 新建的笔记先落在标题上，直接打字就替换掉占位标题
-            if (startInEdit) {
+            // 新建的笔记先落在标题上，直接打字就写标题；已有笔记落在正文末尾
+            if (isNew) {
                 titleFocus.requestFocus()
             } else {
                 bodyFocus.requestFocus()
@@ -376,7 +378,7 @@ private fun NoteWorkspace(
     }
 }
 
-/** 标题只有一行，点进来时若还是占位标题就整段选中，打字直接替换 */
+/** 标题只有一行；新建笔记的标题缓冲区本来就是空的，所以占位文案只是提示 */
 @Composable
 private fun NoteTitleField(
     buffer: TextFieldState,
@@ -385,28 +387,12 @@ private fun NoteTitleField(
     onNext: () -> Unit,
 ) {
     val text = buffer.text.toString()
-    // 占位标题（新建笔记时的"未命名笔记"）要在输入框自己放光标之前就把整段选中，
-    // 否则第一次点击只会把光标落在字中间，用户还得一个个删。
-    val selectAllOnTap = text.trim() == placeholder.trim()
     BasicTextField(
         state = buffer,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 10.dp)
-            .focusRequester(focusRequester)
-            .pointerInput(selectAllOnTap) {
-                if (!selectAllOnTap) return@pointerInput
-                awaitPointerEventScope {
-                    while (true) {
-                        val down = awaitPointerEvent(PointerEventPass.Initial)
-                            .changes
-                            .firstOrNull() ?: continue
-                        buffer.edit { selectAll() }
-                        down.consume()
-                        focusRequester.requestFocus()
-                    }
-                }
-            },
+            .focusRequester(focusRequester),
         lineLimits = TextFieldLineLimits.SingleLine,
         textStyle = MaterialTheme.typography.headlineMedium.copy(
             color = LoomaTokens.colors.title,
@@ -616,7 +602,7 @@ private fun NoteWorkspacePreview() {
                 saveState = NoteSaveState.Saved,
             ),
             fallbackTitle = "周会记录",
-            startInEdit = false,
+            isNew = false,
             onContentChanged = {},
             onRequestLeave = {},
             onRetrySave = {},

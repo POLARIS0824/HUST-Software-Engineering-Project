@@ -24,14 +24,14 @@ sealed interface LoomaRoute : NavKey {
     data class Note(
         val vaultId: String,
         val relativePath: String,
-        /** 新建的笔记直接进编辑态；从列表点开的仍然先看阅读态 */
-        val startInEdit: Boolean = false,
+        /** 刚从首页新建：进来先落在标题上，什么都没写就离开时按设置丢弃 */
+        val isNew: Boolean = false,
     ) : LoomaRoute {
         companion object {
-            fun from(id: NoteId, startInEdit: Boolean = false): Note = Note(
+            fun from(id: NoteId, isNew: Boolean = false): Note = Note(
                 vaultId = id.vaultId.value,
                 relativePath = id.path.relativePath,
-                startInEdit = startInEdit,
+                isNew = isNew,
             )
         }
     }
