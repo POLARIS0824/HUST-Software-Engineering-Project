@@ -6,20 +6,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
@@ -37,7 +30,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -47,11 +39,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.looma.R
-import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.NoteProperties
 import com.example.looma.feature.home.HomeFileError
-import com.example.looma.feature.home.HomeFileDialog
-import com.example.looma.ui.components.LoomaIcon
 import com.example.looma.ui.format.formatDateTime
 import com.example.looma.ui.format.formatFileSize
 import com.example.looma.ui.theme.LoomaTokens
@@ -203,93 +192,6 @@ private fun PropertyRow(label: String, value: String) {
             color = LoomaTokens.colors.title,
             modifier = Modifier.weight(1.2f),
         )
-    }
-}
-
-/** 移动目标：根目录加所有现存文件夹，点一行就搬过去 */
-@Composable
-internal fun HomeMoveFolderDialog(
-    folderName: String,
-    targets: List<FolderPath>,
-    error: HomeFileError?,
-    busy: Boolean,
-    onSelect: (FolderPath) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = stringResource(R.string.home_folder_move_title, folderName),
-                style = MaterialTheme.typography.headlineSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-        },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = 320.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    targets.forEach { target ->
-                        MoveTargetRow(
-                            label = if (target == FolderPath.Root) {
-                                stringResource(R.string.home_breadcrumb_root)
-                            } else {
-                                target.relativePath.replace('/', '›')
-                            },
-                            enabled = !busy,
-                            onClick = { onSelect(target) },
-                        )
-                    }
-                }
-                if (error != null) {
-                    Text(
-                        text = fileErrorText(error),
-                        style = LoomaTokens.type.cardBody,
-                        color = LoomaTokens.colors.error,
-                    )
-                }
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) { Text(stringResource(R.string.dialog_cancel)) }
-        },
-    )
-}
-
-@Composable
-private fun MoveTargetRow(label: String, enabled: Boolean, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        enabled = enabled,
-        shape = RoundedCornerShape(14.dp),
-        color = Color.Transparent,
-        modifier = Modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            LoomaIcon(
-                iconRes = R.drawable.folder_open_24px,
-                contentDescription = null,
-                modifier = Modifier.size(22.dp),
-                tint = Color.Unspecified,
-            )
-            Spacer(Modifier.width(12.dp))
-            Text(
-                text = label,
-                style = LoomaTokens.type.cardBody,
-                color = LoomaTokens.colors.title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
     }
 }
 

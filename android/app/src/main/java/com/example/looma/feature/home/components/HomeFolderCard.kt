@@ -65,7 +65,7 @@ internal fun HomeFolderCard(
 internal fun HomeFolderGroup(
     folders: List<HomeFolderItem>,
     selected: FolderPath?,
-    onFolderClick: (FolderPath) -> Unit,
+    onFolderClick: (HomeFolderItem) -> Unit,
     onFolderLongClick: (HomeFolderItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -80,7 +80,7 @@ internal fun HomeFolderGroup(
                 shape = segmentedShape(index, folders.size),
                 isSelected = folder.path == selected,
                 nameLines = 1,
-                onClick = { onFolderClick(folder.path) },
+                onClick = { onFolderClick(folder) },
                 onLongClick = { onFolderLongClick(folder) },
             )
         }

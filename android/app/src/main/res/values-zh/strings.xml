@@ -12,7 +12,6 @@
     <string name="home_section_recents">最近</string>
     <string name="home_section_folders">文件夹</string>
     <string name="home_section_notes">笔记</string>
-    <string name="home_folder_count">%1$d 个</string>
     <string name="home_empty_vault">还没有笔记，点击 + 新建</string>
     <string name="home_empty_folder">这个文件夹是空的</string>
     <string name="home_empty_note">空笔记</string>
@@ -76,7 +75,9 @@
     <string name="home_snackbar_deleted">已移入回收站：%1$d 项</string>
     <string name="home_snackbar_renamed">已重命名</string>
     <string name="home_snackbar_moved">已移动 %1$d 项</string>
-    <string name="home_undo">撤回</string>
+    <string name="action_undo">撤回</string>
+    <string name="action_undo_failed">撤销失败</string>
+    <string name="action_undone">已撤销</string>
     <string name="home_snackbar_restored">已恢复 %1$d 项</string>
     <string name="home_move_invalid_target">请选择笔记库内的文件夹</string>
     <string name="trash_delete">彻底删除</string>
@@ -97,6 +98,21 @@
     <string name="trash_restore_failed">恢复这篇笔记失败</string>
     <string name="trash_load_failed">加载回收站失败</string>
     <string name="trash_retry">重试</string>
+    <string name="trash_restore_all">全部恢复</string>
+    <string name="trash_empty_trash">清空回收站</string>
+    <string name="trash_empty_confirm_title">清空回收站？</string>
+    <plurals name="trash_empty_confirm_message">
+        <item quantity="other">%1$d 篇笔记将被永久删除。</item>
+    </plurals>
+    <string name="trash_empty_confirm">清空</string>
+    <plurals name="trash_restored_count">
+        <item quantity="other">已恢复 %1$d 篇笔记</item>
+    </plurals>
+    <plurals name="trash_emptied_count">
+        <item quantity="other">已永久删除 %1$d 篇笔记</item>
+    </plurals>
+    <string name="trash_bulk_partial">已恢复 %1$d 篇，%2$d 篇失败</string>
+    <string name="trash_restore_undone">笔记已移回回收站</string>
 
     <!-- Settings -->
     <string name="settings_title">设置</string>
@@ -197,7 +213,6 @@
     <string name="home_folder_actions_description">文件夹操作</string>
     <string name="home_folder_rename_title">重命名文件夹</string>
     <string name="home_folder_rename_hint">文件夹名称</string>
-    <string name="home_folder_move_title">将「%1$s」移动到</string>
     <string name="home_folder_delete_title">删除「%1$s」？</string>
     <plurals name="home_folder_delete_message">
         <item quantity="other">文件夹里的 %1$d 篇笔记会移入回收站。</item>

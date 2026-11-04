@@ -1,6 +1,8 @@
 package com.example.looma.feature.home
 
+import android.net.Uri
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.ManagedActivityResultLauncher
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
@@ -10,6 +12,8 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -72,7 +76,6 @@ import com.example.looma.domain.model.NoteId
 import com.example.looma.feature.home.components.HomeBreadcrumb
 import com.example.looma.feature.home.components.HomeDeleteFolderDialog
 import com.example.looma.feature.home.components.HomeFilesGrid
-import com.example.looma.feature.home.components.HomeMoveFolderDialog
 import com.example.looma.feature.home.components.HomePropertiesDialog
 import com.example.looma.feature.home.components.HomeSearchBar
 import com.example.looma.feature.home.components.HomeSelectionBar
@@ -89,28 +92,29 @@ data class HomeActions(
     val onSearchResultClick: (NoteId) -> Unit = {},
     val onToggleLayout: () -> Unit = {},
     val onSortSelect: (HomeSort) -> Unit = {},
-    val onNoteClick: (NoteId) -> Unit = {},
-    val onFolderClick: (FolderPath) -> Unit = {},
+    /** 点击与长按都只是事件：打开还是选中由 ViewModel 的选择规则决定 */
+    val onNoteClick: (HomeNoteItem) -> Unit = {},
+    val onNoteLongClick: (HomeNoteItem) -> Unit = {},
+    val onFolderClick: (HomeFolderItem) -> Unit = {},
+    val onFolderLongClick: (HomeFolderItem) -> Unit = {},
+    val onBackgroundClick: () -> Unit = {},
     val onNavigateUp: () -> Unit = {},
     val onCreateNoteClick: () -> Unit = {},
     val onCreateFolderClick: () -> Unit = {},
-    val onFolderLongClick: (HomeFolderItem) -> Unit = {},
     val onRenameFolderClick: () -> Unit = {},
-    val onMoveFolderClick: () -> Unit = {},
+    /** 笔记与文件夹共用：都启动系统目录选择器 */
+    val onMoveClick: () -> Unit = {},
     val onDeleteFolderClick: () -> Unit = {},
     val onConfirmRenameFolder: (String) -> Unit = {},
-    val onConfirmMoveFolder: (FolderPath) -> Unit = {},
     val onConfirmDeleteFolder: () -> Unit = {},
-    val onToggleSelection: (HomeNoteItem) -> Unit = {},
     val onClearSelection: () -> Unit = {},
     val onRenameClick: () -> Unit = {},
-    val onMoveClick: () -> Unit = {},
     val onInfoClick: () -> Unit = {},
     val onDeleteClick: () -> Unit = {},
     val onConfirmRename: (String) -> Unit = {},
     val onConfirmNewFolder: (String) -> Unit = {},
     val onDialogDismiss: () -> Unit = {},
-    val onUndoDelete: (List<String>) -> Unit = {},
+    val onUndo: (HomeUndo) -> Unit = {},
     val onMessageShown: () -> Unit = {},
     val onRefresh: () -> Unit = {},
     val onRecentsScrolled: () -> Unit = {},
@@ -134,18 +138,14 @@ fun HomeRoute(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val untitledTitle = stringResource(R.string.home_untitled_note)
-    val context = LocalContext.current
-    val storageAccess = remember(context) { VaultStorageAccess(context) }
 
-    // 移动目标复用系统的目录选择器：选完只要换算成笔记库内的相对路径
-    val moveTargetPicker = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocumentTree(),
-    ) { uri ->
-        if (uri != null) {
-            val target = storageAccess.resolveFolderWithin(uri, state.vaultRootPath)
-            if (target != null) viewModel.moveSelectedTo(target) else viewModel.onMoveTargetRejected()
-        }
-    }
+    // 移动笔记和移动文件夹都走同一个系统目录选择器：选完换算成笔记库内的相对路径，
+    // 移动的是谁由当前选择决定，ViewModel 只有一个入口
+    val moveTargetPicker = rememberVaultFolderPicker(
+        vaultRoot = state.vaultRootPath,
+        onPicked = viewModel::moveSelectionTo,
+        onRejected = { viewModel.moveSelectionTo(null) },
+    )
 
     // 从编辑器或外部编辑器回到前台时重新扫描 Markdown；首次进入也走这里，因此 ViewModel 不再 init 加载
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refresh() }
@@ -155,6 +155,14 @@ fun HomeRoute(
         state.createdNote?.let { noteId ->
             onCreatedNote(noteId)
             viewModel.onCreatedNoteOpened()
+        }
+    }
+
+    // 点开笔记同理：选择态下的点击只改选择，不会走到这里
+    LaunchedEffect(state.noteToOpen) {
+        state.noteToOpen?.let { noteId ->
+            onOpenNote(noteId)
+            viewModel.onNoteOpened()
         }
     }
 
@@ -175,28 +183,27 @@ fun HomeRoute(
             },
             onToggleLayout = viewModel::toggleLayout,
             onSortSelect = viewModel::setSort,
-            onNoteClick = onOpenNote,
-            onFolderClick = viewModel::openFolder,
+            onNoteClick = { viewModel.onSelectionEvent(HomeSelectionEvent.NoteTapped(it)) },
+            onNoteLongClick = { viewModel.onSelectionEvent(HomeSelectionEvent.NoteLongPressed(it)) },
+            onFolderClick = { viewModel.onSelectionEvent(HomeSelectionEvent.FolderTapped(it)) },
+            onFolderLongClick = { viewModel.onSelectionEvent(HomeSelectionEvent.FolderLongPressed(it)) },
+            onBackgroundClick = { viewModel.onSelectionEvent(HomeSelectionEvent.BackgroundTapped) },
             onNavigateUp = viewModel::navigateUp,
             onCreateNoteClick = { viewModel.createNote(untitledTitle) },
             onCreateFolderClick = viewModel::startNewFolder,
-            onFolderLongClick = viewModel::selectFolder,
             onRenameFolderClick = viewModel::startFolderRename,
-            onMoveFolderClick = viewModel::startFolderMove,
+            onMoveClick = { moveTargetPicker.launch(null) },
             onDeleteFolderClick = viewModel::startFolderDelete,
             onConfirmRenameFolder = viewModel::confirmRenameFolder,
-            onConfirmMoveFolder = viewModel::confirmMoveFolder,
             onConfirmDeleteFolder = viewModel::confirmDeleteFolder,
-            onToggleSelection = viewModel::toggleSelection,
             onClearSelection = viewModel::clearSelection,
             onRenameClick = viewModel::startRename,
-            onMoveClick = { moveTargetPicker.launch(null) },
             onInfoClick = viewModel::startProperties,
             onDeleteClick = viewModel::deleteSelected,
             onConfirmRename = viewModel::confirmRename,
             onConfirmNewFolder = viewModel::confirmNewFolder,
             onDialogDismiss = viewModel::dismissDialog,
-            onUndoDelete = viewModel::undoDelete,
+            onUndo = viewModel::undo,
             onMessageShown = viewModel::onMessageShown,
             onRefresh = viewModel::refreshFromUser,
             onRecentsScrolled = viewModel::onRecentsScrolled,
@@ -206,6 +213,27 @@ fun HomeRoute(
         ),
         modifier = modifier,
     )
+}
+
+/**
+ * 把系统目录选择器的结果换算成笔记库内的相对路径。
+ *
+ * 笔记移动与文件夹移动各要一个 launcher，所以换算规则只写这一处；
+ * 选到库外或取消都走 [onRejected]，用户取消不该被当成错误弹窗。
+ */
+@Composable
+private fun rememberVaultFolderPicker(
+    vaultRoot: String?,
+    onPicked: (FolderPath) -> Unit,
+    onRejected: () -> Unit,
+): ManagedActivityResultLauncher<Uri?, Uri?> {
+    val context = LocalContext.current
+    val storageAccess = remember(context) { VaultStorageAccess(context) }
+    return rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val target = storageAccess.resolveFolderWithin(uri, vaultRoot)
+        if (target != null) onPicked(target) else onRejected()
+    }
 }
 
 /** 无状态：同一份 [HomeUiState] 渲染出同一屏，可单独 Preview / 测试 */
@@ -222,22 +250,19 @@ fun HomeScreen(
     val pullToRefreshState = rememberPullToRefreshState()
     // 顶栏切换的动效曲线取自主题，和搜索条用的同一套 expressive 参数
     val topBarMotion = MaterialTheme.motionScheme
-    val undoLabel = stringResource(R.string.home_undo)
-    val messageText = state.message?.let { homeMessageText(it) }
+    val undoLabel = stringResource(R.string.action_undo)
+    val messageText = state.message?.let { homeNoticeText(it.notice) }
     LaunchedEffect(state.message) {
         val message = state.message ?: return@LaunchedEffect
         val text = messageText ?: return@LaunchedEffect
+        val undo = message.undo
         val result = snackbarHostState.showSnackbar(
             message = text,
-            actionLabel = if (message is HomeMessage.Deleted) undoLabel else null,
-            duration = if (message is HomeMessage.Deleted) {
-                SnackbarDuration.Long
-            } else {
-                SnackbarDuration.Short
-            },
+            actionLabel = if (undo != null) undoLabel else null,
+            duration = if (undo != null) SnackbarDuration.Long else SnackbarDuration.Short,
         )
-        if (result == SnackbarResult.ActionPerformed && message is HomeMessage.Deleted) {
-            actions.onUndoDelete(message.trashIds)
+        if (result == SnackbarResult.ActionPerformed && undo != null) {
+            actions.onUndo(undo)
         }
         actions.onMessageShown()
     }
@@ -267,15 +292,15 @@ fun HomeScreen(
                             showInfo = false,
                             onCloseClick = actions.onClearSelection,
                             onRenameClick = actions.onRenameFolderClick,
-                            onMoveClick = actions.onMoveFolderClick,
+                            onMoveClick = actions.onMoveClick,
                             onInfoClick = {},
                             onDeleteClick = actions.onDeleteFolderClick,
                         )
                     } else if (selecting) {
                         HomeSelectionBar(
-                            title = stringResource(R.string.home_selection_count, state.selection.size),
-                            showRename = state.selection.size == 1,
-                            showInfo = state.selection.size == 1,
+                            title = stringResource(R.string.home_selection_count, state.selectedNotes.size),
+                            showRename = state.selectedNotes.size == 1,
+                            showInfo = state.selectedNotes.size == 1,
                             onCloseClick = actions.onClearSelection,
                             onRenameClick = actions.onRenameClick,
                             onMoveClick = actions.onMoveClick,
@@ -400,15 +425,6 @@ private fun HomeFileDialogs(state: HomeUiState, actions: HomeActions) {
             onDismiss = actions.onDialogDismiss,
         )
 
-        is HomeFileDialog.MoveFolder -> HomeMoveFolderDialog(
-            folderName = dialog.folderName,
-            targets = dialog.targets,
-            error = state.dialogError,
-            busy = state.isActionRunning,
-            onSelect = actions.onConfirmMoveFolder,
-            onDismiss = actions.onDialogDismiss,
-        )
-
         is HomeFileDialog.DeleteFolder -> HomeDeleteFolderDialog(
             folderName = dialog.folderName,
             noteCount = dialog.noteCount,
@@ -421,25 +437,28 @@ private fun HomeFileDialogs(state: HomeUiState, actions: HomeActions) {
 }
 
 @Composable
-private fun homeMessageText(message: HomeMessage): String = when (message) {
-    is HomeMessage.Deleted -> stringResource(R.string.home_snackbar_deleted, message.count)
-    is HomeMessage.Restored -> stringResource(R.string.home_snackbar_restored, message.count)
-    is HomeMessage.Moved -> stringResource(R.string.home_snackbar_moved, message.count)
-    is HomeMessage.Renamed -> when {
-        message.linksFailed > 0 -> stringResource(R.string.home_snackbar_renamed_failed, message.linksFailed)
-        message.linksUpdated > 0 -> stringResource(R.string.home_snackbar_renamed_links, message.linksUpdated)
+private fun homeNoticeText(notice: HomeNotice): String = when (notice) {
+    is HomeNotice.Deleted -> stringResource(R.string.home_snackbar_deleted, notice.count)
+    is HomeNotice.Restored -> stringResource(R.string.home_snackbar_restored, notice.count)
+    is HomeNotice.Moved -> stringResource(R.string.home_snackbar_moved, notice.count)
+    is HomeNotice.Renamed -> when {
+        notice.linksFailed > 0 -> stringResource(R.string.home_snackbar_renamed_failed, notice.linksFailed)
+        notice.linksUpdated > 0 -> stringResource(R.string.home_snackbar_renamed_links, notice.linksUpdated)
         else -> stringResource(R.string.home_snackbar_renamed)
     }
-    HomeMessage.FolderCreated -> stringResource(R.string.home_snackbar_folder_created)
-    HomeMessage.FolderRenamed -> stringResource(R.string.home_folder_snackbar_renamed)
-    HomeMessage.FolderMoved -> stringResource(R.string.home_folder_snackbar_moved)
-    is HomeMessage.FolderDeleted -> if (message.notes > 0) {
-        pluralStringResource(R.plurals.home_folder_snackbar_deleted, message.notes, message.notes)
+    HomeNotice.FolderCreated -> stringResource(R.string.home_snackbar_folder_created)
+    HomeNotice.FolderRenamed -> stringResource(R.string.home_folder_snackbar_renamed)
+    HomeNotice.FolderMoved -> stringResource(R.string.home_folder_snackbar_moved)
+    is HomeNotice.FolderDeleted -> if (notice.notes > 0) {
+        pluralStringResource(R.plurals.home_folder_snackbar_deleted, notice.notes, notice.notes)
     } else {
         stringResource(R.string.home_folder_snackbar_deleted_empty)
     }
-    HomeMessage.ActionFailed -> stringResource(R.string.home_error_action)
-    HomeMessage.InvalidMoveTarget -> stringResource(R.string.home_move_invalid_target)
+    HomeNotice.NameTaken -> stringResource(R.string.home_error_duplicate_name)
+    HomeNotice.ActionFailed -> stringResource(R.string.home_error_action)
+    HomeNotice.InvalidMoveTarget -> stringResource(R.string.home_move_invalid_target)
+    HomeNotice.Undone -> stringResource(R.string.action_undone)
+    HomeNotice.UndoFailed -> stringResource(R.string.action_undo_failed)
 }
 
 @Composable
@@ -525,24 +544,35 @@ private fun HomeContent(
                     if (!state.files.isAtRoot) {
                         HomeBreadcrumb(crumbs = state.files.crumbs, onBack = actions.onNavigateUp)
                     }
-                    HomeFilesGrid(
-                        files = state.files,
-                        isGridMode = state.isGridMode,
-                        selection = state.selection,
-                        selectedFolder = state.selectedFolder?.path,
-                        scrollRecentsToStart = state.scrollRecentsToStart,
-                        onRecentsScrolled = actions.onRecentsScrolled,
-                        onFolderClick = actions.onFolderClick,
-                        onFolderLongClick = actions.onFolderLongClick,
-                        onNoteClick = { note ->
-                            if (state.isSelecting) {
-                                actions.onToggleSelection(note)
-                            } else {
-                                actions.onNoteClick(note.id)
-                            }
-                        },
-                        onNoteLongClick = actions.onToggleSelection,
-                    )
+                    // 选择态下点空白处取消选择；不在选择态时不挂 clickable，
+                    // 手势树与原来完全一致，滚动和下拉刷新都不受影响
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (state.isSelecting) {
+                                    Modifier.clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                        onClick = actions.onBackgroundClick,
+                                    )
+                                } else {
+                                    Modifier
+                                },
+                            ),
+                    ) {
+                        HomeFilesGrid(
+                            files = state.files,
+                            isGridMode = state.isGridMode,
+                            selection = state.selection,
+                            scrollRecentsToStart = state.scrollRecentsToStart,
+                            onRecentsScrolled = actions.onRecentsScrolled,
+                            onFolderClick = actions.onFolderClick,
+                            onFolderLongClick = actions.onFolderLongClick,
+                            onNoteClick = actions.onNoteClick,
+                            onNoteLongClick = actions.onNoteLongClick,
+                        )
+                    }
                 }
             }
         }

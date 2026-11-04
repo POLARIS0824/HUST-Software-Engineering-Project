@@ -21,23 +21,82 @@ enum class HomeFileError {
     GENERIC,
 }
 
-/** 一次性提示；删除带着回收站 id，Snackbar 才能撤回 */
-sealed interface HomeMessage {
-    data class Deleted(val count: Int, val trashIds: List<String>) : HomeMessage
-    data class Restored(val count: Int) : HomeMessage
-    data class Moved(val count: Int) : HomeMessage
-    /** 改名时顺手改写的引用数；有引用没改成功时也如实报出来 */
-    data class Renamed(val linksUpdated: Int, val linksFailed: Int = 0) : HomeMessage
-    data object FolderCreated : HomeMessage
-    data object FolderRenamed : HomeMessage
-    data object FolderMoved : HomeMessage
-    /** 删除文件夹时顺带移进回收站的笔记数 */
-    data class FolderDeleted(val notes: Int) : HomeMessage
-    data object ActionFailed : HomeMessage
-    data object InvalidMoveTarget : HomeMessage
+/**
+ * 首页唯一的选择事实：笔记多选、文件夹单选、未选择三者互斥。
+ *
+ * 用一类型而不是两个字段，是因为「同时选中笔记和文件夹」在界面上根本不存在，
+ * 而两个字段的互斥只能靠每个赋值点自己记得清空另一个。
+ */
+sealed interface HomeSelection {
+    data object None : HomeSelection
+
+    /** 笔记多选。空集合收敛成 [None]，所以这里永远非空 */
+    data class Notes(val keys: Set<String>) : HomeSelection {
+        companion object {
+            fun of(keys: Set<String>): HomeSelection = if (keys.isEmpty()) None else Notes(keys)
+        }
+    }
+
+    data class Folder(val item: HomeFolderItem) : HomeSelection
+
+    val noteKeys: Set<String> get() = (this as? Notes)?.keys.orEmpty()
+    val folder: HomeFolderItem? get() = (this as? Folder)?.item
 }
 
-/** 选中笔记后可以打开的对话框；移动目标改用系统目录选择器，所以不再有移动对话框 */
+/** 一次可撤回操作的逆向数据；没有逆向的操作（例如彻底删除）就没有 Undo */
+sealed interface HomeUndo {
+    /** 把刚移入回收站的笔记搬回原路径 */
+    data class RestoreNotes(val trashIds: List<String>) : HomeUndo
+
+    /** 把刚改名的笔记改回原名 */
+    data class RenameNote(val id: NoteId, val name: String) : HomeUndo
+
+    /** 把刚移动的笔记搬回原目录 */
+    data class MoveNotes(val moves: List<MovedNote>) : HomeUndo
+
+    data class RenameFolder(val path: FolderPath, val name: String) : HomeUndo
+
+    data class MoveFolder(val path: FolderPath, val parent: FolderPath) : HomeUndo
+
+    /** 新建的文件夹：撤回就是把它删掉 */
+    data class DeleteFolder(val path: FolderPath) : HomeUndo
+}
+
+/** 移动后的新 id（重名会续号）与它原来的目录 */
+data class MovedNote(val id: NoteId, val folder: FolderPath)
+
+/**
+ * 一次性提示：文案种类加一个可选的撤回动作。
+ *
+ * Snackbar 是否显示 Undo 只由 [undo] 是否为空决定，屏幕不用再判断提示的种类。
+ */
+data class HomeMessage(
+    val notice: HomeNotice,
+    val undo: HomeUndo? = null,
+)
+
+/** 提示文案的种类；带计数的是因为结果本身就带着计数 */
+sealed interface HomeNotice {
+    data class Deleted(val count: Int) : HomeNotice
+    data class Restored(val count: Int) : HomeNotice
+    data class Moved(val count: Int) : HomeNotice
+
+    /** 改名时顺手改写的引用数；有引用没改成功时也如实报出来 */
+    data class Renamed(val linksUpdated: Int, val linksFailed: Int = 0) : HomeNotice
+    data object FolderCreated : HomeNotice
+    data object FolderRenamed : HomeNotice
+    data object FolderMoved : HomeNotice
+
+    /** 删除文件夹时顺带移进回收站的笔记数 */
+    data class FolderDeleted(val notes: Int) : HomeNotice
+    data object NameTaken : HomeNotice
+    data object ActionFailed : HomeNotice
+    data object InvalidMoveTarget : HomeNotice
+    data object Undone : HomeNotice
+    data object UndoFailed : HomeNotice
+}
+
+/** 选中笔记后可以打开的对话框；移动笔记与文件夹都改用系统目录选择器，所以没有移动对话框 */
 sealed interface HomeFileDialog {
     data class Rename(val initialName: String) : HomeFileDialog
     data class Properties(val properties: NoteProperties) : HomeFileDialog
@@ -45,11 +104,6 @@ sealed interface HomeFileDialog {
 
     /** 文件夹卡片长按或“更多”打开的小菜单 */
     data class RenameFolder(val path: FolderPath, val initialName: String) : HomeFileDialog
-    data class MoveFolder(
-        val path: FolderPath,
-        val folderName: String,
-        val targets: List<FolderPath>,
-    ) : HomeFileDialog
     data class DeleteFolder(
         val path: FolderPath,
         val folderName: String,
@@ -110,27 +164,25 @@ data class HomeUiState(
     val error: HomeError? = null,
     /** 一次性事件：新建成功后待打开的笔记，消费后置空 */
     val createdNote: NoteId? = null,
+    /** 一次性事件：非选择态下点到的笔记，消费后置空 */
+    val noteToOpen: NoteId? = null,
     /** 一次性事件：新建完成后把「最近」滚回最前面 */
     val scrollRecentsToStart: Boolean = false,
     /** 文件视图：当前浏览路径、面包屑、最近笔记与当前层的文件夹 / 笔记 */
     val files: HomeFilesState = HomeFilesState(),
-    /** 当前选中的笔记 key */
-    val selection: Set<String> = emptySet(),
-    /** 选中项按当前排序展开，UI 直接读 */
-    val selectedItems: List<HomeNoteItem> = emptyList(),
-    /**
-     * 长按文件夹后进入的动作目标。
-     *
-     * 和笔记多选互斥：顶栏只有一个，文件夹只支持单个，所以两边不能同时有值。
-     */
-    val selectedFolder: HomeFolderItem? = null,
+    /** 唯一的选择事实 */
+    val selection: HomeSelection = HomeSelection.None,
+    /** 选中项按当前排序展开，UI 直接读；只由 ViewModel 维护 */
+    val selectedNotes: List<HomeNoteItem> = emptyList(),
     val dialog: HomeFileDialog? = null,
     val dialogError: HomeFileError? = null,
     val isActionRunning: Boolean = false,
     val message: HomeMessage? = null,
 ) {
     val isBrowsing: Boolean get() = !files.isAtRoot
-    val isSelecting: Boolean get() = selection.isNotEmpty() || selectedFolder != null
+    val isSelecting: Boolean get() = selection != HomeSelection.None
+    val selectedFolder: HomeFolderItem? get() = selection.folder
+    val selectedKeys: Set<String> get() = selection.noteKeys
 }
 
 internal fun List<HomeNoteItem>.matching(query: String): List<HomeNoteItem> {
@@ -147,3 +199,9 @@ internal fun List<HomeNoteItem>.orderedBy(sort: HomeSort): List<HomeNoteItem> = 
     HomeSort.LAST_MODIFIED -> sortedByDescending { it.summary.modifiedAt }
     HomeSort.TITLE -> sortedBy { it.summary.title.lowercase() }
 }
+
+/** 选择态下按当前排序展开选中项；[HomeSelection.Folder] 没有笔记，自然是空表 */
+internal fun List<HomeNoteItem>.selected(
+    selection: HomeSelection,
+    sort: HomeSort,
+): List<HomeNoteItem> = filter { it.listKey in selection.noteKeys }.orderedBy(sort)

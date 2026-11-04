@@ -30,7 +30,7 @@ private fun previewState(
     isGridMode: Boolean = true,
     notes: List<HomeNoteItem> = previewNotes(),
     path: FolderPath = FolderPath.Root,
-    selection: Set<String> = emptySet(),
+    selection: HomeSelection = HomeSelection.None,
 ): HomeUiState = HomeUiState(
     vaultName = "Looma",
     notes = notes.orderedBy(HomeSort.LAST_MODIFIED),
@@ -40,7 +40,7 @@ private fun previewState(
     isLoading = false,
     files = previewIndex(notes).files(path, HomeSort.LAST_MODIFIED),
     selection = selection,
-    selectedItems = notes.filter { it.listKey in selection },
+    selectedNotes = notes.selected(selection, HomeSort.LAST_MODIFIED),
 )
 
 private fun previewIndex(notes: List<HomeNoteItem>): HomeVaultIndex {
@@ -148,7 +148,9 @@ private fun HomeSelectionPreview() {
     val notes = previewNotes()
     LoomaTheme(dynamicColor = false) {
         HomeScreen(
-            state = previewState(selection = notes.take(2).map { it.listKey }.toSet()),
+            state = previewState(
+                selection = HomeSelection.Notes.of(notes.take(2).map { it.listKey }.toSet()),
+            ),
             actions = HomeActions(),
         )
     }

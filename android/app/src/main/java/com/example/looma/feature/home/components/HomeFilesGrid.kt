@@ -3,11 +3,9 @@ package com.example.looma.feature.home.components
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.staggeredgrid.LazyStaggeredGridScope
 import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
@@ -25,6 +23,7 @@ import com.example.looma.domain.model.FolderPath
 import com.example.looma.feature.home.HomeFilesState
 import com.example.looma.feature.home.HomeFolderItem
 import com.example.looma.feature.home.HomeNoteItem
+import com.example.looma.feature.home.HomeSelection
 import com.example.looma.ui.theme.LoomaTokens
 
 /**
@@ -39,16 +38,16 @@ import com.example.looma.ui.theme.LoomaTokens
 internal fun HomeFilesGrid(
     files: HomeFilesState,
     isGridMode: Boolean,
-    selection: Set<String>,
-    selectedFolder: FolderPath?,
+    selection: HomeSelection,
     scrollRecentsToStart: Boolean,
     onRecentsScrolled: () -> Unit,
-    onFolderClick: (FolderPath) -> Unit,
+    onFolderClick: (HomeFolderItem) -> Unit,
     onFolderLongClick: (HomeFolderItem) -> Unit,
     onNoteClick: (HomeNoteItem) -> Unit,
     onNoteLongClick: (HomeNoteItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val selectedFolder = selection.folder?.path
     LazyVerticalStaggeredGrid(
         columns = StaggeredGridCells.Fixed(if (isGridMode) 2 else 1),
         modifier = modifier.fillMaxSize(),
@@ -65,7 +64,7 @@ internal fun HomeFilesGrid(
                 item(span = StaggeredGridItemSpan.FullLine) {
                     HomeRecentRow(
                         items = files.recents,
-                        selection = selection,
+                        selection = selection.noteKeys,
                         scrollToStart = scrollRecentsToStart,
                         onScrolled = onRecentsScrolled,
                         onNoteClick = onNoteClick,
@@ -77,7 +76,6 @@ internal fun HomeFilesGrid(
                 item(span = StaggeredGridItemSpan.FullLine) {
                     HomeSectionHeader(
                         title = stringResource(R.string.home_section_folders),
-                        trailing = stringResource(R.string.home_folder_count, files.folders.size),
                         topPadding = 12.dp,
                     )
                 }
@@ -111,7 +109,7 @@ internal fun HomeFilesGrid(
         ) { note ->
             HomeNoteCard(
                 note = note,
-                isSelected = note.listKey in selection,
+                isSelected = note.listKey in selection.noteKeys,
                 onClick = { onNoteClick(note) },
                 onLongClick = { onNoteLongClick(note) },
             )
@@ -124,7 +122,7 @@ private fun LazyStaggeredGridScope.folderSection(
     folders: List<HomeFolderItem>,
     isGridMode: Boolean,
     selectedFolder: FolderPath?,
-    onFolderClick: (FolderPath) -> Unit,
+    onFolderClick: (HomeFolderItem) -> Unit,
     onFolderLongClick: (HomeFolderItem) -> Unit,
 ) {
     if (folders.isEmpty()) return
@@ -136,7 +134,7 @@ private fun LazyStaggeredGridScope.folderSection(
             HomeFolderCard(
                 item = folder,
                 isSelected = folder.path == selectedFolder,
-                onClick = { onFolderClick(folder.path) },
+                onClick = { onFolderClick(folder) },
                 onLongClick = { onFolderLongClick(folder) },
             )
         }
@@ -155,7 +153,6 @@ private fun LazyStaggeredGridScope.folderSection(
 @Composable
 private fun HomeSectionHeader(
     title: String,
-    trailing: String? = null,
     topPadding: Dp = 4.dp,
 ) {
     Row(
@@ -167,13 +164,5 @@ private fun HomeSectionHeader(
             style = LoomaTokens.type.sectionTitle,
             color = LoomaTokens.colors.title,
         )
-        trailing?.let {
-            Spacer(Modifier.width(8.dp))
-            Text(
-                text = it,
-                style = LoomaTokens.type.count,
-                color = LoomaTokens.colors.muted,
-            )
-        }
     }
 }

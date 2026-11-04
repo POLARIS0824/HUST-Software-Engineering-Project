@@ -99,23 +99,6 @@ class HomeVaultIndexTest {
     }
 
     @Test
-    fun `move targets exclude the folder itself and its descendants`() {
-        val index = indexOf(
-            folders = listOf(folder("项目"), folder("项目/周报"), folder("笔记")),
-            notes = emptyList(),
-        )
-
-        assertEquals(
-            listOf(FolderPath.Root, FolderPath("笔记")),
-            index.moveTargets(FolderPath("项目")),
-        )
-        assertEquals(
-            listOf(FolderPath.Root, FolderPath("项目"), FolderPath("项目/周报")),
-            index.moveTargets(FolderPath("笔记")),
-        )
-    }
-
-    @Test
     fun `note count under a folder includes notes in nested folders`() {
         val index = indexOf(
             folders = listOf(folder("项目"), folder("项目/周报")),

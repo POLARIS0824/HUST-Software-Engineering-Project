@@ -12,7 +12,6 @@
     <string name="home_section_recents">Recent</string>
     <string name="home_section_folders">Folders</string>
     <string name="home_section_notes">Notes</string>
-    <string name="home_folder_count">%1$d</string>
     <string name="home_empty_vault">No notes yet. Tap + to create one</string>
     <string name="home_empty_folder">This folder is empty</string>
     <string name="home_empty_note">Empty note</string>
@@ -76,7 +75,9 @@
     <string name="home_snackbar_deleted">%1$d moved to trash</string>
     <string name="home_snackbar_renamed">Renamed</string>
     <string name="home_snackbar_moved">%1$d moved</string>
-    <string name="home_undo">Undo</string>
+    <string name="action_undo">Undo</string>
+    <string name="action_undo_failed">Could not undo that</string>
+    <string name="action_undone">Undone</string>
     <string name="home_snackbar_restored">%1$d restored</string>
     <string name="home_move_invalid_target">Pick a folder inside the vault</string>
     <string name="trash_delete">Delete permanently</string>
@@ -97,6 +98,24 @@
     <string name="trash_restore_failed">Could not restore that note</string>
     <string name="trash_load_failed">Could not load the trash</string>
     <string name="trash_retry">Retry</string>
+    <string name="trash_restore_all">Restore all</string>
+    <string name="trash_empty_trash">Empty trash</string>
+    <string name="trash_empty_confirm_title">Empty the trash?</string>
+    <plurals name="trash_empty_confirm_message">
+        <item quantity="one">%1$d note will be deleted permanently.</item>
+        <item quantity="other">%1$d notes will be deleted permanently.</item>
+    </plurals>
+    <string name="trash_empty_confirm">Empty</string>
+    <plurals name="trash_restored_count">
+        <item quantity="one">Restored %1$d note</item>
+        <item quantity="other">Restored %1$d notes</item>
+    </plurals>
+    <plurals name="trash_emptied_count">
+        <item quantity="one">Deleted %1$d note permanently</item>
+        <item quantity="other">Deleted %1$d notes permanently</item>
+    </plurals>
+    <string name="trash_bulk_partial">Restored %1$d, %2$d failed</string>
+    <string name="trash_restore_undone">Note moved back to the trash</string>
 
     <!-- Settings -->
     <string name="settings_title">Settings</string>
@@ -197,7 +216,6 @@
     <string name="home_folder_actions_description">Folder actions</string>
     <string name="home_folder_rename_title">Rename folder</string>
     <string name="home_folder_rename_hint">Folder name</string>
-    <string name="home_folder_move_title">Move “%1$s”</string>
     <string name="home_folder_delete_title">Delete “%1$s”?</string>
     <plurals name="home_folder_delete_message">
         <item quantity="one">%1$d note in this folder will move to the trash.</item>
