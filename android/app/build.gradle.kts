@@ -65,6 +65,7 @@ dependencies {
     implementation(libs.androidx.room.ktx)
     implementation(libs.kotlinx.serialization.core)
     implementation(libs.markdown.renderer.m3)
+    implementation(libs.ratex.compose)
 
     ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)

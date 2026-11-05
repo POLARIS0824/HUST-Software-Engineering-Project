@@ -7,13 +7,21 @@ import org.intellij.markdown.parser.sequentialparsers.SequentialParser
 import org.intellij.markdown.parser.sequentialparsers.SequentialParserManager
 import org.intellij.markdown.parser.sequentialparsers.TokensCache
 import org.intellij.markdown.parser.sequentialparsers.impl.BacktickParser
+import org.intellij.markdown.parser.sequentialparsers.impl.MathParser
 
 internal class WikiImageFlavour : GFMFlavourDescriptor() {
     private val standardParsers = super.sequentialParserManager.getParserSequence()
 
     override val sequentialParserManager = object : SequentialParserManager() {
-        override fun getParserSequence(): List<SequentialParser> =
-            listOf(BacktickParser(), WikiImageParser()) + standardParsers.filterNot { it is BacktickParser }
+        override fun getParserSequence(): List<SequentialParser> {
+            val parsers = mutableListOf<SequentialParser>(BacktickParser(), WikiImageParser())
+            for (parser in standardParsers) {
+                if (parser is BacktickParser) continue
+                parsers += parser
+                if (parser is MathParser) parsers += PermissiveMathParser()
+            }
+            return parsers
+        }
     }
 }
 

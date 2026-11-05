@@ -17,6 +17,7 @@ datastore = "1.3.0"
 material3 = "1.5.0-beta02"
 serialization = "1.10.0"
 markdownRenderer = "0.46.0"
+ratex = "0.1.14"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -48,6 +49,7 @@ androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = 
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
 androidx-room-testing = { group = "androidx.room", name = "room-testing", version.ref = "room" }
 markdown-renderer-m3 = { group = "com.mikepenz", name = "multiplatform-markdown-renderer-m3", version.ref = "markdownRenderer" }
+ratex-compose = { group = "io.github.darriousliu", name = "ratex", version.ref = "ratex" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

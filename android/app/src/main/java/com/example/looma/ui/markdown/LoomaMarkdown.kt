@@ -3,9 +3,11 @@ package com.example.looma.ui.markdown
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -15,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -32,7 +35,9 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.isSpecified
 import androidx.compose.ui.unit.sp
 import com.example.looma.R
 import com.example.looma.domain.wiki.WikiContext
@@ -45,6 +50,8 @@ import com.mikepenz.markdown.compose.components.CurrentComponentsBridge
 import com.mikepenz.markdown.compose.components.MarkdownComponent
 import com.mikepenz.markdown.compose.components.MarkdownComponentModel
 import com.mikepenz.markdown.compose.components.MarkdownComponents
+import com.mikepenz.markdown.compose.LocalMarkdownInlineContent
+import com.mikepenz.markdown.compose.LocalMarkdownPadding
 import com.mikepenz.markdown.compose.components.markdownComponents
 import com.mikepenz.markdown.compose.elements.MarkdownBulletList
 import com.mikepenz.markdown.compose.elements.MarkdownOrderedList
@@ -54,6 +61,7 @@ import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.MarkdownColors
 import com.mikepenz.markdown.model.MarkdownPadding
 import com.mikepenz.markdown.model.MarkdownTypography
+import com.mikepenz.markdown.model.markdownInlineContent
 import com.mikepenz.markdown.model.markdownPadding
 import org.intellij.markdown.IElementType
 import org.intellij.markdown.MarkdownTokenTypes
@@ -158,7 +166,7 @@ fun loomaMarkdownTheme(
  *
  * 不是 @Composable：调用方可以用 remember 缓存，避免滚动时重建组件树。
  */
-fun loomaMarkdownComponents(
+internal fun loomaMarkdownComponents(
     theme: LoomaMarkdownTheme,
     compact: Boolean,
     dividerColor: Color,
@@ -169,6 +177,7 @@ fun loomaMarkdownComponents(
     onWikiLinkClick: (String) -> Unit = {},
     resolvedLink: SpanStyle = SpanStyle(),
     missingLink: SpanStyle = SpanStyle(),
+    math: MathRenderState? = null,
 ): MarkdownComponents {
     val checkSize = if (compact) 14.dp else 18.dp
     val checkGap = if (compact) 6.dp else 9.dp
@@ -189,14 +198,14 @@ fun loomaMarkdownComponents(
     }
 
     return markdownComponents(
-        heading1 = heading(theme.typography.h1, MarkdownTokenTypes.ATX_CONTENT, if (compact) 10.dp else 20.dp, headingBottom, null, links),
-        heading2 = heading(theme.typography.h2, MarkdownTokenTypes.ATX_CONTENT, if (compact) 8.dp else 16.dp, if (compact) 0.dp else 6.dp, if (compact) null else dividerColor, links),
-        heading3 = heading(theme.typography.h3, MarkdownTokenTypes.ATX_CONTENT, if (compact) 6.dp else 12.dp, headingBottom, null, links),
-        heading4 = heading(theme.typography.h4, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null, links),
-        heading5 = heading(theme.typography.h5, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null, links),
-        heading6 = heading(theme.typography.h6, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null, links),
-        setextHeading1 = heading(theme.typography.h1, MarkdownTokenTypes.SETEXT_CONTENT, if (compact) 10.dp else 20.dp, headingBottom, null, links),
-        setextHeading2 = heading(theme.typography.h2, MarkdownTokenTypes.SETEXT_CONTENT, if (compact) 8.dp else 16.dp, if (compact) 0.dp else 6.dp, if (compact) null else dividerColor, links),
+        heading1 = heading(theme.typography.h1, MarkdownTokenTypes.ATX_CONTENT, if (compact) 10.dp else 20.dp, headingBottom, null, links, math),
+        heading2 = heading(theme.typography.h2, MarkdownTokenTypes.ATX_CONTENT, if (compact) 8.dp else 16.dp, if (compact) 0.dp else 6.dp, if (compact) null else dividerColor, links, math),
+        heading3 = heading(theme.typography.h3, MarkdownTokenTypes.ATX_CONTENT, if (compact) 6.dp else 12.dp, headingBottom, null, links, math),
+        heading4 = heading(theme.typography.h4, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null, links, math),
+        heading5 = heading(theme.typography.h5, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null, links, math),
+        heading6 = heading(theme.typography.h6, MarkdownTokenTypes.ATX_CONTENT, if (compact) 4.dp else 8.dp, headingBottom, null, links, math),
+        setextHeading1 = heading(theme.typography.h1, MarkdownTokenTypes.SETEXT_CONTENT, if (compact) 10.dp else 20.dp, headingBottom, null, links, math),
+        setextHeading2 = heading(theme.typography.h2, MarkdownTokenTypes.SETEXT_CONTENT, if (compact) 8.dp else 16.dp, if (compact) 0.dp else 6.dp, if (compact) null else dividerColor, links, math),
         unorderedList = { model ->
             MarkdownBulletList(
                 content = model.content,
@@ -215,7 +224,7 @@ fun loomaMarkdownComponents(
                 listModifier = { Modifier.weight(1f) },
             )
         },
-        paragraph = { model -> LoomaMarkdownParagraph(model, links) },
+        paragraph = { model -> LoomaMarkdownParagraph(model, links, math) },
         checkbox = { model ->
             CheckboxMarker(
                 checked = model.isChecked(),
@@ -227,7 +236,7 @@ fun loomaMarkdownComponents(
                 },
             )
         },
-        image = if (showImages) CurrentComponentsBridge.image else { _ -> },
+        image = if (showImages) { model -> LoomaMarkdownImage(model) } else { _ -> },
         inlineImage = if (showImages) CurrentComponentsBridge.inlineImage else { _ -> },
     )
 }
@@ -242,54 +251,120 @@ private fun heading(
     bottom: Dp,
     borderColor: Color?,
     links: WikiAnnotator?,
+    math: MathRenderState?,
 ): MarkdownComponent = { model ->
     val settings = annotatorSettings()
-    val annotated = remember(model.content, model.node, settings, links) {
+    val annotated = remember(model.content, model.node, settings, links, math) {
         val child = model.node.findChildOfType(contentChildType) ?: model.node
         buildAnnotatedString {
             buildMarkdownAnnotatedString(model.content, child, settings)
         }.withSynthItalic().let { links?.invoke(it) ?: it }
     }
-    MarkdownText(
-        content = annotated,
-        node = model.node,
-        style = style,
-        modifier = Modifier
-            .padding(top = top, bottom = bottom)
-            .then(
-                if (borderColor != null) {
-                    Modifier.drawBehind {
-                        drawLine(
-                            color = borderColor,
-                            start = Offset(0f, size.height),
-                            end = Offset(size.width, size.height),
-                            strokeWidth = 1.dp.toPx(),
-                        )
-                    }
-                } else {
-                    Modifier
-                },
-            ),
-        sourceContent = model.content,
+    val headingFontSize = if (style.fontSize.isSpecified) style.fontSize else math?.fontSize
+    val content: @Composable () -> Unit = {
+        MarkdownText(
+            content = annotated,
+            node = model.node,
+            style = style,
+            modifier = Modifier
+                .padding(top = top, bottom = bottom)
+                .then(
+                    if (borderColor != null) {
+                        Modifier.drawBehind {
+                            drawLine(
+                                color = borderColor,
+                                start = Offset(0f, size.height),
+                                end = Offset(size.width, size.height),
+                                strokeWidth = 1.dp.toPx(),
+                            )
+                        }
+                    } else {
+                        Modifier
+                    },
+                ),
+            sourceContent = model.content,
+        )
+    }
+    MathInlineScope(
+        math = math,
+        fontSize = headingFontSize,
+        range = model.node.startOffset until model.node.endOffset,
+        content = content,
     )
+}
+
+/**
+ * 段落与标题的行内公式作用域。
+ *
+ * 行内占位一旦超过行宽就会被文字布局裁掉，且文字自身不能滚动，所以这里取到实际行宽交给占位，
+ * 超宽公式在占位内部横向拖动。只有含行内公式的段落才多包这一层，不影响图片等其它行内内容。
+ */
+@Composable
+private fun MathInlineScope(
+    math: MathRenderState?,
+    fontSize: TextUnit?,
+    range: IntRange,
+    content: @Composable () -> Unit,
+) {
+    if (math == null || fontSize == null || !math.hasInlineMath(range)) {
+        content()
+        return
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val available = if (maxWidth != Dp.Infinity) {
+            with(LocalDensity.current) { maxWidth.toPx().toSp() }
+        } else {
+            null
+        }
+        val inline = rememberMathInlineContent(
+            state = math,
+            fontSize = fontSize,
+            range = range,
+            maxWidth = available,
+        )
+        if (inline.isEmpty()) {
+            content()
+        } else {
+            CompositionLocalProvider(
+                LocalMarkdownInlineContent provides markdownInlineContent(inline),
+            ) {
+                content()
+            }
+        }
+    }
 }
 
 /** 段落自己构建 AnnotatedString，才能给斜体补上绘制期倾斜 */
 @Composable
-private fun LoomaMarkdownParagraph(model: MarkdownComponentModel, links: WikiAnnotator?) {
+private fun LoomaMarkdownParagraph(
+    model: MarkdownComponentModel,
+    links: WikiAnnotator?,
+    math: MathRenderState?,
+) {
+    val block = math?.blockDisplay(model.node)
+    if (block != null) {
+        MathBlock(block, math.fontSize, PaddingValues(vertical = LocalMarkdownPadding.current.block))
+        return
+    }
     val settings = annotatorSettings()
-    val annotated = remember(model.content, model.node, settings, links) {
+    val annotated = remember(model.content, model.node, settings, links, math) {
         buildAnnotatedString {
             buildMarkdownAnnotatedString(model.content, model.node, settings)
         }.withSynthItalic().let { links?.invoke(it) ?: it }
     }
     if (annotated.isEmpty()) return
-    MarkdownText(
-        content = annotated,
-        node = model.node,
-        style = model.typography.paragraph,
-        sourceContent = model.content,
-    )
+    MathInlineScope(
+        math = math,
+        fontSize = math?.fontSize,
+        range = model.node.startOffset until model.node.endOffset,
+    ) {
+        MarkdownText(
+            content = annotated,
+            node = model.node,
+            style = model.typography.paragraph,
+            sourceContent = model.content,
+        )
+    }
 }
 
 private fun MarkdownComponentModel.isChecked(): Boolean =

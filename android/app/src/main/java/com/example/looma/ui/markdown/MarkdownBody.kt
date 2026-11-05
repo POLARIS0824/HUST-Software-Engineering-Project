@@ -9,9 +9,11 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.style.TextDecoration
 import com.example.looma.domain.markdown.MarkdownDocument
 import com.example.looma.domain.markdown.WikiImageFlavour
+import com.example.looma.domain.markdown.preserveDisplayMathParagraphs
 import com.example.looma.domain.wiki.WikiContext
 import com.example.looma.ui.theme.LoomaTokens
 import com.mikepenz.markdown.compose.Markdown
+import com.mikepenz.markdown.model.markdownInlineContent
 
 /**
  * 全项目渲染笔记正文的唯一入口。
@@ -38,7 +40,17 @@ fun MarkdownBody(
     val dividerColor = LoomaTokens.colors.divider
     val accent = LoomaTokens.colors.accent
     val muted = LoomaTokens.colors.muted
-    val components = remember(theme, dividerColor, document.body, document.bodyStart, wiki, accent, muted) {
+    // 等长替换公式内的空白行，段落不再被拆开；原文和复选框坐标保持不变
+    val renderBody = remember(document.body) { preserveDisplayMathParagraphs(document.body) }
+    // 公式解析只依赖正文和文字颜色；深浅色切换会重新解析展示列表
+    val math = rememberMathRenderState(
+        body = renderBody,
+        fontSize = LoomaTokens.type.noteBody.fontSize,
+        color = LoomaTokens.colors.title,
+    )
+    val annotator = remember(math) { mathAnnotator(math) }
+    val inlineContent = markdownInlineContent(rememberMathInlineContent(math, math.fontSize))
+    val components = remember(theme, dividerColor, renderBody, document.bodyStart, wiki, accent, muted, math) {
         loomaMarkdownComponents(
             theme = theme,
             compact = false,
@@ -49,6 +61,7 @@ fun MarkdownBody(
             onWikiLinkClick = { target -> currentLinkClick.value(target) },
             resolvedLink = SpanStyle(color = accent, textDecoration = TextDecoration.Underline),
             missingLink = SpanStyle(color = muted),
+            math = math,
         )
     }
 
@@ -56,9 +69,11 @@ fun MarkdownBody(
     val transformer = remember { LoomaImageTransformer() }
     val flavour = remember { WikiImageFlavour() }
     Markdown(
-        content = document.body,
+        content = renderBody,
         flavour = flavour,
         imageTransformer = transformer,
+        annotator = annotator,
+        inlineContent = inlineContent,
         colors = theme.colors,
         typography = theme.typography,
         padding = theme.padding,
