@@ -1,13 +1,15 @@
 package com.example.looma.data.settings
 
 import androidx.compose.ui.graphics.Color
+import com.example.looma.domain.markdown.ToolbarItem
 
 /** 应用级偏好：主题与新建笔记的行为，和笔记库配置分开存 */
 data class AppSettings(
     val dynamicColor: Boolean = true,
     val themePreset: ThemePreset = ThemePreset.Default,
     /** 新建后没有写任何内容就离开时，是否保留这个空笔记 */
-    val keepEmptyNotes: Boolean = true,
+    val keepEmptyNotes: Boolean = false,
+    val toolbarOrder: List<ToolbarItem> = ToolbarItem.DEFAULT_ORDER,
     /** 是否已经读过一次磁盘，界面上避免用默认值闪一帧 */
     val isLoaded: Boolean = false,
 )

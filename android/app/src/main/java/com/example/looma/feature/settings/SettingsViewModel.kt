@@ -8,6 +8,7 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.looma.data.settings.AppSettings
 import com.example.looma.data.settings.SettingsRepository
 import com.example.looma.data.settings.ThemePreset
+import com.example.looma.domain.markdown.ToolbarItem
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
@@ -41,6 +42,10 @@ class SettingsViewModel(
 
     fun setKeepEmptyNotes(keep: Boolean) {
         viewModelScope.launch { repository.setKeepEmptyNotes(keep) }
+    }
+
+    fun setToolbarOrder(order: List<ToolbarItem>) {
+        viewModelScope.launch { repository.setToolbarOrder(order) }
     }
 
     companion object {

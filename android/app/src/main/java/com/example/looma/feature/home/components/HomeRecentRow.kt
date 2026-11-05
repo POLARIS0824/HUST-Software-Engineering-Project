@@ -14,12 +14,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
@@ -44,21 +43,12 @@ import com.example.looma.ui.theme.LoomaTokens
 internal fun HomeRecentRow(
     items: List<HomeRecentItem>,
     selection: Set<String>,
-    scrollToStart: Boolean,
-    onScrolled: () -> Unit,
+    listState: LazyListState,
     onNoteClick: (HomeNoteItem) -> Unit,
     onNoteLongClick: (HomeNoteItem) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (items.isEmpty()) return
-    val listState = rememberLazyListState()
-    // 新建笔记后这一行要立刻回到最前面，否则新笔记藏在用户上次滚动到的位置之外
-    LaunchedEffect(scrollToStart) {
-        if (scrollToStart) {
-            listState.animateScrollToItem(0)
-            onScrolled()
-        }
-    }
     LazyRow(
         state = listState,
         modifier = modifier.fillMaxWidth(),

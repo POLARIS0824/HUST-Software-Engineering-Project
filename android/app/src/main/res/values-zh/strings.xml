@@ -18,7 +18,8 @@
     <string name="home_untitled_note">未命名笔记</string>
     <string name="home_sort_sheet_title">排序方式</string>
     <string name="home_sort_last_modified">最近修改</string>
-    <string name="home_sort_title">标题</string>
+    <string name="home_sort_title">标题 A–Z</string>
+    <string name="home_sort_title_descending">标题 Z–A</string>
     <string name="home_breadcrumb_root">首页</string>
     <string name="home_breadcrumb_back_description">返回上一级</string>
     <string name="home_switch_to_list_description">切换为列表</string>
@@ -225,4 +226,9 @@
         <item quantity="other">已删除文件夹，%1$d 篇笔记移入回收站</item>
     </plurals>
     <string name="home_folder_snackbar_deleted_empty">已删除文件夹</string>
+    <string name="settings_toolbar_order">编辑器工具栏顺序</string>
+    <string name="settings_toolbar_order_desc">调整格式工具的排列顺序</string>
+    <string name="toolbar_move_up">上移%1$s</string>
+    <string name="toolbar_move_down">下移%1$s</string>
+    <string name="toolbar_reset">恢复默认顺序</string>
 </resources>

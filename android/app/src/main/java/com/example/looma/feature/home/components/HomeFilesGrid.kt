@@ -11,8 +11,13 @@ import androidx.compose.foundation.lazy.staggeredgrid.LazyVerticalStaggeredGrid
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridCells
 import androidx.compose.foundation.lazy.staggeredgrid.StaggeredGridItemSpan
 import androidx.compose.foundation.lazy.staggeredgrid.items
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.staggeredgrid.rememberLazyStaggeredGridState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import com.example.looma.feature.home.RecentReveal
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -39,8 +44,8 @@ internal fun HomeFilesGrid(
     files: HomeFilesState,
     isGridMode: Boolean,
     selection: HomeSelection,
-    scrollRecentsToStart: Boolean,
-    onRecentsScrolled: () -> Unit,
+    recentReveal: RecentReveal?,
+    onRecentRevealed: (RecentReveal) -> Unit,
     onFolderClick: (HomeFolderItem) -> Unit,
     onFolderLongClick: (HomeFolderItem) -> Unit,
     onNoteClick: (HomeNoteItem) -> Unit,
@@ -48,7 +53,19 @@ internal fun HomeFilesGrid(
     modifier: Modifier = Modifier,
 ) {
     val selectedFolder = selection.folder?.path
+    val gridState = rememberLazyStaggeredGridState()
+    val recentState = rememberLazyListState()
+    val acknowledge = rememberUpdatedState(onRecentRevealed)
+    val targetIndex = recentReveal?.let { request -> files.recents.indexOfFirst { it.note.id == request.noteId } } ?: -1
+    LaunchedEffect(recentReveal, targetIndex, files.path) {
+        val request = recentReveal ?: return@LaunchedEffect
+        if (!files.isAtRoot || targetIndex < 0) return@LaunchedEffect
+        gridState.animateScrollToItem(0)
+        recentState.animateScrollToItem(targetIndex)
+        acknowledge.value(request)
+    }
     LazyVerticalStaggeredGrid(
+        state = gridState,
         columns = StaggeredGridCells.Fixed(if (isGridMode) 2 else 1),
         modifier = modifier.fillMaxSize(),
         // 底部留白避开悬浮按钮
@@ -58,15 +75,14 @@ internal fun HomeFilesGrid(
     ) {
         if (files.isAtRoot) {
             if (files.recents.isNotEmpty()) {
-                item(span = StaggeredGridItemSpan.FullLine) {
+                item(key = "recents-header", span = StaggeredGridItemSpan.FullLine) {
                     HomeSectionHeader(title = stringResource(R.string.home_section_recents))
                 }
-                item(span = StaggeredGridItemSpan.FullLine) {
+                item(key = "recents-row", span = StaggeredGridItemSpan.FullLine) {
                     HomeRecentRow(
                         items = files.recents,
                         selection = selection.noteKeys,
-                        scrollToStart = scrollRecentsToStart,
-                        onScrolled = onRecentsScrolled,
+                        listState = recentState,
                         onNoteClick = onNoteClick,
                         onNoteLongClick = onNoteLongClick,
                     )

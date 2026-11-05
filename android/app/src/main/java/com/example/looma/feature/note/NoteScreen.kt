@@ -13,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.input.KeyboardActionHandler
 import androidx.compose.foundation.text.input.TextFieldDecorator
@@ -45,17 +44,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -74,13 +70,15 @@ import com.example.looma.feature.note.components.NoteFormatBar
 import com.example.looma.feature.note.components.NoteLeaveDialog
 import com.example.looma.feature.note.components.NoteSaveBanner
 import com.example.looma.feature.note.components.NoteTopBar
+import com.example.looma.feature.note.components.NoteTextField
+import androidx.navigation3.ui.LocalNavAnimatedContentScope
+import androidx.compose.animation.EnterExitState
 import com.example.looma.feature.note.components.WikiLinkPanel
 import com.example.looma.feature.note.components.wikiReferenceFor
 import com.example.looma.ui.components.LoomaIcon
 import com.example.looma.ui.components.LoomaLoadingIndicator
 import com.example.looma.ui.markdown.LocalImageSourceResolver
 import com.example.looma.ui.markdown.MarkdownBody
-import com.example.looma.ui.theme.BODY_LINE_HEIGHT
 import com.example.looma.ui.theme.LoomaTheme
 import com.example.looma.ui.theme.LoomaTokens
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -101,6 +99,7 @@ fun NoteRoute(
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val requestLeave = { viewModel.requestLeave(onLeave = onNavigateUp) }
+    val editorActive = LocalNavAnimatedContentScope.current.transition.targetState == EnterExitState.Visible
 
     // 从别的笔记回来时双链可能已经变了：那边可能新增了反向链接，或让未解析的目标存在了
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.refreshWiki() }
@@ -147,6 +146,7 @@ fun NoteRoute(
                     onOverwrite = viewModel::overwrite,
                     onReloadFromDisk = viewModel::reloadFromDisk,
                     onOpenNote = onOpenNote,
+                    editorActive = editorActive,
                     modifier = modifier,
                 )
             }
@@ -184,6 +184,7 @@ private fun NoteWorkspace(
     onOverwrite: () -> Unit,
     onReloadFromDisk: () -> Unit,
     onOpenNote: (NoteId) -> Unit,
+    editorActive: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     // reloadToken 变化表示正文换了来源（首次加载、冲突后重载）。
@@ -212,11 +213,18 @@ private fun NoteWorkspace(
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val resources = LocalResources.current
+    val leaveWorkspace = {
+        focusManager.clearFocus(force = true)
+        keyboard?.hide()
+        onRequestLeave()
+    }
 
     // 解析得到就打开，解析不到就报出目标名：跳转与否只由这一处决定
     val onWikiLinkClick: (String) -> Unit = { target ->
         val id = state.wiki.resolve(target)
         if (id != null) {
+            focusManager.clearFocus(force = true)
+            keyboard?.hide()
             onOpenNote(id)
         } else {
             scope.launch {
@@ -234,12 +242,13 @@ private fun NoteWorkspace(
             .collect(onContentChanged)
     }
 
+    var firstMode by remember { mutableStateOf(true) }
     LaunchedEffect(mode) {
         if (mode == NoteMode.Edit) {
-            // 新建的笔记先落在标题上，直接打字就写标题；已有笔记落在正文末尾
+            // 新建时聚焦标题；已有笔记首次打开不弹键盘，手动切回编辑态时再聚焦正文。
             if (isNew) {
                 titleFocus.requestFocus()
-            } else {
+            } else if (!firstMode) {
                 bodyFocus.requestFocus()
             }
         } else {
@@ -247,6 +256,7 @@ private fun NoteWorkspace(
             focusManager.clearFocus()
             keyboard?.hide()
         }
+        firstMode = false
     }
 
     val bodyText = bodyBuffer.text.toString()
@@ -260,12 +270,12 @@ private fun NoteWorkspace(
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = LoomaTokens.colors.page,
+        containerColor = LoomaTokens.colors.noteCanvas,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             NoteTopBar(
                 mode = mode,
-                onNavigateUp = onRequestLeave,
+                onNavigateUp = leaveWorkspace,
                 onToggleMode = {
                     mode = if (mode == NoteMode.Read) NoteMode.Edit else NoteMode.Read
                 },
@@ -318,12 +328,14 @@ private fun NoteWorkspace(
                 NoteMode.Edit -> {
                     Column(modifier = Modifier.weight(1f)) {
                         NoteTitleField(
+                            active = editorActive,
                             buffer = titleBuffer,
                             placeholder = fallbackTitle,
                             focusRequester = titleFocus,
                             onNext = { bodyFocus.requestFocus() },
                         )
                         NoteBodyEditor(
+                            active = editorActive,
                             buffer = bodyBuffer,
                             focusRequester = bodyFocus,
                             scrollState = editScroll,
@@ -349,6 +361,7 @@ private fun NoteWorkspace(
                     }
                     NoteFormatBar(
                         formatState = formatState,
+                        toolbarOrder = state.toolbarOrder,
                         canUndo = bodyBuffer.undoState.canUndo,
                         canRedo = bodyBuffer.undoState.canRedo,
                         onCommand = { command ->
@@ -381,24 +394,24 @@ private fun NoteWorkspace(
 /** 标题只有一行；新建笔记的标题缓冲区本来就是空的，所以占位文案只是提示 */
 @Composable
 private fun NoteTitleField(
+    active: Boolean,
     buffer: TextFieldState,
     placeholder: String,
     focusRequester: FocusRequester,
     onNext: () -> Unit,
 ) {
     val text = buffer.text.toString()
-    BasicTextField(
+    NoteTextField(
         state = buffer,
+        active = active,
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 10.dp)
             .focusRequester(focusRequester),
         lineLimits = TextFieldLineLimits.SingleLine,
-        textStyle = MaterialTheme.typography.headlineMedium.copy(
+        textStyle = LoomaTokens.type.noteTitle.copy(
             color = LoomaTokens.colors.title,
-            fontWeight = FontWeight.SemiBold,
         ),
-        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
         onKeyboardAction = KeyboardActionHandler { onNext() },
         decorator = TextFieldDecorator { inner ->
@@ -406,9 +419,7 @@ private fun NoteTitleField(
                 if (text.isEmpty()) {
                     Text(
                         text = placeholder,
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontWeight = FontWeight.SemiBold,
-                        ),
+                        style = LoomaTokens.type.noteTitle,
                         color = LoomaTokens.colors.muted,
                         maxLines = 1,
                     )
@@ -421,31 +432,31 @@ private fun NoteTitleField(
 
 @Composable
 private fun NoteBodyEditor(
+    active: Boolean,
     buffer: TextFieldState,
     focusRequester: FocusRequester,
     scrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
     val placeholder = stringResource(R.string.editor_placeholder)
-    BasicTextField(
+    NoteTextField(
         state = buffer,
+        active = active,
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 4.dp)
             .focusRequester(focusRequester),
         // 行高与 Markdown 阅读态同一档，编辑态和阅读态切换时文字不会上下跳
-        textStyle = LoomaTokens.type.body.copy(
+        textStyle = LoomaTokens.type.noteBody.copy(
             color = LoomaTokens.colors.title,
-            lineHeight = BODY_LINE_HEIGHT.sp,
         ),
-        cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
         scrollState = scrollState,
         decorator = TextFieldDecorator { innerTextField ->
             Box {
                 if (buffer.text.isEmpty()) {
                     Text(
                         text = placeholder,
-                        style = LoomaTokens.type.body,
+                        style = LoomaTokens.type.noteBody,
                         color = LoomaTokens.colors.muted,
                     )
                 }
@@ -500,9 +511,7 @@ private fun NoteReadBody(
     ) {
         Text(
             text = title.ifBlank { fallbackTitle },
-            style = MaterialTheme.typography.headlineMedium.copy(
-                fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
-            ),
+            style = LoomaTokens.type.noteTitle,
             color = LoomaTokens.colors.title,
         )
         MarkdownBody(
@@ -538,7 +547,7 @@ private fun NoteLoadingScreen(
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = LoomaTokens.colors.page,
+        containerColor = LoomaTokens.colors.noteCanvas,
         topBar = {
             NoteTopBar(
                 mode = NoteMode.Read,
@@ -564,7 +573,7 @@ private fun NoteLoadErrorScreen(
 ) {
     Scaffold(
         modifier = modifier.fillMaxSize(),
-        containerColor = LoomaTokens.colors.page,
+        containerColor = LoomaTokens.colors.noteCanvas,
         topBar = {
             NoteTopBar(
                 mode = NoteMode.Read,

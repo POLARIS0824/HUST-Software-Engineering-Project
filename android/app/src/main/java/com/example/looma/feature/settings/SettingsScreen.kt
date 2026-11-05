@@ -24,6 +24,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -41,6 +42,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -51,6 +54,7 @@ import com.example.looma.data.settings.AppLanguage
 import com.example.looma.data.settings.AppLocale
 import com.example.looma.data.settings.AppSettings
 import com.example.looma.data.settings.ThemePreset
+import com.example.looma.domain.markdown.ToolbarItem
 import com.example.looma.feature.vault.VaultSetupError
 import com.example.looma.feature.vault.VaultSetupViewModel
 import com.example.looma.feature.vault.rememberVaultPickerActions
@@ -100,6 +104,7 @@ fun SettingsRoute(
         onThemePresetSelect = settingsViewModel::setThemePreset,
         onLanguageSelect = AppLocale::apply,
         onKeepEmptyNotesChange = settingsViewModel::setKeepEmptyNotes,
+        onToolbarOrderChange = settingsViewModel::setToolbarOrder,
         onNavigateUp = onNavigateUp,
         modifier = modifier,
     )
@@ -121,11 +126,13 @@ fun SettingsScreen(
     onThemePresetSelect: (ThemePreset) -> Unit,
     onLanguageSelect: (AppLanguage) -> Unit,
     onKeepEmptyNotesChange: (Boolean) -> Unit,
+    onToolbarOrderChange: (List<ToolbarItem>) -> Unit,
     onNavigateUp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var themeDialogVisible by remember { mutableStateOf(false) }
     var languageDialogVisible by remember { mutableStateOf(false) }
+    var toolbarSheetVisible by remember { mutableStateOf(false) }
     val dynamicColorSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     Scaffold(
@@ -244,6 +251,11 @@ fun SettingsScreen(
 
             SettingsSectionHeader(stringResource(R.string.settings_section_notes))
             SettingsCard {
+                SettingsRow(
+                    title = stringResource(R.string.settings_toolbar_order),
+                    description = stringResource(R.string.settings_toolbar_order_desc),
+                    onClick = { toolbarSheetVisible = true },
+                )
                 SettingsSwitchRow(
                     title = stringResource(R.string.settings_keep_empty_notes),
                     description = stringResource(R.string.settings_keep_empty_notes_desc),
@@ -317,6 +329,13 @@ fun SettingsScreen(
                 languageDialogVisible = false
             },
             onDismiss = { languageDialogVisible = false },
+        )
+    }
+    if (toolbarSheetVisible) {
+        ToolbarOrderSheet(
+            current = settings.toolbarOrder,
+            onSave = { onToolbarOrderChange(it); toolbarSheetVisible = false },
+            onDismiss = { toolbarSheetVisible = false },
         )
     }
 }
@@ -533,4 +552,89 @@ private fun SettingsCard(content: @Composable () -> Unit) {
         // Surface 的内容放在 Box 里，多行必须自己叠成 Column，否则会重叠
         Column { content() }
     }
+}
+
+@Composable
+private fun ToolbarOrderSheet(
+    current: List<ToolbarItem>,
+    onSave: (List<ToolbarItem>) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var order by remember { mutableStateOf(current.filter { it.isAvailableInToolbar() }) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp)) {
+            Text(
+                text = stringResource(R.string.settings_toolbar_order),
+                style = MaterialTheme.typography.headlineSmall,
+                color = LoomaTokens.colors.title,
+            )
+            Column(
+                modifier = Modifier
+                    .weight(1f, fill = false)
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                order.forEachIndexed { index, item ->
+                    val label = stringResource(item.labelRes())
+                    val upLabel = stringResource(R.string.toolbar_move_up, label)
+                    val downLabel = stringResource(R.string.toolbar_move_down, label)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(label, modifier = Modifier.weight(1f))
+                        IconButton(
+                            enabled = index > 0,
+                            onClick = {
+                                order = order.toMutableList().apply { add(index - 1, removeAt(index)) }
+                            },
+                            modifier = Modifier.semantics { contentDescription = upLabel },
+                        ) { Text("↑") }
+                        IconButton(
+                            enabled = index < order.lastIndex,
+                            onClick = {
+                                order = order.toMutableList().apply { add(index + 1, removeAt(index)) }
+                            },
+                            modifier = Modifier.semantics { contentDescription = downLabel },
+                        ) { Text("↓") }
+                    }
+                }
+            }
+            TextButton(onClick = {
+                order = ToolbarItem.DEFAULT_ORDER.filter { it.isAvailableInToolbar() }
+            }) { Text(stringResource(R.string.toolbar_reset)) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.dialog_cancel)) }
+                TextButton(onClick = {
+                    onSave(order + current.filterNot { it.isAvailableInToolbar() })
+                }) { Text(stringResource(R.string.dialog_save)) }
+            }
+        }
+    }
+}
+
+private fun ToolbarItem.isAvailableInToolbar(): Boolean =
+    this != ToolbarItem.InsertImage && this != ToolbarItem.InsertFile
+
+private fun ToolbarItem.labelRes(): Int = when (this) {
+    ToolbarItem.Undo -> R.string.editor_undo
+    ToolbarItem.Redo -> R.string.editor_redo
+    ToolbarItem.WikiLink -> R.string.editor_wikilink
+    ToolbarItem.Bold -> R.string.editor_bold
+    ToolbarItem.Italic -> R.string.editor_italic
+    ToolbarItem.Strikethrough -> R.string.editor_strikethrough
+    ToolbarItem.Highlight -> R.string.editor_highlight
+    ToolbarItem.Link -> R.string.editor_link
+    ToolbarItem.InlineCode -> R.string.editor_inline_code
+    ToolbarItem.Heading1 -> R.string.editor_h1
+    ToolbarItem.Heading2 -> R.string.editor_h2
+    ToolbarItem.Heading3 -> R.string.editor_h3
+    ToolbarItem.BulletList -> R.string.editor_bullet_list
+    ToolbarItem.NumberedList -> R.string.editor_numbered_list
+    ToolbarItem.Checklist -> R.string.editor_checklist
+    ToolbarItem.Quote -> R.string.editor_quote
+    ToolbarItem.CodeBlock -> R.string.editor_code_block
+    ToolbarItem.Table -> R.string.editor_table
+    ToolbarItem.Divider -> R.string.editor_divider
+    ToolbarItem.InsertImage, ToolbarItem.InsertFile -> error("Unavailable toolbar item")
 }

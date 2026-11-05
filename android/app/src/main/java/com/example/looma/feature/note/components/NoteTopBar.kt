@@ -31,7 +31,7 @@ internal fun NoteTopBar(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = LoomaTokens.colors.page,
+        color = LoomaTokens.colors.noteCanvas,
     ) {
         Row(
             modifier = Modifier

@@ -113,6 +113,44 @@ class HomeVaultIndexTest {
         assertEquals(1, index.noteCountUnder(FolderPath("项目/周报")))
     }
 
+    @Test
+    fun `title orders use stable path tie breaks independent of scan order`() {
+        val a = note("Alpha", folder = "a")
+        val b = note("alpha", folder = "b")
+        val z = note("Zulu")
+        val notes = listOf(z, b, a)
+        assertEquals(listOf(a, b, z), notes.orderedBy(HomeSort.TITLE))
+        assertEquals(listOf(z, a, b), notes.orderedBy(HomeSort.TITLE_DESCENDING))
+        assertEquals(notes.orderedBy(HomeSort.TITLE), notes.reversed().orderedBy(HomeSort.TITLE))
+    }
+
+    @Test
+    fun `an older reveal acknowledgment cannot consume a new creation`() {
+        val first = RecentReveal(1, note("first").id)
+        val second = RecentReveal(2, note("second").id)
+        val pending = HomeUiState(recentReveal = second)
+        assertEquals(second, pending.acknowledgeReveal(first).recentReveal)
+        assertEquals(null, pending.acknowledgeReveal(second).recentReveal)
+    }
+
+    @Test
+    fun `reveal waits for its own note rather than any recent item`() {
+        val target = note("new")
+        val request = RecentReveal(1, target.id)
+        assertEquals(false, request.presentIn(emptyList()))
+        assertEquals(false, request.presentIn(listOf(HomeRecentItem(note("old"), ""))))
+        assertTrue(request.presentIn(listOf(HomeRecentItem(target, ""))))
+    }
+
+    @Test
+    fun `folder direction follows ancestry rather than depth or prefix`() {
+        assertEquals(FolderMotion.Forward, folderMotion(FolderPath.Root, FolderPath("a/b")))
+        assertEquals(FolderMotion.Backward, folderMotion(FolderPath("a/b"), FolderPath.Root))
+        assertEquals(FolderMotion.Forward, folderMotion(FolderPath("a"), FolderPath("a/b/c")))
+        assertEquals(FolderMotion.Replace, folderMotion(FolderPath("a/b"), FolderPath("x")))
+        assertEquals(FolderMotion.Replace, folderMotion(FolderPath("a"), FolderPath("ab/c")))
+    }
+
     private fun indexOf(notes: List<HomeNoteItem>, folders: List<VaultFolder>): HomeVaultIndex =
         HomeVaultIndex.build(folders, notes)
 

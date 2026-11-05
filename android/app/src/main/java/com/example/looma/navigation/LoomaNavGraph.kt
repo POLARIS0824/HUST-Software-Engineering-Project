@@ -123,19 +123,28 @@ fun LoomaNavGraph(
     ) {
         NavDisplay(
             modifier = Modifier.fillMaxSize(),
+
             backStack = backStack,
-            onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
+            onBack = {
+                if (backStack.size > 1) {
+                    backStack.removeLastOrNull()
+                }
+            },
+
             entryDecorators = listOf(
                 rememberSaveableStateHolderNavEntryDecorator(),
                 rememberViewModelStoreNavEntryDecorator(),
             ),
+
             entryProvider = entryProvider {
+
                 entry<LoomaRoute.VaultSetup> {
                     VaultSetupRoute(
                         viewModel = vaultSetupViewModel,
                         modifier = Modifier.fillMaxSize().safeDrawingPadding(),
                     )
                 }
+
                 entry<LoomaRoute.Home> {
                     val homeViewModel: HomeViewModel = viewModel(
                         factory = HomeViewModel.factory(
@@ -159,6 +168,7 @@ fun LoomaNavGraph(
                         },
                     )
                 }
+
                 entry<LoomaRoute.Trash> {
                     val trashViewModel: TrashViewModel = viewModel(
                         factory = TrashViewModel.factory(noteRepository),
@@ -168,6 +178,7 @@ fun LoomaNavGraph(
                         onNavigateUp = { if (backStack.size > 1) backStack.removeLastOrNull() },
                     )
                 }
+
                 entry<LoomaRoute.Settings> {
                     val settingsViewModel: SettingsViewModel = viewModel(
                         factory = SettingsViewModel.factory(settingsRepository),
@@ -183,6 +194,7 @@ fun LoomaNavGraph(
                         onNavigateUp = { if (backStack.size > 1) backStack.removeLastOrNull() },
                     )
                 }
+
                 entry<LoomaRoute.Note> { route ->
                     val noteId = NoteId(
                         vaultId = VaultId(route.vaultId),
@@ -198,9 +210,13 @@ fun LoomaNavGraph(
                     )
                     NoteRoute(
                         viewModel = noteViewModel,
-                        // 没有一级标题的笔记显示占位文案，而不是文件名：文件名是存储细节，
-                        // 它带的去重序号不该变成用户看到的标题
-                        fallbackTitle = stringResource(R.string.home_untitled_note),
+                        // 已有笔记与索引预览一致：没有一级标题时显示文件名。
+                        // 新建笔记仍使用通用占位文案，避免暴露自动生成的去重后缀。
+                        fallbackTitle = if (route.isNew) {
+                            stringResource(R.string.home_untitled_note)
+                        } else {
+                            route.relativePath.substringAfterLast('/').substringBeforeLast('.')
+                        },
                         isNew = route.isNew,
                         onNavigateUp = { if (backStack.size > 1) backStack.removeLastOrNull() },
                         onOpenNote = { noteId -> backStack.add(LoomaRoute.Note.from(noteId)) },

@@ -31,13 +31,14 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.looma.R
 import com.example.looma.domain.wiki.WikiContext
 import com.example.looma.ui.theme.LoomaTokens
+import com.example.looma.ui.theme.LoomaTypography
+import com.example.looma.ui.theme.LoomaPreviewTypography
 import com.mikepenz.markdown.annotator.annotatorSettings
 import com.mikepenz.markdown.annotator.buildMarkdownAnnotatedString
 import com.mikepenz.markdown.compose.components.CurrentComponentsBridge
@@ -62,8 +63,7 @@ import org.intellij.markdown.ast.getTextInNode
 /**
  * 渲染库与本项目之间的唯一适配层。
  *
- * 字号刻度对齐 Obsidian「Things」主题：正文 16 / 行高 1.5，
- * 标题与代码的倍数见 [RATIOS]，标题不再比正文大两个量级。
+ * 字体角色由 LoomaTokens 定义，阅读页与编辑页共用正文刻度。
  * 复选框和列表符号都换成固定宽度列，行内首行文字与标记因此对齐。
  */
 @Immutable
@@ -73,30 +73,6 @@ data class LoomaMarkdownTheme(
     val padding: MarkdownPadding,
 )
 
-private data class MarkdownRatios(
-    val h1: Float,
-    val h2: Float,
-    val h3: Float,
-    val h4: Float,
-    val h5: Float,
-    val h6: Float,
-    val code: Float,
-    val lineHeight: Float,
-)
-
-/** 标题与代码相对正文的倍数，比例只在这张表里出现一次 */
-private val RATIOS = MarkdownRatios(
-    h1 = 1.7f,
-    h2 = 1.5f,
-    h3 = 1.2f,
-    h4 = 1.1f,
-    h5 = 1f,
-    h6 = 0.9f,
-    code = 0.9f,
-    lineHeight = 1.35f,
-)
-
-/** 正文之外的刻度，全部由正文基准推导，换主题只改基准 */
 @Immutable
 internal data class LoomaMarkdownScale(
     val h1: TextStyle,
@@ -109,31 +85,34 @@ internal data class LoomaMarkdownScale(
     val inlineCode: TextStyle,
 )
 
-internal fun loomaMarkdownScale(base: TextStyle): LoomaMarkdownScale = LoomaMarkdownScale(
-    h1 = base.scaled(RATIOS.h1, FontWeight.Bold),
-    h2 = base.scaled(RATIOS.h2, FontWeight.Bold),
-    h3 = base.scaled(RATIOS.h3, FontWeight.SemiBold),
-    h4 = base.scaled(RATIOS.h4, FontWeight.SemiBold),
-    h5 = base.scaled(RATIOS.h5, FontWeight.SemiBold),
-    h6 = base.scaled(RATIOS.h6, FontWeight.SemiBold),
-    code = base.copy(fontSize = base.fontSize * RATIOS.code),
-    inlineCode = base.copy(fontSize = base.fontSize * RATIOS.code),
+internal fun loomaMarkdownScale(
+    type: LoomaTypography,
+    compact: Boolean = false,
+    preview: LoomaPreviewTypography? = null,
+): LoomaMarkdownScale = LoomaMarkdownScale(
+    h1 = if (compact) preview?.headings?.h1 ?: type.cardTitle else type.noteHeadings.h1,
+    h2 = if (compact) preview?.headings?.h2 ?: type.folderName else type.noteHeadings.h2,
+    h3 = if (compact) preview?.headings?.h3 ?: type.folderName else type.noteHeadings.h3,
+    h4 = if (compact) preview?.headings?.h4 ?: type.folderName else type.noteHeadings.h4,
+    h5 = if (compact) preview?.headings?.h5 ?: type.folderName else type.noteHeadings.h5,
+    h6 = if (compact) preview?.headings?.h6 ?: type.folderName else type.noteHeadings.h6,
+    code = if (compact) preview?.code ?: type.cardBody.copy(fontFamily = type.noteCode.fontFamily) else type.noteCode,
+    inlineCode = if (compact) preview?.code ?: type.cardBody.copy(fontFamily = type.noteCode.fontFamily) else type.noteCode,
 )
 
-/** 行高跟着字号一起缩，标题因此不会比正文松 */
-private fun TextStyle.scaled(ratio: Float, weight: FontWeight): TextStyle {
-    val size = fontSize.value * ratio
-    return copy(fontSize = size.sp, lineHeight = (size * RATIOS.lineHeight).sp, fontWeight = weight)
-}
-
-/** 正文、卡片预览各自传入基准字号，标题比例与间距都从这一个基准推导 */
 @Composable
-fun loomaMarkdownTheme(base: TextStyle, compact: Boolean = false): LoomaMarkdownTheme {
+fun loomaMarkdownTheme(
+    base: TextStyle,
+    compact: Boolean = false,
+    preview: LoomaPreviewTypography? = null,
+    textColor: Color = LoomaTokens.colors.title,
+): LoomaMarkdownTheme {
     val colors = LoomaTokens.colors
-    val scale = remember(base) { loomaMarkdownScale(base) }
+    val type = LoomaTokens.type
+    val scale = remember(type, compact, preview) { loomaMarkdownScale(type, compact, preview) }
     return LoomaMarkdownTheme(
         colors = markdownColor(
-            text = colors.title,
+            text = textColor,
             codeBackground = colors.chip.copy(alpha = 0.6f),
             inlineCodeBackground = colors.chip.copy(alpha = 0.6f),
             dividerColor = colors.divider,
@@ -142,20 +121,20 @@ fun loomaMarkdownTheme(base: TextStyle, compact: Boolean = false): LoomaMarkdown
             highlightBackground = colors.chip,
         ),
         typography = markdownTypography(
-            text = base,
-            paragraph = base,
-            list = base,
-            ordered = base,
-            bullet = base,
-            quote = base.copy(fontStyle = FontStyle.Italic),
-            code = scale.code,
-            inlineCode = scale.inlineCode,
-            table = base,
-            h1 = scale.h1,
-            h2 = scale.h2,
-            h3 = scale.h3,
-            h4 = scale.h4,
-            h5 = scale.h5,
+            text = base.copy(color = textColor),
+            paragraph = base.copy(color = textColor),
+            list = base.copy(color = textColor),
+            ordered = base.copy(color = textColor),
+            bullet = base.copy(color = textColor),
+            quote = base.copy(fontStyle = FontStyle.Italic, color = textColor),
+            code = scale.code.copy(color = textColor),
+            inlineCode = scale.inlineCode.copy(color = textColor),
+            table = base.copy(color = textColor),
+            h1 = scale.h1.copy(color = textColor),
+            h2 = scale.h2.copy(color = textColor),
+            h3 = scale.h3.copy(color = textColor),
+            h4 = scale.h4.copy(color = textColor),
+            h5 = scale.h5.copy(color = textColor),
             h6 = scale.h6.copy(color = colors.muted),
         ),
         padding = markdownPadding(
@@ -304,6 +283,7 @@ private fun LoomaMarkdownParagraph(model: MarkdownComponentModel, links: WikiAnn
             buildMarkdownAnnotatedString(model.content, model.node, settings)
         }.withSynthItalic().let { links?.invoke(it) ?: it }
     }
+    if (annotated.isEmpty()) return
     MarkdownText(
         content = annotated,
         node = model.node,

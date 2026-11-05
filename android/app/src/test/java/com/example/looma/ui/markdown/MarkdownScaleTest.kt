@@ -5,25 +5,23 @@ import com.example.looma.ui.theme.loomaTypography
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/**
- * Markdown 的标题与代码不自己定字号，全部由正文基准乘出来。
- *
- * 换正文角色时整条阶梯跟着走，页面不需要逐个改。
- */
 class MarkdownScaleTest {
 
-    private val body = loomaTypography(Typography()).body
+    private val type = loomaTypography(Typography())
 
     @Test
-    fun `headings and code derive from the body base`() {
-        val scale = loomaMarkdownScale(body)
-        assertEquals(body.fontSize.value * 1.7f, scale.h1.fontSize.value, 0.01f)
-        assertEquals(body.fontSize.value * 0.9f, scale.code.fontSize.value, 0.01f)
+    fun `reading hierarchy stays distinct from compact card previews`() {
+        val reading = loomaMarkdownScale(type)
+        val preview = loomaMarkdownScale(type, compact = true)
+        org.junit.Assert.assertTrue(reading.h1.fontSize > preview.h1.fontSize)
+        org.junit.Assert.assertTrue(reading.h1.fontSize > type.noteBody.fontSize)
+        org.junit.Assert.assertTrue(reading.h2.fontSize >= reading.h3.fontSize)
+        assertEquals(type.noteBody.lineHeight, reading.code.lineHeight)
     }
 
     @Test
-    fun `heading line height follows the heading size`() {
-        val scale = loomaMarkdownScale(body)
-        assertEquals(scale.h1.fontSize.value * 1.35f, scale.h1.lineHeight.value, 0.01f)
+    fun `code and prose have separate font families`() {
+        val scale = loomaMarkdownScale(type)
+        org.junit.Assert.assertNotEquals(type.noteBody.fontFamily, scale.code.fontFamily)
     }
 }

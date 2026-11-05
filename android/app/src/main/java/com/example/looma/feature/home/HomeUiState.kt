@@ -4,6 +4,7 @@ import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.model.NoteProperties
 import com.example.looma.domain.model.NoteSummary
+import java.util.Locale
 
 /** 首页能报给用户的错误，文案由 UI 层按资源映射 */
 sealed interface HomeError {
@@ -136,7 +137,15 @@ data class HomeNoteItem(
             .removeSuffix(".md")
 }
 
-enum class HomeSort { LAST_MODIFIED, TITLE }
+data class RecentReveal(val generation: Long, val noteId: NoteId)
+
+internal fun RecentReveal.presentIn(recents: List<HomeRecentItem>): Boolean =
+    recents.any { it.note.id == noteId }
+
+internal fun HomeUiState.acknowledgeReveal(request: RecentReveal): HomeUiState =
+    if (recentReveal == request) copy(recentReveal = null) else this
+
+enum class HomeSort { LAST_MODIFIED, TITLE, TITLE_DESCENDING }
 
 /**
  * 首页唯一状态源。
@@ -166,8 +175,8 @@ data class HomeUiState(
     val createdNote: NoteId? = null,
     /** 一次性事件：非选择态下点到的笔记，消费后置空 */
     val noteToOpen: NoteId? = null,
-    /** 一次性事件：新建完成后把「最近」滚回最前面 */
-    val scrollRecentsToStart: Boolean = false,
+    /** 新建笔记的滚动请求，目标出现在列表且滚动完成后才确认 */
+    val recentReveal: RecentReveal? = null,
     /** 文件视图：当前浏览路径、面包屑、最近笔记与当前层的文件夹 / 笔记 */
     val files: HomeFilesState = HomeFilesState(),
     /** 唯一的选择事实 */
@@ -196,8 +205,9 @@ internal fun List<HomeNoteItem>.matching(query: String): List<HomeNoteItem> {
 }
 
 internal fun List<HomeNoteItem>.orderedBy(sort: HomeSort): List<HomeNoteItem> = when (sort) {
-    HomeSort.LAST_MODIFIED -> sortedByDescending { it.summary.modifiedAt }
-    HomeSort.TITLE -> sortedBy { it.summary.title.lowercase() }
+    HomeSort.LAST_MODIFIED -> sortedWith(compareByDescending<HomeNoteItem> { it.summary.modifiedAt }.thenBy { it.listKey })
+    HomeSort.TITLE -> sortedWith(compareBy<HomeNoteItem> { it.summary.title.lowercase(Locale.ROOT) }.thenBy { it.listKey })
+    HomeSort.TITLE_DESCENDING -> sortedWith(compareByDescending<HomeNoteItem> { it.summary.title.lowercase(Locale.ROOT) }.thenBy { it.listKey })
 }
 
 /** 选择态下按当前排序展开选中项；[HomeSelection.Folder] 没有笔记，自然是空表 */

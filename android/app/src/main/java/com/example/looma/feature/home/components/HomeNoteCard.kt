@@ -31,7 +31,7 @@ import com.example.looma.ui.theme.LoomaTokens
 /**
  * 单张笔记卡片：封面、标题、Markdown 正文开头与标签。
  *
- * 长按进入选择模式，选择期间整张卡片换成主色容器色并描边；
+ * 长按进入选择模式，选择期间用主色描边；
  * 点击行为由调用方决定（选择期间是切换选中，否则打开笔记）。
  */
 @Composable
@@ -57,7 +57,10 @@ internal fun HomeNoteCard(
         shape = shape,
         // 选中只加描边，不改底色：整块换色会让卡片里的 Markdown 和标签一起被染色
         color = LoomaTokens.colors.card,
-        border = if (isSelected) BorderStroke(2.dp, LoomaTokens.colors.accent) else null,
+        border = BorderStroke(
+            if (isSelected) 2.dp else 1.dp,
+            if (isSelected) LoomaTokens.colors.accent else LoomaTokens.colors.divider,
+        ),
     ) {
         Column {
             note.coverPath?.let { path ->
@@ -67,12 +70,12 @@ internal fun HomeNoteCard(
                 )
             }
             Column(
-                modifier = Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth().padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
                     text = note.summary.title,
-                    style = LoomaTokens.type.cardTitle,
+                    style = LoomaTokens.type.homeNoteTitle,
                     color = LoomaTokens.colors.title,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -80,17 +83,21 @@ internal fun HomeNoteCard(
                 if (note.markdownSnippet.isBlank()) {
                     Text(
                         text = stringResource(R.string.home_empty_note),
-                        style = LoomaTokens.type.cardBody,
+                        style = LoomaTokens.type.homeNotePreview.body,
                         color = LoomaTokens.colors.muted,
                     )
                 } else {
                     Box(
                         Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 240.dp)
+                            .heightIn(max = 400.dp)
                             .clipToBounds(),
                     ) {
-                        MarkdownPreview(markdown = note.markdownSnippet)
+                        MarkdownPreview(
+                            markdown = note.markdownSnippet,
+                            typography = LoomaTokens.type.homeNotePreview,
+                            textColor = LoomaTokens.colors.body,
+                        )
                     }
                 }
                 if (note.summary.tags.isNotEmpty()) {

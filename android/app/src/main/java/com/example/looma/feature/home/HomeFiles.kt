@@ -71,7 +71,7 @@ internal class HomeVaultIndex private constructor(
     }
 
     fun recents(limit: Int = RECENT_LIMIT): List<HomeRecentItem> =
-        allNotes.sortedByDescending { it.summary.modifiedAt }
+        allNotes.orderedBy(HomeSort.LAST_MODIFIED)
             .take(limit)
             .map { HomeRecentItem(note = it, markdown = it.markdownSnippet) }
 
@@ -132,3 +132,12 @@ internal fun FolderPath.parentFolder(): FolderPath {
 }
 
 internal const val RECENT_LIMIT = 10
+
+internal enum class FolderMotion { Forward, Backward, Replace }
+
+internal fun folderMotion(from: FolderPath, to: FolderPath): FolderMotion = when {
+    from == to -> FolderMotion.Replace
+    from == FolderPath.Root || to.relativePath.startsWith(from.relativePath + "/") -> FolderMotion.Forward
+    to == FolderPath.Root || from.relativePath.startsWith(to.relativePath + "/") -> FolderMotion.Backward
+    else -> FolderMotion.Replace
+}

@@ -8,6 +8,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
@@ -52,7 +54,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -117,7 +118,7 @@ data class HomeActions(
     val onUndo: (HomeUndo) -> Unit = {},
     val onMessageShown: () -> Unit = {},
     val onRefresh: () -> Unit = {},
-    val onRecentsScrolled: () -> Unit = {},
+    val onRecentRevealed: (RecentReveal) -> Unit = {},
     val onMenuClick: () -> Unit = {},
     val onSettingsClick: () -> Unit = {},
     val onRetryClick: () -> Unit = {},
@@ -206,7 +207,7 @@ fun HomeRoute(
             onUndo = viewModel::undo,
             onMessageShown = viewModel::onMessageShown,
             onRefresh = viewModel::refreshFromUser,
-            onRecentsScrolled = viewModel::onRecentsScrolled,
+            onRecentRevealed = viewModel::onRecentRevealed,
             onMenuClick = onMenuClick,
             onSettingsClick = onSettingsClick,
             onRetryClick = viewModel::refresh,
@@ -350,7 +351,11 @@ fun HomeScreen(
                 HomeContent(
                     state = state,
                     contentPadding = PaddingValues(),
-                    actions = actions,
+                    actions = actions.copy(onRecentRevealed = { request ->
+                        scrollBehavior.scrollState.scrollOffset = 0f
+                        scrollBehavior.scrollState.contentOffset = 0f
+                        actions.onRecentRevealed(request)
+                    }),
                 )
             }
         }
@@ -480,6 +485,11 @@ private fun HomeSortSheet(current: HomeSort, onSelect: (HomeSort) -> Unit) {
             selected = current == HomeSort.TITLE,
             onClick = { onSelect(HomeSort.TITLE) },
         )
+        HomeSortOption(
+            label = stringResource(R.string.home_sort_title_descending),
+            selected = current == HomeSort.TITLE_DESCENDING,
+            onClick = { onSelect(HomeSort.TITLE_DESCENDING) },
+        )
     }
 }
 
@@ -515,12 +525,14 @@ private fun HomeSortOption(label: String, selected: Boolean, onClick: () -> Unit
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun HomeContent(
     state: HomeUiState,
     contentPadding: PaddingValues,
     actions: HomeActions,
 ) {
+    val motion = MaterialTheme.motionScheme
     Column(Modifier.fillMaxSize().padding(contentPadding)) {
         state.error?.let { error ->
             HomeErrorBanner(error = error, onRetryClick = actions.onRetryClick)
@@ -539,10 +551,26 @@ private fun HomeContent(
                 )
             }
 
-            else -> key(state.files.path) {
+            else -> AnimatedContent(
+                targetState = state,
+                contentKey = { it.files.path },
+                transitionSpec = {
+                    val direction = when (folderMotion(initialState.files.path, targetState.files.path)) {
+                        FolderMotion.Forward -> 1
+                        FolderMotion.Backward -> -1
+                        FolderMotion.Replace -> 0
+                    }
+                    val spatial = motion.defaultSpatialSpec<IntOffset>()
+                    val effects = motion.defaultEffectsSpec<Float>()
+                    (fadeIn(effects) + slideInHorizontally(spatial) { direction * it / 8 })
+                        .togetherWith(fadeOut(effects) + slideOutHorizontally(spatial) { -direction * it / 8 })
+                        .using(null)
+                },
+                label = "home-folder",
+            ) { snapshot ->
                 Column(Modifier.fillMaxSize()) {
-                    if (!state.files.isAtRoot) {
-                        HomeBreadcrumb(crumbs = state.files.crumbs, onBack = actions.onNavigateUp)
+                    if (!snapshot.files.isAtRoot) {
+                        HomeBreadcrumb(crumbs = snapshot.files.crumbs, onBack = actions.onNavigateUp)
                     }
                     // 选择态下点空白处取消选择；不在选择态时不挂 clickable，
                     // 手势树与原来完全一致，滚动和下拉刷新都不受影响
@@ -550,7 +578,7 @@ private fun HomeContent(
                         Modifier
                             .fillMaxSize()
                             .then(
-                                if (state.isSelecting) {
+                                if (snapshot.isSelecting) {
                                     Modifier.clickable(
                                         interactionSource = remember { MutableInteractionSource() },
                                         indication = null,
@@ -562,11 +590,11 @@ private fun HomeContent(
                             ),
                     ) {
                         HomeFilesGrid(
-                            files = state.files,
-                            isGridMode = state.isGridMode,
-                            selection = state.selection,
-                            scrollRecentsToStart = state.scrollRecentsToStart,
-                            onRecentsScrolled = actions.onRecentsScrolled,
+                            files = snapshot.files,
+                            isGridMode = snapshot.isGridMode,
+                            selection = snapshot.selection,
+                            recentReveal = snapshot.recentReveal,
+                            onRecentRevealed = actions.onRecentRevealed,
                             onFolderClick = actions.onFolderClick,
                             onFolderLongClick = actions.onFolderLongClick,
                             onNoteClick = actions.onNoteClick,

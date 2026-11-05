@@ -86,4 +86,44 @@ class ImageReferenceTest {
         )
         assertNull(resolveCover(root, note, "https://img.example.com/shot.png"))
     }
+    @Test
+    fun `preserves remote encoding queries and fragments`() {
+        val url = "https://img.example.com/a%20b.png?path=x%2Fy&plus=a+b#part"
+        assertEquals(ImageSource.Remote(url), resolve(url))
+        assertEquals(ImageSource.Remote(url), resolve("$url|300"))
+    }
+
+    @Test
+    fun `decodes local paths without treating plus as space`() {
+        File(root, "notes/a+b #c.png").writeBytes(byteArrayOf(1))
+        assertEquals(
+            ImageSource.Local(File(root, "notes/a+b #c.png").canonicalPath),
+            resolve("a+b%20%23c.png#display-fragment"),
+        )
+        assertNull(resolve("%2e%2e/%2e%2e/outside.png"))
+        assertNull(resolve("%2foutside.png"))
+        assertNull(resolve("bad%XY.png"))
+    }
+
+    @Test
+    fun `filename attachments search vault deterministically after nearby paths`() {
+        val a = File(root, "attachments-a").apply { mkdirs() }
+        val z = File(root, "attachments-z").apply { mkdirs() }
+        File(z, "unique.png").writeBytes(byteArrayOf(1))
+        File(a, "unique.png").writeBytes(byteArrayOf(1))
+        assertEquals(ImageSource.Local(File(a, "unique.png").canonicalPath), resolve("unique.png"))
+        File(root, "notes/unique.png").writeBytes(byteArrayOf(1))
+        assertEquals(ImageSource.Local(File(root, "notes/unique.png").canonicalPath), resolve("unique.png"))
+        assertNull(resolve("missing/unique.png"))
+    }
+
+    @Test
+    fun `does not search trashed or metadata attachments`() {
+        for (folder in listOf(".trash", ".obsidian", ".git")) {
+            File(root, folder).mkdirs()
+            File(root, "$folder/hidden.png").writeBytes(byteArrayOf(1))
+        }
+        assertNull(resolve("hidden.png"))
+    }
+
 }

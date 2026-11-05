@@ -10,6 +10,7 @@ import com.example.looma.data.note.NoteRepository
 import com.example.looma.data.settings.SettingsRepository
 import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.wiki.WikiContext
+import com.example.looma.feature.note.NoteViewModel.Companion.SAVE_INTERVAL_MS
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -47,7 +48,14 @@ class NoteViewModel(
     private var forceNextSave = false
     private var leaving = false
 
-    init { load() }
+    init {
+        load()
+        viewModelScope.launch {
+            settingsRepository.settings.collect { settings ->
+                _uiState.update { it.copy(toolbarOrder = settings.toolbarOrder) }
+            }
+        }
+    }
 
     fun load() {
         if (_uiState.value.isDirty || loadJob?.isActive == true) return

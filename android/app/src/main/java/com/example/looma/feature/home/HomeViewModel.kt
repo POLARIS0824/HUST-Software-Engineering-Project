@@ -40,6 +40,7 @@ class HomeViewModel(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
     private var refreshJob: Job? = null
+    private var revealGeneration = 0L
     private var index: HomeVaultIndex = HomeVaultIndex.Empty
 
     /** 本轮搜索是否已用磁盘正文替换过快照；刷新开始时复位，允许下一轮再补 */
@@ -47,7 +48,7 @@ class HomeViewModel(
     private var hydrateJob: Job? = null
 
     /** 重新扫描笔记库；同一时刻只保留最近一次请求 */
-    fun refresh() {
+    fun refresh(): Job {
         refreshJob?.cancel()
         hydrateJob?.cancel()
         hydrateJob = null
@@ -72,6 +73,9 @@ class HomeViewModel(
                         notes = notes.orderedBy(current.sort),
                         searchResults = notes.matching(current.query).orderedBy(current.sort),
                         files = index.files(path, current.sort),
+                        recentReveal = current.recentReveal?.takeIf { request ->
+                            request.presentIn(index.recents())
+                        },
                         selection = selection,
                         selectedNotes = notes.selected(selection, current.sort),
                         isLoading = false,
@@ -103,6 +107,7 @@ class HomeViewModel(
                 }
             }
         }
+        return refreshJob!!
     }
 
     /** 下拉刷新：只有用户自己触发时才转下拉指示器 */
@@ -197,8 +202,9 @@ class HomeViewModel(
             try {
                 val folder = _uiState.value.files.path
                 val note = noteRepository.createNote(title = title, folder = folder)
-                refresh()
-                _uiState.update { it.copy(createdNote = note.id, scrollRecentsToStart = true) }
+                val request = RecentReveal(++revealGeneration, note.id)
+                _uiState.update { it.copy(createdNote = note.id, recentReveal = request) }
+                refresh().join()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -216,7 +222,7 @@ class HomeViewModel(
     fun onNoteOpened() = _uiState.update { it.copy(noteToOpen = null) }
 
     /** 「最近」滚到最前面之后调用 */
-    fun onRecentsScrolled() = _uiState.update { it.copy(scrollRecentsToStart = false) }
+    fun onRecentRevealed(request: RecentReveal) = _uiState.update { it.acknowledgeReveal(request) }
 
     // ---- 选择：所有点击都从这里进入，规则在 [reduceHomeSelection] 里 ----
 

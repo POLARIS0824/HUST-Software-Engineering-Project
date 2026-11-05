@@ -18,7 +18,8 @@
     <string name="home_untitled_note">Untitled note</string>
     <string name="home_sort_sheet_title">Sort by</string>
     <string name="home_sort_last_modified">Last modified</string>
-    <string name="home_sort_title">Title</string>
+    <string name="home_sort_title">Title A–Z</string>
+    <string name="home_sort_title_descending">Title Z–A</string>
     <string name="home_breadcrumb_root">Home</string>
     <string name="home_breadcrumb_back_description">Go up one folder</string>
     <string name="home_switch_to_list_description">Show as list</string>
@@ -230,4 +231,9 @@
         <item quantity="other">Folder deleted · %1$d notes moved to trash</item>
     </plurals>
     <string name="home_folder_snackbar_deleted_empty">Folder deleted</string>
+    <string name="settings_toolbar_order">Editor toolbar order</string>
+    <string name="settings_toolbar_order_desc">Choose the order of formatting actions</string>
+    <string name="toolbar_move_up">Move %1$s up</string>
+    <string name="toolbar_move_down">Move %1$s down</string>
+    <string name="toolbar_reset">Reset to default</string>
 </resources>

@@ -2,6 +2,7 @@ package com.example.looma.feature.note
 
 import com.example.looma.domain.markdown.EditorDocument
 import com.example.looma.domain.markdown.ImageContext
+import com.example.looma.domain.markdown.ToolbarItem
 import com.example.looma.domain.wiki.WikiContext
 import java.time.Instant
 
@@ -34,6 +35,7 @@ data class NoteUiState(
     val restoredDraft: Boolean = false,
     /** 每换一次正文来源就加一，界面据此重建输入缓冲区 */
     val reloadToken: Int = 0,
+    val toolbarOrder: List<ToolbarItem> = ToolbarItem.DEFAULT_ORDER,
 ) {
     val isDirty: Boolean get() = !isLoading && content != savedContent
 
