@@ -4,6 +4,9 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.util.LruCache
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
@@ -12,6 +15,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.unit.dp
+import com.example.looma.domain.markdown.ImageSize
 import com.example.looma.domain.markdown.ImageSource
 import java.io.ByteArrayOutputStream
 import java.net.HttpURLConnection
@@ -49,15 +54,40 @@ internal class LoomaImageTransformer : ImageTransformer {
     override fun transform(link: String): ImageData? {
         val resolver = LocalImageSourceResolver.current
         // 解析也要进 IO：canonicalFile 会摸文件系统，不能放在 composition 里
-        val loaded by produceState<Bitmap?>(null, link, resolver) {
-            value = withContext(Dispatchers.IO) { resolver(link)?.let(::loadImage) }
+        val loaded by produceState<Pair<ImageSource, Bitmap>?>(null, link, resolver) {
+            value = withContext(Dispatchers.IO) {
+                resolver(link)?.let { source -> loadImage(source)?.let { source to it } }
+            }
         }
-        val bitmap = loaded ?: return null
+        val (source, bitmap) = loaded ?: return null
         return ImageData(
             painter = BitmapPainter(bitmap.asImageBitmap()),
-            modifier = Modifier.fillMaxWidth(),
-            contentScale = ContentScale.FillWidth,
+            modifier = source.size.imageModifier(),
+            contentScale = source.size.imageContentScale(),
         )
+    }
+}
+
+/** 尺寸只影响排版，不进缓存键：同一个文件换尺寸不该重解码 */
+private fun ImageSize?.imageModifier(): Modifier {
+    val width = this?.width
+    val height = this?.height
+    return when {
+        width != null && height != null -> Modifier.size(width.dp, height.dp)
+        width != null -> Modifier.width(width.dp)
+        height != null -> Modifier.height(height.dp)
+        else -> Modifier.fillMaxWidth()
+    }
+}
+
+/** 只给一个维度时保持宽高比，两个都给时按 Obsidian 的语义精确缩放 */
+private fun ImageSize?.imageContentScale(): ContentScale {
+    val width = this?.width
+    val height = this?.height
+    return when {
+        width != null && height != null -> ContentScale.FillBounds
+        height != null -> ContentScale.FillHeight
+        else -> ContentScale.FillWidth
     }
 }
 

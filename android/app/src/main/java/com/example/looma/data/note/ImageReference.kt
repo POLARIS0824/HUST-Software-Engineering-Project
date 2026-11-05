@@ -1,6 +1,7 @@
 package com.example.looma.data.note
 
 import com.example.looma.domain.markdown.ImageSource
+import com.example.looma.domain.markdown.splitImageSize
 import java.io.File
 import java.net.URLDecoder
 import java.nio.file.Files
@@ -8,9 +9,9 @@ import java.nio.file.Files
 private val LOCAL_IMAGE_EXTENSIONS = setOf("png", "jpg", "jpeg", "webp", "gif", "bmp")
 
 internal fun resolveImageSource(vaultRoot: String, noteFile: String, reference: String?): ImageSource? {
-    val raw = reference?.substringBefore('|')?.trim()?.removeSurrounding("<", ">")
-        ?.takeIf { it.isNotBlank() } ?: return null
-    if (raw.startsWith("https://", ignoreCase = true)) return ImageSource.Remote(raw)
+    val (target, size) = splitImageSize(reference ?: return null)
+    val raw = target.trim().removeSurrounding("<", ">").takeIf { it.isNotBlank() } ?: return null
+    if (raw.startsWith("https://", ignoreCase = true)) return ImageSource.Remote(raw, size)
     if (raw.startsWith("http://", ignoreCase = true)) return null
     val src = runCatching {
         URLDecoder.decode(raw.substringBefore('#').replace("+", "%2B"), "UTF-8")
@@ -24,7 +25,7 @@ internal fun resolveImageSource(vaultRoot: String, noteFile: String, reference: 
             canonical.takeIf {
                 it.toPath().startsWith(root.toPath()) && it.isFile &&
                     it.extension.lowercase() in LOCAL_IMAGE_EXTENSIONS
-            }?.absolutePath?.let(ImageSource::Local)
+            }?.absolutePath?.let { ImageSource.Local(it, size) }
         }.getOrNull()
         val direct = listOf(File(File(noteFile).parentFile, src), File(root, src))
             .firstNotNullOfOrNull(::local)
