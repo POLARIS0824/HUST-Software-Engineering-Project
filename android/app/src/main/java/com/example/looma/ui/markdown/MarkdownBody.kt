@@ -54,7 +54,7 @@ fun MarkdownBody(
         )
     }
 
-    val transformer = remember { LoomaImageTransformer() }
+    val transformer = remember { CoilImageTransformer() }
     val flavour = remember { WikiImageFlavour() }
     Markdown(
         content = renderBody,

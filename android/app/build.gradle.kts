@@ -66,6 +66,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.core)
     implementation(libs.markdown.renderer.m3)
     implementation(libs.ratex.compose)
+    implementation(libs.coil.compose)
+    implementation(libs.coil.network.okhttp)
+    implementation(libs.coil.gif)
 
     ksp(libs.androidx.room.compiler)
     testImplementation(libs.junit)
