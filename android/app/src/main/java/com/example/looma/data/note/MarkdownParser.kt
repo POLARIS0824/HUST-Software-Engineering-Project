@@ -2,19 +2,16 @@ package com.example.looma.data.note
 
 import com.example.looma.domain.markdown.MarkdownIndex
 
-/** Markdown 正文中的任务项，表示内容语义，而不是 UI 状态 */
 data class MarkdownChecklistItem(
     val text: String,
     val checked: Boolean,
 )
 
-/** 正文里的一条 `[[目标]]` 或 `![[目标]]`；顺序即出现顺序，重复的也保留 */
 data class MarkdownLink(
     val target: String,
     val embedded: Boolean,
 )
 
-/** 纯文本解析结果，不包含文件访问或页面展示状态 */
 data class MarkdownMetadata(
     val title: String,
     val excerpt: String,
@@ -24,7 +21,8 @@ data class MarkdownMetadata(
     val firstImageReference: String?,
 )
 
-/** 轻量级元信息提取，不负责 Markdown 渲染 */
+internal val TAG_PATTERN = Regex("""(?<![\p{L}\p{N}])#([\p{L}\p{N}_/-]+)""")
+
 internal class MarkdownParser {
     fun parse(text: String, fallbackTitle: String): MarkdownMetadata {
         val body = bodyLines(text)
@@ -57,14 +55,13 @@ internal class MarkdownParser {
         return MarkdownMetadata(
             title = extractTitle(body, fallbackTitle),
             excerpt = excerpt,
-            tags = TAG.findAll(text).map { it.groupValues[1] }.toSet(),
+            tags = TAG_PATTERN.findAll(text).map { it.groupValues[1] }.toSet(),
             checklist = checklist,
             links = links,
             firstImageReference = firstImageReference,
         )
     }
 
-    /** 摘要只做纯文本，渲染交给 Markdown 渲染器，这里不去猜样式 */
     private fun stripInlineMarkdown(line: String): String = line
         .replace(WIKI_IMAGE, "")
         .replace(WIKI_LINK, "$1")
@@ -89,7 +86,6 @@ internal class MarkdownParser {
         val LIST_MARKER = Regex("""^[-*]\s+""")
         val HEADING = Regex("""^#{1,6}\s+.+""")
         val CHECKLIST = Regex("""^\s*[-*+]\s+\[([ xX])\]\s+(.+)$""")
-        val TAG = Regex("""(?<![\p{L}\p{N}])#([\p{L}\p{N}_/-]+)""")
         val MARKDOWN_IMAGE = Regex("""!\[[^]]*]\(([^)]+)\)""")
         val WIKI_IMAGE = Regex("""!\[\[([^]]+)]]""")
         val WIKI_LINK = Regex("""(?<!!)\[\[([^]]+)]]""")

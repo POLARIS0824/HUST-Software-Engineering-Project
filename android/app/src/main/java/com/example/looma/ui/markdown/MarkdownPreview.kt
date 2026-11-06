@@ -12,12 +12,6 @@ import com.mikepenz.markdown.compose.Markdown
 import com.mikepenz.markdown.model.markdownAnnotator
 import org.intellij.markdown.MarkdownElementTypes
 
-/**
- * 卡片里的只读 Markdown 预览。
- *
- * 字体与前景色由调用方选择，Markdown 结构共用 [MarkdownBody] 的适配层。
- * 图片由卡片封面承载，正文摘录不重复占位；复选框只读。
- */
 @Composable
 fun MarkdownPreview(
     markdown: String,
@@ -55,6 +49,7 @@ fun MarkdownPreview(
     )
 }
 
-internal val previewMarkdownAnnotator = markdownAnnotator { _, node ->
-    node.type == MarkdownElementTypes.IMAGE
+internal val previewMarkdownAnnotator =
+    markdownAnnotator(config = loomaAnnotatorConfig) { _, node ->
+        node.type == MarkdownElementTypes.IMAGE
 }
