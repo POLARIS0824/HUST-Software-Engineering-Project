@@ -3,12 +3,14 @@ package com.example.looma.feature.note.components
 import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.IconToggleButton
@@ -38,6 +40,7 @@ internal fun NoteFormatBar(
     onRedo: () -> Unit,
     onWikiLink: () -> Unit,
     toolbarOrder: List<ToolbarItem> = ToolbarItem.DEFAULT_ORDER,
+    isUploadingImage: Boolean = false,
     onInsertImage: () -> Unit = {},
     onInsertFile: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -54,7 +57,7 @@ internal fun NoteFormatBar(
                 .padding(horizontal = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            toolbarOrder.filterNot { it == ToolbarItem.InsertImage || it == ToolbarItem.InsertFile }.forEach { item ->
+            toolbarOrder.filterNot { it == ToolbarItem.InsertFile }.forEach { item ->
                 when (item) {
                     ToolbarItem.Undo -> HistoryButton(
                         icon = R.drawable.ic_editor_undo,
@@ -84,18 +87,30 @@ internal fun NoteFormatBar(
                         )
                     }
 
-                    ToolbarItem.InsertImage -> IconButton(
-                        onClick = onInsertImage,
-                        modifier = Modifier.size(48.dp),
-                        colors = IconButtonDefaults.iconButtonColors(
-                            contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                        ),
-                    ) {
-                        LoomaIcon(
-                            iconRes = R.drawable.ic_editor_preview,
-                            contentDescription = "Insert image",
-                            modifier = Modifier.size(22.dp),
-                        )
+                    ToolbarItem.InsertImage -> if (isUploadingImage) {
+                        Box(
+                            modifier = Modifier.size(48.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp,
+                            )
+                        }
+                    } else {
+                        IconButton(
+                            onClick = onInsertImage,
+                            modifier = Modifier.size(48.dp),
+                            colors = IconButtonDefaults.iconButtonColors(
+                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                            ),
+                        ) {
+                            LoomaIcon(
+                                iconRes = R.drawable.ic_editor_preview,
+                                contentDescription = stringResource(R.string.editor_insert_image),
+                                modifier = Modifier.size(22.dp),
+                            )
+                        }
                     }
 
                     ToolbarItem.InsertFile -> IconButton(

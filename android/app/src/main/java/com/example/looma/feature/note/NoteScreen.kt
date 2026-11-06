@@ -2,7 +2,11 @@
 
 package com.example.looma.feature.note
 
+import android.content.res.Resources
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -96,6 +100,14 @@ fun NoteRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val requestLeave = { viewModel.requestLeave(onLeave = onNavigateUp) }
     val editorActive = LocalNavAnimatedContentScope.current.transition.targetState == EnterExitState.Visible
+    val imagePicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri -> uri?.let(viewModel::uploadImage) }
+    val pickImage = {
+        imagePicker.launch(
+            PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly),
+        )
+    }
 
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.refreshWiki() }
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { viewModel.onEnterBackground() }
@@ -138,6 +150,9 @@ fun NoteRoute(
                     onOverwrite = viewModel::overwrite,
                     onReloadFromDisk = viewModel::reloadFromDisk,
                     onOpenNote = onOpenNote,
+                    onPickImage = pickImage,
+                    onImageInserted = viewModel::onImageInserted,
+                    onImageErrorShown = viewModel::onImageErrorShown,
                     editorActive = editorActive,
                     modifier = modifier,
                 )
@@ -170,6 +185,9 @@ private fun NoteWorkspace(
     onOverwrite: () -> Unit,
     onReloadFromDisk: () -> Unit,
     onOpenNote: (NoteId) -> Unit,
+    onPickImage: () -> Unit,
+    onImageInserted: () -> Unit,
+    onImageErrorShown: () -> Unit,
     editorActive: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
@@ -231,6 +249,19 @@ private fun NoteWorkspace(
             focusManager.clearFocus()
             keyboard?.hide()
         }
+    }
+
+    LaunchedEffect(state.imageInsertion) {
+        val insertion = state.imageInsertion ?: return@LaunchedEffect
+        insertSnippet(bodyBuffer, insertion.snippet)
+        onImageInserted()
+        bodyFocus.requestFocus()
+    }
+
+    LaunchedEffect(state.imageUploadError) {
+        val error = state.imageUploadError ?: return@LaunchedEffect
+        snackbarHostState.showSnackbar(imageErrorText(resources, error))
+        onImageErrorShown()
     }
 
     val bodyText = bodyBuffer.text.toString()
@@ -337,6 +368,7 @@ private fun NoteWorkspace(
                         toolbarOrder = state.toolbarOrder,
                         canUndo = bodyBuffer.undoState.canUndo,
                         canRedo = bodyBuffer.undoState.canRedo,
+                        isUploadingImage = state.isUploadingImage,
                         onCommand = { command ->
                             applyMarkdownCommand(bodyBuffer, command)
                             bodyFocus.requestFocus()
@@ -357,6 +389,7 @@ private fun NoteWorkspace(
                                 bodyFocus.requestFocus()
                             }
                         },
+                        onInsertImage = onPickImage,
                     )
                 }
             }
@@ -495,7 +528,10 @@ private fun NoteReadBody(
 }
 
 private fun insertWikiLink(buffer: TextFieldState, reference: String) {
-    val snippet = "[[$reference]]"
+    insertSnippet(buffer, "[[$reference]]")
+}
+
+private fun insertSnippet(buffer: TextFieldState, snippet: String) {
     val selection = buffer.selection
     val start = minOf(selection.start, selection.end)
     val end = maxOf(selection.start, selection.end)
@@ -503,6 +539,19 @@ private fun insertWikiLink(buffer: TextFieldState, reference: String) {
         replace(start, end, snippet)
         this.selection = TextRange(start + snippet.length)
     }
+}
+
+private fun imageErrorText(resources: Resources, error: NoteImageError): String = when (error) {
+    NoteImageError.NotConfigured -> resources.getString(R.string.note_image_error_not_configured)
+    NoteImageError.UnsupportedImage -> resources.getString(R.string.note_image_error_unsupported)
+    NoteImageError.ImageTooLarge -> resources.getString(R.string.note_image_error_too_large)
+    NoteImageError.Storage -> resources.getString(R.string.note_image_error_storage)
+    NoteImageError.Network -> resources.getString(R.string.note_image_error_network)
+    is NoteImageError.Rejected -> resources.getString(
+        R.string.note_image_error_rejected,
+        error.detail,
+    )
+    NoteImageError.Unknown -> resources.getString(R.string.note_image_error_unknown)
 }
 
 private const val MARKER_LENGTH = 3
@@ -587,6 +636,9 @@ private fun NoteWorkspacePreview() {
             onOverwrite = {},
             onReloadFromDisk = {},
             onOpenNote = {},
+            onPickImage = {},
+            onImageInserted = {},
+            onImageErrorShown = {},
         )
     }
 }

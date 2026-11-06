@@ -1,10 +1,15 @@
 package com.example.looma.feature.note
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.looma.data.image.ImageUpload
+import com.example.looma.data.image.ImageUploadException
+import com.example.looma.data.image.ImageUploadFailure
+import com.example.looma.data.image.ImageUploader
 import com.example.looma.data.note.NoteChangedExternallyException
 import com.example.looma.data.note.NoteRepository
 import com.example.looma.data.settings.SettingsRepository
@@ -24,6 +29,7 @@ import kotlinx.coroutines.launch
 class NoteViewModel(
     private val repository: NoteRepository,
     private val settingsRepository: SettingsRepository,
+    private val imageUploader: ImageUploader,
     private val noteId: NoteId,
     isNewNote: Boolean,
 ) : ViewModel() {
@@ -91,6 +97,45 @@ class NoteViewModel(
             } catch (_: Exception) {
             }
         }
+    }
+
+    fun uploadImage(uri: Uri) {
+        if (_uiState.value.isUploadingImage) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isUploadingImage = true, imageUploadError = null) }
+            try {
+                val settings = settingsRepository.settings.first()
+                val upload = imageUploader.upload(uri, settings)
+                val snippet = when (upload) {
+                    is ImageUpload.Attachment -> "![[${upload.fileName}]]"
+                    is ImageUpload.Remote -> "![](${upload.url})"
+                }
+                _uiState.update {
+                    it.copy(
+                        isUploadingImage = false,
+                        imageInsertion = ImageInsertion(snippet, System.nanoTime()),
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ImageUploadException) {
+                _uiState.update {
+                    it.copy(isUploadingImage = false, imageUploadError = e.toNoteError())
+                }
+            } catch (_: Exception) {
+                _uiState.update {
+                    it.copy(isUploadingImage = false, imageUploadError = NoteImageError.Unknown)
+                }
+            }
+        }
+    }
+
+    fun onImageInserted() {
+        _uiState.update { it.copy(imageInsertion = null) }
+    }
+
+    fun onImageErrorShown() {
+        _uiState.update { it.copy(imageUploadError = null) }
     }
 
     fun onContentChanged(value: String) {
@@ -292,10 +337,22 @@ class NoteViewModel(
         fun factory(
             repository: NoteRepository,
             settingsRepository: SettingsRepository,
+            imageUploader: ImageUploader,
             noteId: NoteId,
             isNewNote: Boolean = false,
         ): ViewModelProvider.Factory = viewModelFactory {
-            initializer { NoteViewModel(repository, settingsRepository, noteId, isNewNote) }
+            initializer {
+                NoteViewModel(repository, settingsRepository, imageUploader, noteId, isNewNote)
+            }
         }
     }
+}
+
+private fun ImageUploadException.toNoteError(): NoteImageError = when (failure) {
+    ImageUploadFailure.NotConfigured -> NoteImageError.NotConfigured
+    ImageUploadFailure.UnsupportedImage -> NoteImageError.UnsupportedImage
+    ImageUploadFailure.ImageTooLarge -> NoteImageError.ImageTooLarge
+    ImageUploadFailure.ReadFailed, ImageUploadFailure.StorageFailed -> NoteImageError.Storage
+    ImageUploadFailure.Rejected -> NoteImageError.Rejected(detail.orEmpty())
+    ImageUploadFailure.Network -> NoteImageError.Network
 }

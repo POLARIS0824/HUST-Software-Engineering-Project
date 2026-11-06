@@ -8,6 +8,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.looma.data.folder.FolderRepository
+import com.example.looma.data.image.ImageUploader
 import com.example.looma.data.index.NoteIndexDatabase
 import com.example.looma.data.index.RoomNoteIndex
 import com.example.looma.data.note.NoteRepository
@@ -28,6 +29,7 @@ class MainActivity : AppCompatActivity() {
     }
     private val folderRepository by lazy { FolderRepository(vaultRepository) }
     private val settingsRepository by lazy { SettingsRepository(applicationContext) }
+    private val imageUploader by lazy { ImageUploader(applicationContext, vaultRepository) }
 
     private val vaultSetupViewModel: VaultSetupViewModel by viewModels {
         VaultSetupViewModel.factory(vaultRepository)
@@ -49,6 +51,7 @@ class MainActivity : AppCompatActivity() {
                     folderRepository = folderRepository,
                     searchHistoryRepository = searchHistoryRepository,
                     settingsRepository = settingsRepository,
+                    imageUploader = imageUploader,
                     vaultSetupViewModel = vaultSetupViewModel,
                 )
             }

@@ -8,6 +8,18 @@ import java.time.Instant
 
 enum class NoteSaveState { Idle, Pending, Saving, Saved, Failed }
 
+data class ImageInsertion(val snippet: String, val token: Long)
+
+sealed interface NoteImageError {
+    data object NotConfigured : NoteImageError
+    data object UnsupportedImage : NoteImageError
+    data object ImageTooLarge : NoteImageError
+    data object Storage : NoteImageError
+    data object Network : NoteImageError
+    data class Rejected(val detail: String) : NoteImageError
+    data object Unknown : NoteImageError
+}
+
 data class NoteUiState(
     val content: String = "",
     val savedContent: String = "",
@@ -25,6 +37,9 @@ data class NoteUiState(
     val restoredDraft: Boolean = false,
     val reloadToken: Int = 0,
     val toolbarOrder: List<ToolbarItem> = ToolbarItem.DEFAULT_ORDER,
+    val isUploadingImage: Boolean = false,
+    val imageInsertion: ImageInsertion? = null,
+    val imageUploadError: NoteImageError? = null,
 ) {
     val isDirty: Boolean get() = !isLoading && content != savedContent
 

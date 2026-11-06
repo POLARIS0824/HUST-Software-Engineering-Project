@@ -8,6 +8,8 @@ data class AppSettings(
     val themePreset: ThemePreset = ThemePreset.Default,
     val keepEmptyNotes: Boolean = false,
     val toolbarOrder: List<ToolbarItem> = ToolbarItem.DEFAULT_ORDER,
+    val imageUploadTarget: ImageUploadTarget = ImageUploadTarget.LocalAttachment,
+    val imageBed: S3ImageBedConfig = S3ImageBedConfig(),
     val isLoaded: Boolean = false,
 )
 

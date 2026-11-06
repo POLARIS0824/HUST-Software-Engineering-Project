@@ -24,6 +24,20 @@ class SettingsRepository(
                     ?: ThemePreset.Default,
                 keepEmptyNotes = data.keepEmptyNotes ?: false,
                 toolbarOrder = ToolbarOrder.restore(data.toolbarOrderString),
+                imageUploadTarget = data.imageUploadTarget
+                    ?.let { stored -> ImageUploadTarget.entries.firstOrNull { it.name == stored } }
+                    ?: ImageUploadTarget.LocalAttachment,
+                imageBed = S3ImageBedConfig(
+                    endpoint = data.s3Endpoint.orEmpty(),
+                    region = data.s3Region.orEmpty(),
+                    bucket = data.s3Bucket.orEmpty(),
+                    accessKey = data.s3AccessKey.orEmpty(),
+                    secretKey = data.s3SecretKey.orEmpty(),
+                    pathPrefix = data.s3PathPrefix.orEmpty(),
+                    publicBaseUrl = data.s3PublicBaseUrl.orEmpty(),
+                    pathStyle = data.s3PathStyle ?: true,
+                    publicRead = data.s3PublicRead ?: true,
+                ),
                 isLoaded = true,
             )
         }
@@ -42,5 +56,13 @@ class SettingsRepository(
 
     suspend fun setKeepEmptyNotes(keep: Boolean) {
         preferences.saveKeepEmptyNotes(keep)
+    }
+
+    suspend fun setImageUploadTarget(target: ImageUploadTarget) {
+        preferences.saveImageUploadTarget(target.name)
+    }
+
+    suspend fun setS3ImageBed(config: S3ImageBedConfig) {
+        preferences.saveS3ImageBed(config)
     }
 }

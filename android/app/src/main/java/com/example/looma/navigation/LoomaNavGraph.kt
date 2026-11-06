@@ -26,6 +26,7 @@ import androidx.navigation3.ui.NavDisplay
 import com.example.looma.R
 import com.example.looma.data.folder.FolderRepository
 import com.example.looma.data.note.NoteRepository
+import com.example.looma.data.image.ImageUploader
 import com.example.looma.data.search.SearchHistoryRepository
 import com.example.looma.data.settings.SettingsRepository
 import com.example.looma.data.vault.VaultRepository
@@ -53,6 +54,7 @@ fun LoomaNavGraph(
     folderRepository: FolderRepository,
     searchHistoryRepository: SearchHistoryRepository,
     settingsRepository: SettingsRepository,
+    imageUploader: ImageUploader,
     vaultSetupViewModel: VaultSetupViewModel,
     modifier: Modifier = Modifier,
 ) {
@@ -194,6 +196,7 @@ fun LoomaNavGraph(
                         factory = NoteViewModel.factory(
                             repository = noteRepository,
                             settingsRepository = settingsRepository,
+                            imageUploader = imageUploader,
                             noteId = noteId,
                             isNewNote = route.isNew,
                         ),

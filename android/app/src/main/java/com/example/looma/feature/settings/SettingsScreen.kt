@@ -12,12 +12,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.IconButton
@@ -25,6 +28,7 @@ import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -44,6 +48,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -53,6 +60,8 @@ import com.example.looma.R
 import com.example.looma.data.settings.AppLanguage
 import com.example.looma.data.settings.AppLocale
 import com.example.looma.data.settings.AppSettings
+import com.example.looma.data.settings.ImageUploadTarget
+import com.example.looma.data.settings.S3ImageBedConfig
 import com.example.looma.data.settings.ThemePreset
 import com.example.looma.domain.markdown.ToolbarItem
 import com.example.looma.feature.vault.VaultSetupError
@@ -104,6 +113,8 @@ fun SettingsRoute(
         onLanguageSelect = AppLocale::apply,
         onKeepEmptyNotesChange = settingsViewModel::setKeepEmptyNotes,
         onToolbarOrderChange = settingsViewModel::setToolbarOrder,
+        onImageUploadTargetChange = settingsViewModel::setImageUploadTarget,
+        onImageBedChange = settingsViewModel::setS3ImageBed,
         onNavigateUp = onNavigateUp,
         modifier = modifier,
     )
@@ -126,12 +137,16 @@ fun SettingsScreen(
     onLanguageSelect: (AppLanguage) -> Unit,
     onKeepEmptyNotesChange: (Boolean) -> Unit,
     onToolbarOrderChange: (List<ToolbarItem>) -> Unit,
+    onImageUploadTargetChange: (ImageUploadTarget) -> Unit,
+    onImageBedChange: (S3ImageBedConfig) -> Unit,
     onNavigateUp: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var themeDialogVisible by remember { mutableStateOf(false) }
     var languageDialogVisible by remember { mutableStateOf(false) }
     var toolbarSheetVisible by remember { mutableStateOf(false) }
+    var imageTargetDialogVisible by remember { mutableStateOf(false) }
+    var imageBedSheetVisible by remember { mutableStateOf(false) }
     val dynamicColorSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     Scaffold(
@@ -264,6 +279,28 @@ fun SettingsScreen(
                 )
             }
 
+            SettingsSectionHeader(stringResource(R.string.settings_section_images))
+            SettingsCard {
+                SettingsRow(
+                    title = stringResource(R.string.settings_image_destination),
+                    description = imageTargetName(settings.imageUploadTarget),
+                    onClick = { imageTargetDialogVisible = true },
+                )
+                SettingsRow(
+                    title = stringResource(R.string.settings_image_bed),
+                    description = if (settings.imageBed.isConfigured) {
+                        stringResource(
+                            R.string.settings_image_bed_configured,
+                            settings.imageBed.bucket,
+                            settings.imageBed.endpoint,
+                        )
+                    } else {
+                        stringResource(R.string.settings_image_bed_not_configured)
+                    },
+                    onClick = { imageBedSheetVisible = true },
+                )
+            }
+
             SettingsSectionHeader(stringResource(R.string.settings_section_storage))
             SettingsCard {
                 SettingsRow(
@@ -337,6 +374,218 @@ fun SettingsScreen(
             onDismiss = { toolbarSheetVisible = false },
         )
     }
+    if (imageTargetDialogVisible) {
+        ImageTargetDialog(
+            current = settings.imageUploadTarget,
+            onSelect = {
+                onImageUploadTargetChange(it)
+                imageTargetDialogVisible = false
+            },
+            onDismiss = { imageTargetDialogVisible = false },
+        )
+    }
+    if (imageBedSheetVisible) {
+        ImageBedSheet(
+            config = settings.imageBed,
+            onSave = { onImageBedChange(it); imageBedSheetVisible = false },
+            onDismiss = { imageBedSheetVisible = false },
+        )
+    }
+}
+
+@Composable
+private fun ImageTargetDialog(
+    current: ImageUploadTarget,
+    onSelect: (ImageUploadTarget) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.settings_image_destination_dialog_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                ImageUploadTarget.entries.forEach { target ->
+                    val selected = target == current
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 52.dp)
+                            .selectable(selected = selected, onClick = { onSelect(target) })
+                            .padding(horizontal = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = imageTargetName(target),
+                                style = LoomaTokens.type.body,
+                                color = LoomaTokens.colors.title,
+                            )
+                            Text(
+                                text = stringResource(target.descriptionRes()),
+                                style = LoomaTokens.type.cardMeta,
+                                color = LoomaTokens.colors.muted,
+                            )
+                        }
+                        if (selected) {
+                            LoomaIcon(
+                                iconRes = R.drawable.ic_check,
+                                contentDescription = null,
+                                tint = LoomaTokens.colors.accent,
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.dialog_cancel)) }
+        },
+    )
+}
+
+@Composable
+private fun ImageBedSheet(
+    config: S3ImageBedConfig,
+    onSave: (S3ImageBedConfig) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var endpoint by remember { mutableStateOf(config.endpoint) }
+    var region by remember { mutableStateOf(config.region) }
+    var bucket by remember { mutableStateOf(config.bucket) }
+    var accessKey by remember { mutableStateOf(config.accessKey) }
+    var secretKey by remember { mutableStateOf(config.secretKey) }
+    var pathPrefix by remember { mutableStateOf(config.pathPrefix) }
+    var publicBaseUrl by remember { mutableStateOf(config.publicBaseUrl) }
+    var pathStyle by remember { mutableStateOf(config.pathStyle) }
+    var publicRead by remember { mutableStateOf(config.publicRead) }
+
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .imePadding()
+                .navigationBarsPadding()
+                .padding(horizontal = 24.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text(
+                text = stringResource(R.string.settings_image_bed_sheet_title),
+                style = MaterialTheme.typography.headlineSmall,
+                color = LoomaTokens.colors.title,
+            )
+            ImageBedField(
+                value = endpoint,
+                label = stringResource(R.string.settings_image_bed_endpoint),
+                onChange = { endpoint = it },
+            )
+            ImageBedField(
+                value = region,
+                label = stringResource(R.string.settings_image_bed_region),
+                onChange = { region = it },
+            )
+            ImageBedField(
+                value = bucket,
+                label = stringResource(R.string.settings_image_bed_bucket),
+                onChange = { bucket = it },
+            )
+            ImageBedField(
+                value = accessKey,
+                label = stringResource(R.string.settings_image_bed_access_key),
+                onChange = { accessKey = it },
+            )
+            ImageBedField(
+                value = secretKey,
+                label = stringResource(R.string.settings_image_bed_secret_key),
+                onChange = { secretKey = it },
+                secret = true,
+            )
+            ImageBedField(
+                value = pathPrefix,
+                label = stringResource(R.string.settings_image_bed_path_prefix),
+                onChange = { pathPrefix = it },
+            )
+            ImageBedField(
+                value = publicBaseUrl,
+                label = stringResource(R.string.settings_image_bed_public_url),
+                onChange = { publicBaseUrl = it },
+            )
+            SettingsSwitchRow(
+                title = stringResource(R.string.settings_image_bed_path_style),
+                description = stringResource(R.string.settings_image_bed_path_style_desc),
+                checked = pathStyle,
+                enabled = true,
+                onCheckedChange = { pathStyle = it },
+            )
+            SettingsSwitchRow(
+                title = stringResource(R.string.settings_image_bed_public_read),
+                description = stringResource(R.string.settings_image_bed_public_read_desc),
+                checked = publicRead,
+                enabled = true,
+                onCheckedChange = { publicRead = it },
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.dialog_cancel)) }
+                TextButton(
+                    onClick = {
+                        onSave(
+                            S3ImageBedConfig(
+                                endpoint = endpoint.trim(),
+                                region = region.trim(),
+                                bucket = bucket.trim(),
+                                accessKey = accessKey.trim(),
+                                secretKey = secretKey,
+                                pathPrefix = pathPrefix.trim(),
+                                publicBaseUrl = publicBaseUrl.trim(),
+                                pathStyle = pathStyle,
+                                publicRead = publicRead,
+                            ),
+                        )
+                    },
+                ) { Text(stringResource(R.string.dialog_save)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ImageBedField(
+    value: String,
+    label: String,
+    onChange: (String) -> Unit,
+    secret: Boolean = false,
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text(label) },
+        singleLine = true,
+        visualTransformation = if (secret) {
+            PasswordVisualTransformation()
+        } else {
+            VisualTransformation.None
+        },
+        keyboardOptions = if (secret) {
+            KeyboardOptions(keyboardType = KeyboardType.Password)
+        } else {
+            KeyboardOptions.Default
+        },
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+@Composable
+private fun imageTargetName(target: ImageUploadTarget): String = stringResource(
+    when (target) {
+        ImageUploadTarget.LocalAttachment -> R.string.settings_image_destination_local
+        ImageUploadTarget.ImageBed -> R.string.settings_image_destination_bed
+    },
+)
+
+private fun ImageUploadTarget.descriptionRes(): Int = when (this) {
+    ImageUploadTarget.LocalAttachment -> R.string.settings_image_destination_local_desc
+    ImageUploadTarget.ImageBed -> R.string.settings_image_destination_bed_desc
 }
 
 @Composable
@@ -611,7 +860,7 @@ private fun ToolbarOrderSheet(
 }
 
 private fun ToolbarItem.isAvailableInToolbar(): Boolean =
-    this != ToolbarItem.InsertImage && this != ToolbarItem.InsertFile
+    this != ToolbarItem.InsertFile
 
 private fun ToolbarItem.labelRes(): Int = when (this) {
     ToolbarItem.Undo -> R.string.editor_undo
@@ -633,5 +882,6 @@ private fun ToolbarItem.labelRes(): Int = when (this) {
     ToolbarItem.CodeBlock -> R.string.editor_code_block
     ToolbarItem.Table -> R.string.editor_table
     ToolbarItem.Divider -> R.string.editor_divider
-    ToolbarItem.InsertImage, ToolbarItem.InsertFile -> error("Unavailable toolbar item")
+    ToolbarItem.InsertImage -> R.string.editor_insert_image
+    ToolbarItem.InsertFile -> error("Unavailable toolbar item")
 }
