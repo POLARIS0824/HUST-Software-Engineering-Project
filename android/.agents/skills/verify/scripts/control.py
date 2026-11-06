@@ -167,7 +167,9 @@ class Control:
         resumed = "\n".join(line for line in focus.splitlines()
                             if "mResumedActivity" in line or "topResumedActivity" in line)
         allowed = (APP,) if not system else (APP, "com.android.settings", "com.android.documentsui",
-                                                           "com.google.android.documentsui", "com.android.permissioncontroller")
+                                                           "com.google.android.documentsui", "com.android.permissioncontroller",
+                                                           "com.android.providers.media.module",
+                                                           "com.google.android.providers.media.module")
         if not any(package + "/" in resumed for package in allowed):
             raise RuntimeError("Unexpected foreground; inspect/reset before driving: " + resumed)
         tree, xml = self.dump()
