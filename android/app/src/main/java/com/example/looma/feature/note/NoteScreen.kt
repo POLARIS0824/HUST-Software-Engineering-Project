@@ -84,10 +84,6 @@ import com.example.looma.ui.theme.LoomaTokens
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
-/**
- * 笔记页组合根。阅读和编辑是同一篇笔记的两种呈现，共用一份正文，
- * 所以切换模式不会重新读盘，也不会出现"编辑完阅读页还是旧内容"。
- */
 @Composable
 fun NoteRoute(
     viewModel: NoteViewModel,
@@ -101,12 +97,9 @@ fun NoteRoute(
     val requestLeave = { viewModel.requestLeave(onLeave = onNavigateUp) }
     val editorActive = LocalNavAnimatedContentScope.current.transition.targetState == EnterExitState.Visible
 
-    // 从别的笔记回来时双链可能已经变了：那边可能新增了反向链接，或让未解析的目标存在了
     LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.refreshWiki() }
-    // 退到后台先存草稿再冲刷：用 ON_PAUSE 而不是 ON_STOP，进程可能停在两者之间
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { viewModel.onEnterBackground() }
 
-    // 有未落盘内容、或要丢弃空白笔记时接管返回；其余情况交给 Navigation 3 做预测性返回
     BackHandler(enabled = state.needsLeaveGuard || state.willDiscardEmpty) {
         viewModel.requestLeave(onLeave = onNavigateUp)
     }
@@ -124,7 +117,6 @@ fun NoteRoute(
         )
 
         else -> {
-            // 图片引用依赖库根与笔记位置，解析规则在 data 层，UI 只拿到结果
             val imageContext = state.imageContext
             val resolver = remember(imageContext) {
                 if (imageContext == null) {
@@ -167,12 +159,6 @@ fun NoteRoute(
     }
 }
 
-/**
- * 阅读与编辑共用的工作区；模式、焦点和两份滚动位置都在这一层持有。
- *
- * 标题与正文是两个输入框，但只有一份文档：每次改动都拼回 Markdown 交给 ViewModel，
- * 所以"标题在界面上是独立一格"不会让文件里多出一份标题数据。
- */
 @Composable
 private fun NoteWorkspace(
     state: NoteUiState,
@@ -187,12 +173,8 @@ private fun NoteWorkspace(
     editorActive: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    // reloadToken 变化表示正文换了来源（首次加载、冲突后重载）。
-    // 缓冲区跟着 token 重建，而不是在 LaunchedEffect 里补写：否则重建前那一帧会把旧文本
-    // 再发给 ViewModel，刚重载完的笔记立刻又变成"有未保存修改"。
     val loaded = remember(state.reloadToken) { EditorDocument.split(state.content) }
     val buffers = key(state.reloadToken) {
-        // 光标落在正文末尾：打开一篇笔记是为了接着写，而不是从头找位置
         rememberTextFieldState(initialText = loaded.title) to
             rememberTextFieldState(
                 initialText = loaded.body,
@@ -201,7 +183,6 @@ private fun NoteWorkspace(
     }
     val titleBuffer = buffers.first
     val bodyBuffer = buffers.second
-    // 笔记一律先进入编辑态：阅读是切换过去的另一种呈现，不是默认落点
     var mode by rememberSaveable { mutableStateOf(NoteMode.Edit) }
     var linkPanelOpen by rememberSaveable { mutableStateOf(false) }
     val readScroll = rememberScrollState()
@@ -219,7 +200,6 @@ private fun NoteWorkspace(
         onRequestLeave()
     }
 
-    // 解析得到就打开，解析不到就报出目标名：跳转与否只由这一处决定
     val onWikiLinkClick: (String) -> Unit = { target ->
         val id = state.wiki.resolve(target)
         if (id != null) {
@@ -233,7 +213,6 @@ private fun NoteWorkspace(
         }
     }
 
-    // 输入 → ViewModel 单向流动；标题、正文、阅读态勾选复选框都走这一条通道
     LaunchedEffect(bodyBuffer, titleBuffer) {
         snapshotFlow {
             EditorDocument(titleBuffer.text.toString(), bodyBuffer.text.toString()).render()
@@ -242,21 +221,16 @@ private fun NoteWorkspace(
             .collect(onContentChanged)
     }
 
-    var firstMode by remember { mutableStateOf(true) }
     LaunchedEffect(mode) {
         if (mode == NoteMode.Edit) {
-            // 新建时聚焦标题；已有笔记首次打开不弹键盘，手动切回编辑态时再聚焦正文。
             if (isNew) {
                 titleFocus.requestFocus()
-            } else if (!firstMode) {
-                bodyFocus.requestFocus()
             }
         } else {
             linkPanelOpen = false
             focusManager.clearFocus()
             keyboard?.hide()
         }
-        firstMode = false
     }
 
     val bodyText = bodyBuffer.text.toString()
@@ -310,7 +284,6 @@ private fun NoteWorkspace(
                     onWikiLinkClick = onWikiLinkClick,
                     onOpenNote = onOpenNote,
                     onCheckboxToggle = { position, checked ->
-                        // 只改 "[ ]" 这三个字符，不整段替换缓冲区：光标、撤销栈和滚动位置都保住
                         val document = MarkdownIndex.index(bodyBuffer.text.toString(), fallbackTitle)
                         if (document.withCheckboxChecked(position, checked) != null) {
                             bodyBuffer.edit {
@@ -391,7 +364,6 @@ private fun NoteWorkspace(
     }
 }
 
-/** 标题只有一行；新建笔记的标题缓冲区本来就是空的，所以占位文案只是提示 */
 @Composable
 private fun NoteTitleField(
     active: Boolean,
@@ -446,7 +418,6 @@ private fun NoteBodyEditor(
             .fillMaxWidth()
             .padding(horizontal = 20.dp, vertical = 4.dp)
             .focusRequester(focusRequester),
-        // 行高与 Markdown 阅读态同一档，编辑态和阅读态切换时文字不会上下跳
         textStyle = LoomaTokens.type.noteBody.copy(
             color = LoomaTokens.colors.title,
         ),
@@ -466,7 +437,6 @@ private fun NoteBodyEditor(
     )
 }
 
-/** 恢复草稿只在打开时提示一次，动一下正文就消失 */
 @Composable
 private fun DraftRestoredNotice(modifier: Modifier = Modifier) {
     Surface(
@@ -524,7 +494,6 @@ private fun NoteReadBody(
     }
 }
 
-/** 在光标处插入 `[[引用]]`；已有选区就整段替换 */
 private fun insertWikiLink(buffer: TextFieldState, reference: String) {
     val snippet = "[[$reference]]"
     val selection = buffer.selection

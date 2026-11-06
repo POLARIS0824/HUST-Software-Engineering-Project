@@ -66,7 +66,6 @@ class EditorDocumentTest {
 
     @Test
     fun `a heading later in the body is still the title`() {
-        // 与 MarkdownIndex 取标题的规则一致；拼接时它会被搬到第一行
         val source = "正文\n\n# 后来的标题\n"
 
         val document = EditorDocument.split(source)

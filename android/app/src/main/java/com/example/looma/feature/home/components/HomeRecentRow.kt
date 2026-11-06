@@ -33,12 +33,6 @@ import com.example.looma.feature.home.HomeRecentItem
 import com.example.looma.ui.markdown.MarkdownPreview
 import com.example.looma.ui.theme.LoomaTokens
 
-/**
- * 最近笔记的横向卡片行，保持固定卡宽，一屏能露出下一张。
- *
- * 卡片只靠底色和页面区分，不画描边，所以露出的半张卡不会被切出一道缺角的轮廓。
- * 标题在卡片内顶部，正文用只读 Markdown 渲染，超出卡片高度的部分直接裁掉。
- */
 @Composable
 internal fun HomeRecentRow(
     items: List<HomeRecentItem>,
@@ -86,7 +80,6 @@ private fun HomeRecentCard(
                 onClick = onClick,
             ),
         shape = shape,
-        // 选中只加描边：底色不变，卡片底部的渐隐层才不会和背景色打架、泛出一圈白光
         color = LoomaTokens.colors.card,
         border = if (isSelected) BorderStroke(2.dp, LoomaTokens.colors.accent) else null,
     ) {
@@ -109,7 +102,6 @@ private fun HomeRecentCard(
                 } else {
                     MarkdownPreview(markdown = item.markdown)
                 }
-                // 固定高度必然裁到半行，用底色渐变收尾，避免露出被切开的字形
                 Box(
                     Modifier.matchParentSize().background(
                         Brush.verticalGradient(

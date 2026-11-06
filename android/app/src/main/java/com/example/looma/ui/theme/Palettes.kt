@@ -7,16 +7,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import com.example.looma.data.settings.ThemePreset
 
-/**
- * 预设主题的调色板。
- *
- * 每套主题只给一个种子色，其余色位按 Material 的色调刻度推导（主色 40、容器 90、文字 10 等），
- * 色相跟随种子色，饱和度按角色递减，所以换一套主题时整屏都跟着变，而不是只换一个按钮。
- * 深色主题把明度刻度翻到 80 / 30 / 90，保持同一套色相关系。
- *
- * 文字色不是硬编码的黑白：每个前景色都按 WCAG 对比度挑，色相偏亮的种子（比如青绿）也能通过
- * [PalettesTest] 的 4.5:1 检查。
- */
 internal fun presetScheme(preset: ThemePreset, dark: Boolean): ColorScheme {
     val seed = preset.seed ?: return if (dark) LoomaDarkColors else LoomaLightColors
     val hue = seed.hue()
@@ -144,12 +134,6 @@ private fun darkScheme(hue: Float, saturation: Float): ColorScheme {
     )
 }
 
-/**
- * 在给定底色上挑一个够清楚的前景色。
- *
- * 先试同色相的深/浅文字，达不到 4.5:1 就退到黑或白；
- * 任何底色对黑或白至少有一个 ≥ 4.5，所以这个函数总有解。
- */
 private fun bestOn(
     background: Color,
     tinted: Float? = null,
@@ -158,10 +142,8 @@ private fun bestOn(
 ): Color {
     if (tinted != null) {
         val candidate = tone(hue, saturation, tinted)
-        // 留一点余量：色相接近青色时，同色相文字刚好卡在 4.5 的边缘
         if (contrast(background, candidate) >= 5.0) return candidate
     }
-    // 纯黑和纯白里总有一个达到 4.58:1，所以兜底一定满足对比度要求
     return listOf(Color.White, NearBlack, Color.Black)
         .maxBy { contrast(background, it) }
 }
@@ -172,18 +154,15 @@ private fun contrast(a: Color, b: Color): Double {
     return if (first > second) first / second else second / first
 }
 
-/** 有彩色：色相不动的明度台阶 */
 private fun tone(hue: Float, saturation: Float, lightness: Float): Color =
     Color.hsl(hue, saturation, lightness)
 
-/** 中性色：保留一点种子色相，界面才有主题感而不是纯灰 */
 private fun neutral(hue: Float, lightness: Float): Color =
     Color.hsl(hue, (0.10f * (1f - lightness) + 0.04f), lightness)
 
 private fun Color.hue(): Float = rgbToHsl(red, green, blue).first
 private fun Color.saturation(): Float = rgbToHsl(red, green, blue).second
 
-/** 种子色可能不是纯色相，转换到 HSL 才好在同一色相上取明度台阶 */
 private fun rgbToHsl(r: Float, g: Float, b: Float): Pair<Float, Float> {
     val max = maxOf(r, g, b)
     val min = minOf(r, g, b)

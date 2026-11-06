@@ -4,12 +4,6 @@ import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.NotePath
 import com.example.looma.domain.model.VaultFolder
 
-/**
- * 首页文件视图要渲染的一屏数据。
- *
- * [folders] 与 [notes] 已经在 ViewModel 里排好序，组合阶段只负责画：
- * 文件夹永远在笔记前面，所以它们分成两个列表，而不是一个带类型的混合列表。
- */
 data class HomeFilesState(
     val path: FolderPath = FolderPath.Root,
     val crumbs: List<HomeCrumb> = emptyList(),
@@ -30,16 +24,9 @@ data class HomeFolderItem(
 
 data class HomeRecentItem(
     val note: HomeNoteItem,
-    /** 缩略图里渲染的 Markdown 开头，空笔记为空串 */
     val markdown: String,
 )
 
-/**
- * 一次扫描结果的只读快照。
- *
- * 所有页面数据都由它投影出来，浏览文件夹、排序、搜索都不再碰磁盘。
- * 它不进 [HomeUiState]：对外只暴露投影后的列表，避免组合阶段拿它自行过滤。
- */
 internal class HomeVaultIndex private constructor(
     private val foldersByParent: Map<FolderPath, List<VaultFolder>>,
     private val notesByParent: Map<FolderPath, List<HomeNoteItem>>,
@@ -50,13 +37,11 @@ internal class HomeVaultIndex private constructor(
     fun contains(path: FolderPath): Boolean =
         path == FolderPath.Root || folderNames.containsKey(path)
 
-    /** 文件夹（含所有子孙目录）里的笔记数，用于删除前的确认文案 */
     fun noteCountUnder(folder: FolderPath): Int {
         val prefix = folder.relativePath + "/"
         return allNotes.count { it.id.path.relativePath.startsWith(prefix) }
     }
 
-    /** 找不到的路径回落到根目录，用于外部删除文件夹后的收敛 */
     fun files(path: FolderPath, sort: HomeSort): HomeFilesState {
         val target = if (contains(path)) path else FolderPath.Root
         return HomeFilesState(
@@ -77,7 +62,6 @@ internal class HomeVaultIndex private constructor(
 
     private fun crumbs(path: FolderPath): List<HomeCrumb> {
         if (path == FolderPath.Root) return emptyList()
-        // 根节点的显示名属于 UI 资源，这一层只给路径
         val crumbs = mutableListOf(HomeCrumb(FolderPath.Root, null))
         var current = ""
         path.relativePath.split('/').forEach { segment ->
@@ -91,10 +75,6 @@ internal class HomeVaultIndex private constructor(
     companion object {
         val Empty: HomeVaultIndex = HomeVaultIndex(emptyMap(), emptyMap(), emptyMap(), emptyList())
 
-        /**
-         * [folders] 来自扫描，包含空目录；笔记的祖先目录也会补进来，
-         * 这样任何一条笔记都不会落到不存在的父文件夹里。
-         */
         fun build(folders: List<VaultFolder>, notes: List<HomeNoteItem>): HomeVaultIndex {
             val names = folders.associateTo(mutableMapOf()) { it.path to it.name }
             val known = folders.toMutableList()

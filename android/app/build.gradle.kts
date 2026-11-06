@@ -78,10 +78,6 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
 
-/**
- * 字号、行高、字重只允许出现在角色定义（ui/theme）和从角色推导的比例（ui/markdown）里。
- * 页面自己写这些值，就是在和 token 层分叉，而分叉不会有人发现。
- */
 val verifyTypography = tasks.register("verifyTypography") {
     group = "verification"
     description = "Fails when a screen hardcodes a font size, weight or family instead of using LoomaTokens."

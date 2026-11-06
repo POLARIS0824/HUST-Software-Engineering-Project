@@ -14,7 +14,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/** 设置页的状态与写入；写入后 DataStore 会回流，MainActivity 据此换主题 */
 class SettingsViewModel(
     private val repository: SettingsRepository,
 ) : ViewModel() {
@@ -29,10 +28,6 @@ class SettingsViewModel(
         viewModelScope.launch { repository.setDynamicColor(enabled) }
     }
 
-    /**
-     * 选预设就意味着要这套颜色，所以同时关掉动态取色，
-     * 否则系统壁纸配色会盖住用户刚选的主题。
-     */
     fun setThemePreset(preset: ThemePreset) {
         viewModelScope.launch {
             repository.setThemePreset(preset)

@@ -64,7 +64,6 @@ internal fun NoteTextField(
         }
     }
     val selectionColors = LocalTextSelectionColors.current
-    // Foundation exposes handle color, not handle lifetime. Only a collapsed selection times out.
     val handleVisible = active && (!state.selection.collapsed || showInsertionHandle)
     CompositionLocalProvider(
         LocalTextSelectionColors provides TextSelectionColors(

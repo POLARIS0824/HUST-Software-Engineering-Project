@@ -12,10 +12,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-/**
- * 图片引用只有两种归宿：库内的本地文件，或 http(s) 远程地址。
- * 其余一律拒绝，因为引用写在正文里，用户可以随手写 `../../`。
- */
 class ImageReferenceTest {
 
     @get:Rule

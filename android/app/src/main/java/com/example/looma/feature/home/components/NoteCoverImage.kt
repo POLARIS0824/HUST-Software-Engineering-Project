@@ -17,15 +17,10 @@ import kotlinx.coroutines.withContext
 private const val MAX_EDGE_PX = 800
 private const val CACHE_SIZE_KB = 32 * 1024
 
-/** 进程级缓存：滚动出屏幕再回来时不会重复解码与降采样 */
 private val coverCache = object : LruCache<String, Bitmap>(CACHE_SIZE_KB) {
     override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
 }
 
-/**
- * 不引入图片库：后台线程解码 + 降采样 + LRU 缓存。
- * 失败或文件缺失时只是不显示封面，不抛异常影响列表。
- */
 @Composable
 internal fun NoteCoverImage(path: String, modifier: Modifier = Modifier) {
     val bitmap by produceState<ImageBitmap?>(coverCache.get(path)?.asImageBitmap(), path) {

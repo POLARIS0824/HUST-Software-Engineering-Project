@@ -63,7 +63,6 @@ import com.example.looma.ui.components.LoomaIcon
 import com.example.looma.ui.theme.LoomaTokens
 import com.example.looma.ui.theme.presetScheme
 
-/** 设置页：笔记库、外观、语言、笔记行为、文件访问与版本 */
 @Composable
 fun SettingsRoute(
     vaultViewModel: VaultSetupViewModel,
@@ -430,7 +429,6 @@ private fun LanguageDialog(
     )
 }
 
-/** 主题色块：直接渲染那套主题的主色，选择结果所见即所得 */
 @Composable
 private fun ThemeSwatch(preset: ThemePreset, useWallpaper: Boolean) {
     val scheme = if (useWallpaper) {
@@ -549,7 +547,6 @@ private fun SettingsCard(content: @Composable () -> Unit) {
         color = LoomaTokens.colors.card,
         modifier = Modifier.fillMaxWidth(),
     ) {
-        // Surface 的内容放在 Box 里，多行必须自己叠成 Column，否则会重叠
         Column { content() }
     }
 }

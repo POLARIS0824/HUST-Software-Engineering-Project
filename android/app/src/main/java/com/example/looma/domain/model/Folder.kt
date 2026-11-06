@@ -1,6 +1,5 @@
 package com.example.looma.domain.model
 
-/** Empty relativePath represents the root of the Vault. */
 @JvmInline
 value class FolderPath(val relativePath: String) {
     companion object {

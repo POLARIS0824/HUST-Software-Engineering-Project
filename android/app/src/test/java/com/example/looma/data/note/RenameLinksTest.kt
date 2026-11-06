@@ -9,10 +9,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Test
 
-/**
- * 改名后改写引用方的组合逻辑：`MarkdownIndex` 出的 span 交给 `WikiLinks.retarget`。
- * `NoteRepository` 需要真实 Vault，这里只测纯计算这一段。
- */
 class RenameLinksTest {
 
     private val old = NotePath("Inbox/Old.md")

@@ -22,7 +22,6 @@ class VaultRepository(
         VaultStorageAccess(context),
     )
 
-    // 1. 观察当前 Vault
     val currentVaultFlow: Flow<Vault?> =
         preferences.vaultDataFlow.map { data ->
 
@@ -45,12 +44,10 @@ class VaultRepository(
             )
         }
 
-    // 2. 获取当前 Vault
     suspend fun getCurrentVault(): Vault? {
         return currentVaultFlow.first()
     }
 
-    // 3. 设置当前 Vault
     suspend fun setCurrentVault(rootPath: String): Vault =
         withContext(Dispatchers.IO) {
 
@@ -58,7 +55,6 @@ class VaultRepository(
 
             val currentVault = getCurrentVault()
 
-            // 比较规范化路径，避免重复创建 ID
             val currentPath = currentVault?.rootPath?.let { path ->
                 runCatching {
                     File(path).canonicalPath
@@ -89,7 +85,6 @@ class VaultRepository(
             vault
         }
 
-    // 4. 获取并验证已经保存的 Vault
     suspend fun requireCurrentVault(): Vault =
         withContext(Dispatchers.IO) {
 
@@ -101,7 +96,6 @@ class VaultRepository(
             vault
         }
 
-    // 5. 检查指定 Vault 是否可访问，可访问返回 null
     suspend fun vaultAccessError(
         vault: Vault,
     ): String? = withContext(Dispatchers.IO) {
@@ -113,12 +107,10 @@ class VaultRepository(
             ?: "the vault folder is not accessible"
     }
 
-    // 6. 清除当前 Vault
     suspend fun clearCurrentVault() {
         preferences.clearVault()
     }
 
-    // 7. 验证真实文件夹和存储权限
     private fun requireValidDirectory(rootPath: String): File {
         require(rootPath.isNotBlank()) {
             "the vault path is empty"

@@ -26,10 +26,6 @@ import kotlinx.coroutines.withContext
 import com.mikepenz.markdown.model.ImageData
 import com.mikepenz.markdown.model.ImageTransformer
 
-/**
- * 图片引用的解析入口，由 feature 层按当前笔记提供。
- * 默认返回 null：没有库上下文时（预览、测试）一张图都不加载。
- */
 val LocalImageSourceResolver = staticCompositionLocalOf<(String) -> ImageSource?> { { null } }
 
 private const val MAX_EDGE_PX = 1600
@@ -37,23 +33,15 @@ private const val CACHE_SIZE_KB = 64 * 1024
 private const val MAX_DOWNLOAD_BYTES = 12 * 1024 * 1024
 private const val TIMEOUT_MS = 10_000
 
-/** 进程级缓存，按来源取键：同一个文件换笔记不该重解码 */
 private val imageCache = object : LruCache<String, Bitmap>(CACHE_SIZE_KB) {
     override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount / 1024
 }
 
-/**
- * 把渲染库的图片插槽接到真实的解码器上。
- *
- * 本地文件走 BitmapFactory，http(s) 走 HttpURLConnection，都在 IO 线程上。
- * 失败时返回 null，坏引用只是不显示，不会拖垮整篇正文。
- */
 internal class LoomaImageTransformer : ImageTransformer {
 
     @Composable
     override fun transform(link: String): ImageData? {
         val resolver = LocalImageSourceResolver.current
-        // 解析也要进 IO：canonicalFile 会摸文件系统，不能放在 composition 里
         val loaded by produceState<Pair<ImageSource, Bitmap>?>(null, link, resolver) {
             value = withContext(Dispatchers.IO) {
                 resolver(link)?.let { source -> loadImage(source)?.let { source to it } }
@@ -68,7 +56,6 @@ internal class LoomaImageTransformer : ImageTransformer {
     }
 }
 
-/** 尺寸只影响排版，不进缓存键：同一个文件换尺寸不该重解码 */
 private fun ImageSize?.imageModifier(): Modifier {
     val width = this?.width
     val height = this?.height
@@ -80,7 +67,6 @@ private fun ImageSize?.imageModifier(): Modifier {
     }
 }
 
-/** 只给一个维度时保持宽高比，两个都给时按 Obsidian 的语义精确缩放 */
 private fun ImageSize?.imageContentScale(): ContentScale {
     val width = this?.width
     val height = this?.height
@@ -123,7 +109,6 @@ private fun decodeBytes(bytes: ByteArray): Bitmap? {
     return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
 }
 
-/** 只缩不放大：小图保持原尺寸，大图按 2 的幂降到 [MAX_EDGE_PX] 以内 */
 private fun sampleSizeFor(bounds: BitmapFactory.Options): Int {
     var sample = 1
     while (bounds.outWidth / sample > MAX_EDGE_PX || bounds.outHeight / sample > MAX_EDGE_PX) {

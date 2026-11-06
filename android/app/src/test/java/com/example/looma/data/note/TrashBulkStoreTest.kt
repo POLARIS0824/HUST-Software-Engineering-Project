@@ -7,12 +7,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-/**
- * 回收站批量操作的计数语义：能量的一篇不能因为别人冲突就整批不做，
- * 失败的条数还要如实报给界面。
- *
- * 和 [VaultFileOpsTest] 一样跑在临时目录上，只断言用户能看到的结果。
- */
 class TrashBulkStoreTest {
 
     @get:Rule
@@ -40,7 +34,6 @@ class TrashBulkStoreTest {
         val minutes = note("项目/纪要.md")
         val weeklyRecord = ops.trash(weekly)
         val minutesRecord = ops.trash(minutes)
-        // 原位置又冒出一份同名文件：这一篇恢复必然冲突，只能计入失败并留在回收站
         note("项目/纪要.md", "# 后来写的\n")
 
         val (restored, outcome) = bulkOverTrash(

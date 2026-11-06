@@ -12,12 +12,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-/**
- * 文件管理闭环的落盘行为：目录、改名、移动、回收站、恢复。
- *
- * 全部跑在临时目录上，断言的是用户能看到的结果（文件在不在、叫什么名字），
- * 而不是内部实现。
- */
 class VaultFileOpsTest {
 
     @get:Rule
@@ -214,8 +208,6 @@ class VaultFileOpsTest {
         assertEquals(VaultFileFailure.NOT_FOUND, error.failure)
     }
 
-    // ---- 文件夹：改名、移动、删除 ----
-
     @Test
     fun `renameFolder renames the directory in place and keeps its notes`() {
         setUp()
@@ -340,7 +332,6 @@ class VaultFileOpsTest {
 
         assertEquals(1, trashed.size)
         assertEquals("项目/计划.md", ops.trashed().single().originalPath.relativePath)
-        // 点目录整棵跳过：笔记原样保留，文件夹因此不算空，也不会被删掉
         assertTrue(File(root, "项目/.looma/私货.md").isFile)
         assertTrue(File(root, "项目").isDirectory)
     }

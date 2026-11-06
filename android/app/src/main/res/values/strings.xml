@@ -1,13 +1,11 @@
 <resources>
     <string name="app_name">Looma</string>
 
-    <!-- Shell -->
     <string name="nav_back">Back</string>
     <string name="drawer_notes">Notes</string>
     <string name="drawer_trash">Trash</string>
     <string name="drawer_settings">Settings</string>
 
-    <!-- Home -->
     <string name="home_search_placeholder">Search %1$s</string>
     <string name="home_section_recents">Recent</string>
     <string name="home_section_folders">Folders</string>
@@ -46,7 +44,6 @@
     <string name="home_error_invalid_name">That name is not allowed</string>
     <string name="home_error_empty_name">Enter a name</string>
 
-    <!-- Selection -->
     <string name="home_selection_count">%1$d</string>
     <string name="home_selection_close">Clear selection</string>
     <string name="home_selection_rename">Rename</string>
@@ -54,7 +51,6 @@
     <string name="home_selection_info">File info</string>
     <string name="home_selection_delete">Delete</string>
 
-    <!-- Dialogs -->
     <string name="dialog_cancel">Cancel</string>
     <string name="dialog_confirm">OK</string>
     <string name="dialog_save">Save</string>
@@ -72,7 +68,6 @@
     <string name="home_info_checklist">Checklist</string>
     <string name="home_info_checklist_value">%1$d of %2$d done</string>
 
-    <!-- Snackbars -->
     <string name="home_snackbar_deleted">%1$d moved to trash</string>
     <string name="home_snackbar_renamed">Renamed</string>
     <string name="home_snackbar_moved">%1$d moved</string>
@@ -88,7 +83,6 @@
     <string name="trash_deleted">Note deleted</string>
     <string name="home_snackbar_folder_created">Folder created</string>
 
-    <!-- Trash -->
     <string name="trash_title">Trash</string>
     <string name="trash_empty">Trash is empty</string>
     <string name="trash_empty_hint">Deleted notes stay here until you restore them</string>
@@ -118,7 +112,6 @@
     <string name="trash_bulk_partial">Restored %1$d, %2$d failed</string>
     <string name="trash_restore_undone">Note moved back to the trash</string>
 
-    <!-- Settings -->
     <string name="settings_title">Settings</string>
     <string name="settings_section_vault">Notes vault</string>
     <string name="settings_vault_none">No vault selected</string>
@@ -150,7 +143,6 @@
     <string name="settings_version">Version %1$s</string>
     <string name="settings_vault_unavailable">The vault folder is not available</string>
 
-    <!-- Vault setup -->
     <string name="vault_setup_title">Choose a Looma vault</string>
     <string name="vault_setup_subtitle">Your Markdown notes live in the folder you pick</string>
     <string name="vault_setup_choose">Choose folder</string>
@@ -170,7 +162,6 @@
     <string name="vault_permission_all_files">Grant all files access to use a vault</string>
     <string name="vault_permission_storage">Grant storage access to use a vault</string>
 
-    <!-- Note editor -->
     <string name="editor_back">Back</string>
     <string name="note_edit">Edit</string>
     <string name="note_read">Read</string>
@@ -213,7 +204,6 @@
     <string name="editor_reload_from_disk">Reload from disk</string>
     <string name="editor_draft_restored">Restored unsaved changes from last time</string>
 
-    <!-- Folder actions -->
     <string name="home_folder_actions_description">Folder actions</string>
     <string name="home_folder_rename_title">Rename folder</string>
     <string name="home_folder_rename_hint">Folder name</string>

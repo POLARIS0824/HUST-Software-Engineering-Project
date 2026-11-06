@@ -1,13 +1,11 @@
 <resources>
     <string name="app_name">Looma</string>
 
-    <!-- Shell -->
     <string name="nav_back">返回</string>
     <string name="drawer_notes">笔记</string>
     <string name="drawer_trash">回收站</string>
     <string name="drawer_settings">设置</string>
 
-    <!-- Home -->
     <string name="home_search_placeholder">搜索 %1$s</string>
     <string name="home_section_recents">最近</string>
     <string name="home_section_folders">文件夹</string>
@@ -46,7 +44,6 @@
     <string name="home_error_invalid_name">该名称不可用</string>
     <string name="home_error_empty_name">请输入名称</string>
 
-    <!-- Selection -->
     <string name="home_selection_count">%1$d</string>
     <string name="home_selection_close">退出选择</string>
     <string name="home_selection_rename">重命名</string>
@@ -54,7 +51,6 @@
     <string name="home_selection_info">文件属性</string>
     <string name="home_selection_delete">删除</string>
 
-    <!-- Dialogs -->
     <string name="dialog_cancel">取消</string>
     <string name="dialog_confirm">确定</string>
     <string name="dialog_save">保存</string>
@@ -72,7 +68,6 @@
     <string name="home_info_checklist">任务</string>
     <string name="home_info_checklist_value">已完成 %1$d / %2$d</string>
 
-    <!-- Snackbars -->
     <string name="home_snackbar_deleted">已移入回收站：%1$d 项</string>
     <string name="home_snackbar_renamed">已重命名</string>
     <string name="home_snackbar_moved">已移动 %1$d 项</string>
@@ -88,7 +83,6 @@
     <string name="trash_deleted">已删除笔记</string>
     <string name="home_snackbar_folder_created">已创建文件夹</string>
 
-    <!-- Trash -->
     <string name="trash_title">回收站</string>
     <string name="trash_empty">回收站是空的</string>
     <string name="trash_empty_hint">删除的笔记会留在这里，直到你恢复它</string>
@@ -115,7 +109,6 @@
     <string name="trash_bulk_partial">已恢复 %1$d 篇，%2$d 篇失败</string>
     <string name="trash_restore_undone">笔记已移回回收站</string>
 
-    <!-- Settings -->
     <string name="settings_title">设置</string>
     <string name="settings_section_vault">笔记库</string>
     <string name="settings_vault_none">尚未选择笔记库</string>
@@ -147,7 +140,6 @@
     <string name="settings_version">版本 %1$s</string>
     <string name="settings_vault_unavailable">笔记库当前不可访问</string>
 
-    <!-- Vault setup -->
     <string name="vault_setup_title">选择 Looma 笔记库</string>
     <string name="vault_setup_subtitle">你的 Markdown 笔记将保存在所选文件夹中</string>
     <string name="vault_setup_choose">选择文件夹</string>
@@ -167,7 +159,6 @@
     <string name="vault_permission_all_files">请先授予全部文件访问权限</string>
     <string name="vault_permission_storage">请先授予存储空间读写权限</string>
 
-    <!-- Note editor -->
     <string name="editor_back">返回</string>
     <string name="note_edit">编辑</string>
     <string name="note_read">阅读</string>
@@ -210,7 +201,6 @@
     <string name="editor_reload_from_disk">从磁盘重载</string>
     <string name="editor_draft_restored">已恢复上次未保存的内容</string>
 
-    <!-- Folder actions -->
     <string name="home_folder_actions_description">文件夹操作</string>
     <string name="home_folder_rename_title">重命名文件夹</string>
     <string name="home_folder_rename_hint">文件夹名称</string>

@@ -6,12 +6,6 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Upsert
 
-/**
- * 索引表的读写。
- *
- * `paths` 一律由调用方保证非空：SQLite 不接受空的 `IN ()`，
- * 所以空批次在 [RoomNoteIndex] 里就被跳过，而不是在这里拼一个恒假条件。
- */
 @Dao
 internal interface NoteIndexDao {
 
@@ -39,7 +33,6 @@ internal interface NoteIndexDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertLinks(links: List<NoteLinkEntity>)
 
-    /** 子表靠外键级联删除，调用方不需要自己清理标签与链接 */
     @Query("DELETE FROM indexed_note WHERE vaultId = :vaultId AND path IN (:paths)")
     suspend fun deleteNotes(vaultId: String, paths: List<String>)
 }

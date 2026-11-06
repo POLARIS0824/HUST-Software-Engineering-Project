@@ -33,77 +33,42 @@ data class LoomaColors(
     val error: Color,
 )
 
-/**
- * 首页与核心界面的排版刻度。
- *
- * 优先使用 Material 3 角色；为笔记内容调整的字号、行高和字重在对应语义下注明。
- */
 @Immutable
 data class LoomaTypography(
-    /**
-     * headline large emphasized 叠品牌字重。
-     * 引导页标题要压得住整屏，M3 的 emphasized 只到 Medium。
-     */
     val heroTitle: TextStyle,
-    /** title large emphasized */
     val pageTitle: TextStyle,
-    /** title medium emphasized */
     val sectionTitle: TextStyle,
-    /** label medium emphasized，配等宽数字 */
     val count: TextStyle,
-    /** title medium */
     val cardTitle: TextStyle,
-    /** body small */
     val cardBody: TextStyle,
-    /** label medium，配等宽数字 */
     val cardMeta: TextStyle,
-    /** 首页网格笔记标题。基于 title medium emphasized；18sp/26sp、Semibold 是参考图的设计取值。 */
     val homeNoteTitle: TextStyle,
-    /** 首页网格正文、Markdown 标题和代码；与 Recent 的紧凑预览分开。 */
     val homeNotePreview: LoomaPreviewTypography,
-    /** title small */
     val folderName: TextStyle,
-    /** body medium，导航路径 */
     val breadcrumb: TextStyle,
-    /** body large，正文、搜索输入、列表选项 */
     val body: TextStyle,
-    /** body medium，空状态与次要提示 */
     val supporting: TextStyle,
-    /** title medium emphasized，头像首字母 */
     val avatar: TextStyle,
-    /** headline medium emphasized，笔记独立标题，编辑与阅读共用。 */
     val noteTitle: TextStyle,
-    /** body large，笔记正文与阅读段落共用。26sp 行高是 Looma 的阅读选择。 */
     val noteBody: TextStyle,
-    /** Markdown 文档层级，不用于页面导航标题。 */
     val noteHeadings: LoomaNoteHeadings,
-    /** body medium，等宽代码，保留正文阅读行高。 */
     val noteCode: TextStyle,
 )
 
 @Immutable
 data class LoomaNoteHeadings(
-    /** 文档一级标题。阅读用 headline medium emphasized；网格摘录用 title medium emphasized。 */
     val h1: TextStyle,
-    /** 文档二级标题。阅读用 headline small emphasized；网格摘录用 body large emphasized。 */
     val h2: TextStyle,
-    /** 文档三级标题。阅读用 title large emphasized；网格摘录用 body large emphasized。 */
     val h3: TextStyle,
-    /** 文档四级标题。阅读用 title medium emphasized；网格摘录用 body medium emphasized。 */
     val h4: TextStyle,
-    /** 文档五级标题。阅读用 title small emphasized；网格摘录用 body medium emphasized。 */
     val h5: TextStyle,
-    /** 文档六级标题。阅读用 title small；网格摘录用 body small，均用次要文字颜色。 */
     val h6: TextStyle,
 )
 
 @Immutable
 data class LoomaPreviewTypography(
-    /** body large，首页可扫读的内容摘录。 */
     val body: TextStyle,
-    /** 摘录内的文档层级，全部服从卡片正文的阅读密度。 */
     val headings: LoomaNoteHeadings,
-    /** body medium，等宽代码；不使用页面正文的长阅读行高。 */
     val code: TextStyle,
 )
 
@@ -168,16 +133,12 @@ fun loomaTypography(base: Typography): LoomaTypography = LoomaTypography(
     noteCode = base.bodyMedium.copy(fontFamily = FontFamily.Monospace, lineHeight = BODY_LINE_HEIGHT.sp),
 )
 
-/** 缺省值在 Android 上按 1 处理，这里写全是为了不依赖那个约定 */
 internal const val TABULAR_FIGURES = "\"tnum\" 1"
 
-/** Google Sans Flex 的 wght 轴到 1000，750 比 M3 的 Bold 再重半档 */
 private const val BRAND_HERO_WEIGHT = 750
 
-/** 正文行高：编辑态与 Markdown 阅读态共用，切换模式时文字不会上下跳 */
 internal const val BODY_LINE_HEIGHT = 26
 
-/** 默认值只服务于没有 LoomaTheme 包裹的 Preview 与测试 */
 val LocalLoomaColors = staticCompositionLocalOf { loomaColors(lightColorScheme()) }
 val LocalLoomaTypography = staticCompositionLocalOf { loomaTypography(Typography()) }
 

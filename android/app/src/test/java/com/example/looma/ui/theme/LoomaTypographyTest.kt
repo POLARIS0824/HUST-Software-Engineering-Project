@@ -5,12 +5,6 @@ import androidx.compose.ui.text.font.FontWeight
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/**
- * 排版 token 是 Material 3 角色的直映。
- *
- * 这里一旦出现字号、行高或字重的二次调整，就等于和 M3 的刻度分叉，
- * 所以 token 只做重命名，不做改值。
- */
 class LoomaTypographyTest {
 
     private val base = Typography()

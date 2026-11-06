@@ -21,10 +21,6 @@ import com.example.looma.ui.theme.LoomaTheme
 import com.example.looma.ui.theme.LoomaTokens
 import java.time.Instant
 
-/**
- * Preview 数据与真实仓库无关；状态直接按 ViewModel 的产出规则预计算，
- * 这样 Preview 看到的列表顺序与搜索过滤和真机一致。
- */
 private fun previewState(
     query: String = "",
     isGridMode: Boolean = true,

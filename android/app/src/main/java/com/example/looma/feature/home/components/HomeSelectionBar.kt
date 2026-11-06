@@ -13,13 +13,6 @@ import com.example.looma.R
 import com.example.looma.ui.components.LoomaIcon
 import com.example.looma.ui.theme.LoomaTokens
 
-/**
- * 选择态的顶栏，笔记和文件夹共用。
- *
- * 左边退出选择，中间是标题（选中数量或文件夹名），右边是动作。
- * 笔记多选时可用的动作比单篇少，[showInfo] 与 [showRename] 由调用方按目标决定：
- * 文件夹只会单选，所以永远给全套三个动作。
- */
 @Composable
 internal fun HomeSelectionBar(
     title: String,

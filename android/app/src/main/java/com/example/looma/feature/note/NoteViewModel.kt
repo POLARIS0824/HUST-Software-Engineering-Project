@@ -21,17 +21,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/**
- * 笔记页的"文档会话"：加载、自动保存、离开前冲刷。
- *
- * 阅读和编辑共用同一份正文，所以不存在两个页面各读一次盘、互相看不到对方修改的问题。
- * 正文缓冲区和光标属于 Compose 的 TextFieldState，不进入 ViewModel。
- *
- * 保存节奏是节流而不是防抖：第一次改动起每 [SAVE_INTERVAL_MS] 落盘一次，
- * 一直打字也最多丢一个间隔的内容，不会等到用户停手才写。
- * 生命周期离开前台时另外冲刷一次，并且先把缓冲区写进草稿区，
- * 进程被杀之后下次打开还能捞回来。
- */
 class NoteViewModel(
     private val repository: NoteRepository,
     private val settingsRepository: SettingsRepository,
@@ -64,9 +53,7 @@ class NoteViewModel(
             try {
                 val opened = repository.openNote(noteId)
                 val keepEmptyNotes = settingsRepository.settings.first().keepEmptyNotes
-                // 索引只是缓存：读它失败不该让笔记打不开，链接退化成全部未解析即可
                 val wiki = runCatching { repository.wikiContext(noteId) }.getOrDefault(WikiContext.Empty)
-                // 路径也同理：拿不到时图片不显示，正文照常打开
                 val imageContext = runCatching { repository.imageContext(noteId) }.getOrNull()
                 _uiState.update {
                     it.copy(
@@ -93,10 +80,6 @@ class NoteViewModel(
         }
     }
 
-    /**
-     * 回到这篇笔记时重取双链快照：刚刚从别的笔记回来，那边的改动可能新增了反向链接，
-     * 或让原本未解析的目标存在了。只读索引，不读盘。
-     */
     fun refreshWiki() {
         if (_uiState.value.isLoading) return
         viewModelScope.launch {
@@ -106,12 +89,10 @@ class NoteViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                // 保留上一份快照：链接样式过时，比整篇笔记报错要好
             }
         }
     }
 
-    /** 正文每次变化都会到这里；落盘由节流定时器决定，不等输入停下 */
     fun onContentChanged(value: String) {
         val current = _uiState.value
         if (current.content == value) return
@@ -127,10 +108,6 @@ class NoteViewModel(
         scheduleSave()
     }
 
-    /**
-     * 重试保存。先重新 stat 一次：修改时间没变说明刚才是临时失败，可以再写；
-     * 变了说明别人改过文件，直接转入冲突，不能拿旧内容把对方覆盖掉。
-     */
     fun retrySave() {
         viewModelScope.launch {
             val disk = runCatching { repository.modifiedAtOf(noteId) }.getOrNull()
@@ -146,7 +123,6 @@ class NoteViewModel(
         }
     }
 
-    /** 外部改动冲突时用户选择以本地内容为准：先把磁盘那一份留档，再覆盖 */
     fun overwrite() {
         viewModelScope.launch {
             repository.backupConflict(noteId)
@@ -158,7 +134,6 @@ class NoteViewModel(
         }
     }
 
-    /** 冲突时放弃本地改动，改读磁盘上的版本 */
     fun reloadFromDisk() {
         loadJob?.cancel()
         saveTick?.cancel()
@@ -190,11 +165,6 @@ class NoteViewModel(
         }
     }
 
-    /**
-     * 界面离开前台时调用：先把缓冲区存成草稿，再立即冲刷一次。
-     *
-     * 草稿写成功而保存失败时，下次打开会读到草稿；保存成功则把草稿删掉。
-     */
     fun onEnterBackground() {
         val state = _uiState.value
         if (state.isLoading || !state.isDirty) return
@@ -205,12 +175,7 @@ class NoteViewModel(
         }
     }
 
-    /**
-     * 返回前把缓冲区写完。写失败时停在 [NoteUiState.leaveBlocked]，
-     * 由界面让用户选择重试、覆盖还是放弃。
-     */
     fun saveThenLeave(force: Boolean = false, onSaved: () -> Unit) {
-        // 连续按返回只允许发起一次离开流程，否则回调会把返回栈多弹一层
         if (leaving) return
         leaving = true
         if (force) forceNextSave = true
@@ -220,7 +185,6 @@ class NoteViewModel(
         ensureSaveLoop()
         viewModelScope.launch {
             saveJob?.join()
-            // 冲刷期间如果又有输入，再等一轮
             if (_uiState.value.content != _uiState.value.savedContent) {
                 saveRequested = true
                 ensureSaveLoop()
@@ -236,17 +200,10 @@ class NoteViewModel(
         }
     }
 
-    /**
-     * 离开笔记的统一入口。
-     *
-     * 干净状态下也要处理「误触新建」：按设置把没写过的空白笔记直接丢弃，
-     * 因此返回键在会丢弃空笔记时也要接管，而不是直接退栈。
-     */
     fun requestLeave(onLeave: () -> Unit) {
         val state = _uiState.value
         when {
             state.willDiscardEmpty -> viewModelScope.launch {
-                // 不保存，也不进回收站：用户根本没写过这篇笔记
                 runCatching { repository.discardNote(noteId) }
                 onLeave()
             }
@@ -260,7 +217,6 @@ class NoteViewModel(
         _uiState.update { it.copy(leaveBlocked = false) }
     }
 
-    /** 一次只跑一个节流定时器：持续输入时每隔一个间隔写一次，而不是一直往后推 */
     private fun scheduleSave() {
         if (saveTick?.isActive == true) return
         saveTick = viewModelScope.launch {
@@ -281,7 +237,6 @@ class NoteViewModel(
                 if (!persistOnce()) break
             }
             saveJob = null
-            // 收尾时刚好又有新输入，接上下一轮（冲突时不自动重试）
             if (saveRequested && !_uiState.value.isConflict) ensureSaveLoop()
         }
     }
@@ -332,7 +287,6 @@ class NoteViewModel(
     }
 
     companion object {
-        /** 一直输入时最多丢这么多内容；比防抖的"停手才写"可靠 */
         private const val SAVE_INTERVAL_MS = 2_000L
 
         fun factory(

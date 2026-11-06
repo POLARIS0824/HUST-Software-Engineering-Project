@@ -18,7 +18,6 @@ APP = "com.example.looma"
 COMPONENT = APP + "/.MainActivity"
 MARKER = "/data/local/tmp/looma-verify-owner"
 
-
 def sdk_path():
     sdk = os.environ.get("ANDROID_HOME") or os.environ.get("ANDROID_SDK_ROOT")
     if sdk:
@@ -27,7 +26,6 @@ def sdk_path():
         if line.startswith("sdk.dir="):
             return Path(line.split("=", 1)[1].replace("\\:", ":").replace("\\\\", "\\"))
     raise RuntimeError("Set ANDROID_HOME to the installed Android SDK")
-
 
 class Control:
     def __init__(self, run):
@@ -110,10 +108,10 @@ class Control:
             self.device("shell", "sh", "-c", shlex.quote(f"echo {self.state['owner']} > {MARKER}"))
             self.state["status"] = "running"
             self.save()
-            # -read-only discards this uninstall and every subsequent guest mutation on exit.
+
             self.device("uninstall", APP, check=False)
             self.device("install", str(apk), timeout=120)
-            # Never adopt a pre-existing guest directory, even in a disposable overlay.
+
             exists = self.command([self.adb, "-s", self.state["serial"], "shell", "ls",
                                    "-d", self.state["vault"]], check=False)
             if exists == self.state["vault"]:
@@ -229,11 +227,11 @@ class Control:
                 self.owned()
                 self.device("emu", "kill", timeout=15)
             except (RuntimeError, subprocess.TimeoutExpired) as error:
-                # Do not kill a different device now occupying the recorded port.
+
                 self.log(cleanup_error=str(error))
                 raise RuntimeError("Cleanup needs inspection; ownership/ADB failed. See session.json and emulator.log") from error
         else:
-            # Boot failed before ownership was established: stop only the process we started.
+
             if os.name == "nt":
                 self.command(["taskkill", "/PID", str(self.state["pid"]), "/T", "/F"], check=False)
             else:
@@ -251,7 +249,6 @@ class Control:
         self.state["status"] = "cleaned"
         self.save()
         print(f"Cleaned {self.state['serial']}; evidence retained: {self.root}")
-
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -332,7 +329,6 @@ def main():
             c.doctor()
         else:
             getattr(c, args.action)(args.name)
-
 
 if __name__ == "__main__":
     try:

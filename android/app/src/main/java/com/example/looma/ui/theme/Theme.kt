@@ -13,21 +13,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
 import com.example.looma.data.settings.ThemePreset
 
-/**
- * A single source of truth for the app's Material 3 Expressive theme.
- *
- * Color priority:
- * 1. System Dynamic Color on Android 12+ when the user turned it on
- * 2. The selected preset palette, derived from one seed color
- *
- * Typography and motion remain consistent regardless of the color source.
- *
- * The Looma tokens are projected from the same scheme and typography,
- * so the shared surface roles resolve from one place. A one-off editorial
- * moment (onboarding hero, dialog heading) may still name an M3 role
- * directly; what no screen may do is invent a size, weight or family.
- * `verifyTypography` fails the build on exactly that.
- */
 @Composable
 fun LoomaTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
@@ -49,8 +34,6 @@ fun LoomaTheme(
     CompositionLocalProvider(
         LocalLoomaColors provides colors,
         LocalLoomaTypography provides type,
-        // 根节点也必须给内容色：不带 Surface 的页面里，裸 Text 会退回默认的纯黑，
-        // 深色模式下就成了黑底黑字
         LocalContentColor provides colorScheme.onBackground,
     ) {
         MaterialExpressiveTheme(

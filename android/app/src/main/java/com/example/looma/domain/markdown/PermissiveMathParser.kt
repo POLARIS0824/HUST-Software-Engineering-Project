@@ -6,11 +6,6 @@ import org.intellij.markdown.parser.sequentialparsers.RangesListBuilder
 import org.intellij.markdown.parser.sequentialparsers.SequentialParser
 import org.intellij.markdown.parser.sequentialparsers.TokensCache
 
-/**
- * Obsidian treats `$x$` as math even when letters, CJK characters or punctuation touch the
- * delimiters, which the GFM MathParser rejects as not flanking. This parser only receives the
- * dollar tokens that parser left behind, so it relaxes the boundaries without forking GFM math.
- */
 internal class PermissiveMathParser : SequentialParser {
     override fun parse(tokens: TokensCache, rangesToGlue: List<IntRange>): SequentialParser.ParsingResult {
         val result = SequentialParser.ParsingResultBuilder()

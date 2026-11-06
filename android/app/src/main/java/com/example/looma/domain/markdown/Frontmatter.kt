@@ -1,12 +1,5 @@
 package com.example.looma.domain.markdown
 
-/**
- * frontmatter 的唯一定义：文件开头那段合法的 `---` 区块到哪里结束。
- *
- * 约定与 `MarkdownParser`、`MarkdownSnippet`、`EditorDocument` 一致：
- * 只有文件第一行就是 `---`，且后面还能再找到一行 `---` 时才算 frontmatter；
- * 其它情况一律当作正文，宁可多显示也不吞内容。
- */
 internal fun frontmatterEnd(source: String): Int {
     if (!source.startsWith("---")) return 0
     if (source.length > 3 && source[3] != '\n' && source[3] != '\r') return 0

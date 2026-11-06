@@ -61,6 +61,7 @@ import com.mikepenz.markdown.m3.markdownTypography
 import com.mikepenz.markdown.model.MarkdownColors
 import com.mikepenz.markdown.model.MarkdownPadding
 import com.mikepenz.markdown.model.MarkdownTypography
+import com.mikepenz.markdown.model.markdownAnnotatorConfig
 import com.mikepenz.markdown.model.markdownInlineContent
 import com.mikepenz.markdown.model.markdownPadding
 import org.intellij.markdown.IElementType
@@ -68,12 +69,6 @@ import org.intellij.markdown.MarkdownTokenTypes
 import org.intellij.markdown.ast.findChildOfType
 import org.intellij.markdown.ast.getTextInNode
 
-/**
- * 渲染库与本项目之间的唯一适配层。
- *
- * 字体角色由 LoomaTokens 定义，阅读页与编辑页共用正文刻度。
- * 复选框和列表符号都换成固定宽度列，行内首行文字与标记因此对齐。
- */
 @Immutable
 data class LoomaMarkdownTheme(
     val colors: MarkdownColors,
@@ -157,15 +152,8 @@ fun loomaMarkdownTheme(
     )
 }
 
-/**
- * 组件集合。[onCheckboxToggle] 为 null 时复选框只读（卡片预览），
- * 有回调时点击交回原文坐标，由 feature 层写回文件。
- *
- * [wiki] 为 null 时不处理双链（卡片预览），有值时为 `[[..]]` 加样式与点击；
- * 解析结果只影响颜色，点击交回 [onWikiLinkClick]，渲染层不认识 NoteId。
- *
- * 不是 @Composable：调用方可以用 remember 缓存，避免滚动时重建组件树。
- */
+internal val loomaAnnotatorConfig = markdownAnnotatorConfig(eolAsNewLine = true)
+
 internal fun loomaMarkdownComponents(
     theme: LoomaMarkdownTheme,
     compact: Boolean,
@@ -181,7 +169,6 @@ internal fun loomaMarkdownComponents(
 ): MarkdownComponents {
     val checkSize = if (compact) 14.dp else 18.dp
     val checkGap = if (compact) 6.dp else 9.dp
-    // 列表的标记列由渲染库的 markerModifier 控制宽度，所以列宽要把复选框和间距一起算进去
     val markerColumn = checkSize + checkGap
     val headingBottom = if (compact) 0.dp else 2.dp
     val links: WikiAnnotator? = wiki?.let { context ->
@@ -241,7 +228,6 @@ internal fun loomaMarkdownComponents(
     )
 }
 
-/** 段落与标题共用的双链标注；由 [loomaMarkdownComponents] 建一次 */
 private typealias WikiAnnotator = (AnnotatedString) -> AnnotatedString
 
 private fun heading(
@@ -293,12 +279,6 @@ private fun heading(
     )
 }
 
-/**
- * 段落与标题的行内公式作用域。
- *
- * 行内占位一旦超过行宽就会被文字布局裁掉，且文字自身不能滚动，所以这里取到实际行宽交给占位，
- * 超宽公式在占位内部横向拖动。只有含行内公式的段落才多包这一层，不影响图片等其它行内内容。
- */
 @Composable
 private fun MathInlineScope(
     math: MathRenderState?,
@@ -334,7 +314,6 @@ private fun MathInlineScope(
     }
 }
 
-/** 段落自己构建 AnnotatedString，才能给斜体补上绘制期倾斜 */
 @Composable
 private fun LoomaMarkdownParagraph(
     model: MarkdownComponentModel,
@@ -370,10 +349,6 @@ private fun LoomaMarkdownParagraph(
 private fun MarkdownComponentModel.isChecked(): Boolean =
     node.getTextInNode(content).contains("[x]")
 
-/**
- * 固定宽度的复选框列：高度等于一行正文，方块在其中垂直居中，
- * 勾选框因此与首行文字对齐；取消勾选时只画描边，勾选时与 Obsidian Things 一样是实心圆角方块。
- */
 @Composable
 private fun CheckboxMarker(
     checked: Boolean,

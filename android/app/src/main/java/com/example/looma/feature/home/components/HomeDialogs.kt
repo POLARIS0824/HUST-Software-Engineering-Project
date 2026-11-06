@@ -45,12 +45,6 @@ import com.example.looma.ui.format.formatDateTime
 import com.example.looma.ui.format.formatFileSize
 import com.example.looma.ui.theme.LoomaTokens
 
-/**
- * 重命名与新建文件夹共用同一个输入对话框，只有标题、初始值和按钮文案不同。
- *
- * 用自绘 Dialog 而不是 AlertDialog：输入法弹出时窗口按 imePadding 上移，
- * 确认按钮不会被键盘盖住。
- */
 @Composable
 internal fun HomeTextInputDialog(
     title: String,
@@ -124,7 +118,6 @@ internal fun HomeTextInputDialog(
     }
 }
 
-/** 文件属性：路径、大小、修改时间、字数与任务完成情况 */
 @Composable
 internal fun HomePropertiesDialog(
     properties: NoteProperties,
@@ -195,7 +188,6 @@ private fun PropertyRow(label: String, value: String) {
     }
 }
 
-/** 删除文件夹前确认：明确告诉用户会有几篇笔记进回收站 */
 @Composable
 internal fun HomeDeleteFolderDialog(
     folderName: String,

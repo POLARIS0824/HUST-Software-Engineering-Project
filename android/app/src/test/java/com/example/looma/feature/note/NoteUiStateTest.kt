@@ -4,7 +4,6 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 「新建的空白笔记要不要丢弃」：标题算内容，只有标题和正文都空才丢 */
 class NoteUiStateTest {
 
     @Test

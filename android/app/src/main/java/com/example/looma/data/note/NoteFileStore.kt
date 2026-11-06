@@ -15,7 +15,6 @@ import java.time.Instant
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** 一篇笔记在文件系统中的原始记录，仅用于 data 层 */
 internal data class StoredMarkdown(
     val id: NoteId,
     val content: String,
@@ -24,20 +23,12 @@ internal data class StoredMarkdown(
     val file: File,
 )
 
-/** 笔记在磁盘上的物理事实，供“文件属性”使用 */
 internal data class StoredNoteStats(
     val path: NotePath,
     val sizeBytes: Long,
     val modifiedAt: Instant,
 )
 
-/**
- * Markdown 正文的读写与单篇操作。
- *
- * 文件级操作（改名、移动、回收站、目录创建）都委托给 [VaultFileOps]，
- * 这一层只负责把文件变成 [StoredMarkdown] 以及原子写盘。
- * 全库遍历不在这里：那条路径要经过索引，见 `VaultIndexer`。
- */
 internal class NoteFileStore(
     private val vaultRepository: VaultRepository,
 ) {
@@ -47,7 +38,6 @@ internal class NoteFileStore(
         storedMarkdown(vault, ops.rootDir, file, readMarkdown(file))
     }
 
-    /** 解析正文图片只需要两个路径，不必把正文再读一遍 */
     suspend fun imageContext(id: NoteId): ImageContext? = withContext(Dispatchers.IO) {
         val (_, ops) = currentVault(id.vaultId)
         ImageContext(
@@ -66,7 +56,6 @@ internal class NoteFileStore(
         )
     }
 
-    /** 只做 stat：正文缓存的命中判断靠它，不能顺手把整篇读出来 */
     suspend fun modifiedAt(id: NoteId): Instant = withContext(Dispatchers.IO) {
         val (_, ops) = currentVault(id.vaultId)
         Instant.ofEpochMilli(ops.noteFile(id.path).lastModified())
@@ -78,12 +67,6 @@ internal class NoteFileStore(
         readMarkdown(file) to Instant.ofEpochMilli(file.lastModified())
     }
 
-    /**
-     * 建一篇只有文件名的空笔记。
-     *
-     * 不写占位标题：标题是用户写下的内容，占位只属于界面。这样「什么都没写」的笔记
-     * 在磁盘上真的是空的，丢弃时不会留下一行假的 H1，界面也就不会显示成文件名加序号。
-     */
     suspend fun createNote(
         title: String,
         folder: FolderPath = FolderPath.Root,
@@ -94,7 +77,6 @@ internal class NoteFileStore(
         storedMarkdown(vault, ops.rootDir, file, "")
     }
 
-    /** 永久删除一篇笔记，不进回收站；用于丢弃从未写入内容的空白笔记 */
     suspend fun discardNote(id: NoteId) = withContext(Dispatchers.IO) {
         val (_, ops) = currentVault(id.vaultId)
         val file = ops.noteFile(id.path)
@@ -119,7 +101,6 @@ internal class NoteFileStore(
         storedMarkdown(vault, ops.rootDir, file, content)
     }
 
-    /** 改名只改文件名，正文与 Markdown H1 保持原样 */
     suspend fun renameNote(id: NoteId, newFilename: String): StoredMarkdown =
         withContext(Dispatchers.IO) {
             val (vault, ops) = currentVault(id.vaultId)
@@ -169,7 +150,6 @@ internal class NoteFileStore(
         VaultFileOps(File(vault.rootPath)).deletePermanently(trashId)
     }
 
-    /** 原路径被占用时拒绝恢复，避免覆盖已有文件 */
     suspend fun restoreNote(trashId: String): StoredMarkdown = withContext(Dispatchers.IO) {
         val vault = vaultRepository.requireCurrentVault()
         val ops = VaultFileOps(File(vault.rootPath))
@@ -177,12 +157,6 @@ internal class NoteFileStore(
         storedMarkdown(vault, ops.rootDir, file, readMarkdown(file))
     }
 
-    /**
-     * 批量恢复：回收站快照只读一次，批量操作共用，避免每篇都重扫一遍目录。
-     *
-     * 单篇冲突或 IO 失败只计数、不中断整批；正文先按回收站里的那一份读，
-     * 读不出来就整篇算失败，原文件仍留在回收站。
-     */
     suspend fun restoreNotes(trashIds: List<String>): Pair<List<StoredMarkdown>, TrashBulkOutcome> =
         withContext(Dispatchers.IO) {
             val vault = vaultRepository.requireCurrentVault()
@@ -193,7 +167,6 @@ internal class NoteFileStore(
             }
         }
 
-    /** 批量彻底删除：同样只扫一次回收站，单条删不掉时只算这一条失败 */
     suspend fun deleteTrashedNotes(trashIds: List<String>): TrashBulkOutcome =
         withContext(Dispatchers.IO) {
             val vault = vaultRepository.requireCurrentVault()
@@ -201,16 +174,9 @@ internal class NoteFileStore(
             bulkOverTrash(ops, trashIds) { record -> ops.deletePermanently(record) }.second
         }
 
-    /** Markdown 解析器只提供引用字符串，Store 负责验证图片文件路径 */
     fun resolveCover(note: StoredMarkdown, reference: String?): String? =
         resolveCover(note.root, note.file, reference)
 
-    /**
-     * 把还没落盘的正文写进草稿区，进程被杀后还能捞回来。
-     *
-     * 草稿不参与扫描（`.looma` 是点目录），文件名是路径的哈希，
-     * 所以改名或换目录后旧草稿不会串到别的笔记上。
-     */
     suspend fun writeDraft(id: NoteId, content: String) = withContext(Dispatchers.IO) {
         val (_, ops) = currentVault(id.vaultId)
         val file = draftFile(ops.rootDir, id.path)
@@ -218,7 +184,6 @@ internal class NoteFileStore(
         writeMarkdown(file, content)
     }
 
-    /** 读到比正文更新的草稿就返回它；没有草稿或草稿更旧时返回 null */
     suspend fun readDraft(id: NoteId, noteModifiedAt: Instant): String? = withContext(Dispatchers.IO) {
         val (_, ops) = currentVault(id.vaultId)
         val file = draftFile(ops.rootDir, id.path)
@@ -232,7 +197,6 @@ internal class NoteFileStore(
         draftFile(ops.rootDir, id.path).delete()
     }
 
-    /** 覆盖保存之前把磁盘上的那一份留档，返回备份文件路径 */
     suspend fun backupConflict(id: NoteId, content: String): File = withContext(Dispatchers.IO) {
         val (_, ops) = currentVault(id.vaultId)
         val directory = File(ops.rootDir, CONFLICT_DIRECTORY)
@@ -289,13 +253,6 @@ internal class NoteFileStore(
     }
 }
 
-/**
- * 回收站批量操作的骨架：快照只扫一次（每个 `.properties` 都要读，逐篇重扫是 O(N²)），
- * 单条冲突或 IO 失败只计数，不让整批中断。
- *
- * @param action 单条操作，抛出的 [IOException] 记一次失败
- * @return 成功项与成败计数，顺序跟 [trashIds] 一致
- */
 internal fun <T> bulkOverTrash(
     ops: VaultFileOps,
     trashIds: List<String>,
@@ -319,7 +276,6 @@ internal fun <T> bulkOverTrash(
     return results to TrashBulkOutcome(results.size, failed)
 }
 
-/** `文件夹/名字.md` → `名字`，用于没有可读标题时的兜底 */
 private fun NotePath.displayName(): String =
     relativePath.substringAfterLast('/').removeSuffix(".md").ifBlank { relativePath }
 

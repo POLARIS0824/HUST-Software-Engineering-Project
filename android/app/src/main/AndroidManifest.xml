@@ -6,7 +6,6 @@
             android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
             tools:ignore="ScopedStorage" />
 
-    <!-- API 26-29 的旧存储权限；30+ 由 MANAGE_EXTERNAL_STORAGE 取代 -->
     <uses-permission
             android:name="android.permission.READ_EXTERNAL_STORAGE"
             android:maxSdkVersion="29" />
@@ -14,7 +13,6 @@
             android:name="android.permission.WRITE_EXTERNAL_STORAGE"
             android:maxSdkVersion="29" />
 
-    <!-- 正文里的图床图片是 http(s) 引用，没有这条权限只能看到本地图片 -->
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application

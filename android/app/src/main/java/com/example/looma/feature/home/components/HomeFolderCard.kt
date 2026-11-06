@@ -33,12 +33,6 @@ import com.example.looma.feature.home.HomeFolderItem
 import com.example.looma.ui.components.LoomaIcon
 import com.example.looma.ui.theme.LoomaTokens
 
-/**
- * 网格里的文件夹：一张卡片，长按进入和笔记一样的选择态。
- *
- * 名字是这一行唯一会变长的东西，所以它占满除图标之外的全部宽度；
- * 原来右侧的“更多”按钮去掉了，长按就能出动作，按钮会把文件夹名挤成省略号。
- */
 @Composable
 internal fun HomeFolderCard(
     item: HomeFolderItem,
@@ -51,7 +45,6 @@ internal fun HomeFolderCard(
         item = item,
         shape = RoundedCornerShape(20.dp),
         isSelected = isSelected,
-        // 网格卡片只有半屏宽，允许折成两行，文件夹名不至于一进去就被省略号吃掉
         nameLines = 2,
         onClick = onClick,
         onLongClick = onLongClick,
@@ -59,7 +52,6 @@ internal fun HomeFolderCard(
     )
 }
 
-/** 列表形态把当前层的文件夹装进一张分组卡片，行与行之间留 SegmentedGap */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 internal fun HomeFolderGroup(
@@ -87,7 +79,6 @@ internal fun HomeFolderGroup(
     }
 }
 
-/** 分段列表的圆角：首尾行外面两端是大圆角，中间行贴在一起 */
 private fun segmentedShape(index: Int, count: Int) = RoundedCornerShape(
     topStart = if (index == 0) 28.dp else 4.dp,
     topEnd = if (index == 0) 28.dp else 4.dp,
@@ -95,7 +86,6 @@ private fun segmentedShape(index: Int, count: Int) = RoundedCornerShape(
     bottomEnd = if (index == count - 1) 28.dp else 4.dp,
 )
 
-/** 两种形态共用的行内容；只有圆角和最小高度不同 */
 @Composable
 private fun FolderRow(
     item: HomeFolderItem,

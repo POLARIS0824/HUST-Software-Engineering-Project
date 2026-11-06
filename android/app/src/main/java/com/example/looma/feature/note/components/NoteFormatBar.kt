@@ -28,10 +28,6 @@ import com.example.looma.domain.markdown.MarkdownInlineStyle
 import com.example.looma.domain.markdown.ToolbarItem
 import com.example.looma.ui.components.LoomaIcon
 
-/**
- * 源码模式的格式化工具条，交互对齐 Obsidian 移动端：
- * 一行可横滑的图标，按"历史 / 行内 / 块 / 插入"分组，按钮的选中态直接来自缓冲区。
- */
 @Composable
 internal fun NoteFormatBar(
     formatState: MarkdownFormatState,
@@ -127,7 +123,6 @@ internal fun NoteFormatBar(
     }
 }
 
-/** 一条工具条按钮：命令、无障碍文案、图标，以及"当前是否生效"的判定 */
 internal data class FormatAction(
     val command: MarkdownCommand,
     @StringRes val label: Int,

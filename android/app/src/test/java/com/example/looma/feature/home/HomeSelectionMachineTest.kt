@@ -9,7 +9,6 @@ import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** 首页点击规则：选择态下不导航，文件夹只有没被选中时点它才进去 */
 class HomeSelectionMachineTest {
 
     private val project = folder("项目")

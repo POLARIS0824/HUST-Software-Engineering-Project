@@ -30,7 +30,6 @@ class VaultSetupViewModel(
         }
     }
 
-    /** 页面回到前台时重新校验，权限或文件夹可能已经变化 */
     fun refreshVaultStatus() {
         viewModelScope.launch {
             applyStoredVault(vaultRepository.getCurrentVault())
@@ -95,13 +94,11 @@ class VaultSetupViewModel(
                     it.copy(isBusy = false, actionError = VaultSetupError.GENERIC)
                 }
 
-                // 失败可能来自已保存的笔记库本身，例如权限被撤销，重新校验后让界面与存储保持一致
                 applyStoredVault(vaultRepository.getCurrentVault())
             }
         }
     }
 
-    /** 文件选择器返回了无法识别的目录，或缺少存储权限 */
     fun showError(error: VaultSetupError) {
         _uiState.update {
             it.copy(
@@ -139,7 +136,6 @@ class VaultSetupViewModel(
         _uiState.update { state ->
             state.copy(
                 vaultState = nextState,
-                // 笔记库从不可用恢复到可用后，之前那条错误就不成立了
                 actionError = if (nextState is VaultState.Ready &&
                     state.vaultState is VaultState.Unavailable
                 ) {

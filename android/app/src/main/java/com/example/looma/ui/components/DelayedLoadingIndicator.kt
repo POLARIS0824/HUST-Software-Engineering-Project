@@ -20,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
 
-/** 避免 300ms 内完成的小操作闪现进度动画，同时为 Indicator 留固定空间 */
 @Composable
 fun DelayedLoadingIndicator(loading: Boolean, modifier: Modifier = Modifier) {
     var ready by remember(loading) { mutableStateOf(false) }

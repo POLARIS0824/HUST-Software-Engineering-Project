@@ -46,13 +46,6 @@ import com.example.looma.feature.vault.VaultState
 import com.example.looma.ui.components.LoomaLoadingIndicator
 import kotlinx.coroutines.launch
 
-/**
- * App-level navigation only. Features never receive or modify the NavBackStack.
- * Vault setup is a prerequisite; a successfully selected vault replaces the root.
- *
- * 侧边栏也在这里：它属于应用外壳，只有顶层目的地可以打开，
- * 笔记页的返回栈不受它影响。
- */
 @Composable
 fun LoomaNavGraph(
     vaultRepository: VaultRepository,
@@ -67,7 +60,6 @@ fun LoomaNavGraph(
     LifecycleEventEffect(Lifecycle.Event.ON_START) { vaultSetupViewModel.refreshVaultStatus() }
     val status = setupState.vaultState
 
-    // Avoid creating a saved back stack before DataStore's first value arrives.
     if (status is VaultState.Checking) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             LoomaLoadingIndicator()
@@ -75,11 +67,9 @@ fun LoomaNavGraph(
         return
     }
 
-    // 启动时不会自动选择笔记库；没有可用笔记库时，门禁页是唯一的根
     val start: NavKey = if (status is VaultState.Ready) LoomaRoute.Home else LoomaRoute.VaultSetup
     val backStack = rememberNavBackStack(start)
 
-    // A successful selection is a root change, not a push: Back must not reopen setup.
     LaunchedEffect(setupState.selectionSaved, status) {
         if (setupState.selectionSaved && status is VaultState.Ready) {
             backStack.clear()
@@ -210,8 +200,6 @@ fun LoomaNavGraph(
                     )
                     NoteRoute(
                         viewModel = noteViewModel,
-                        // 已有笔记与索引预览一致：没有一级标题时显示文件名。
-                        // 新建笔记仍使用通用占位文案，避免暴露自动生成的去重后缀。
                         fallbackTitle = if (route.isNew) {
                             stringResource(R.string.home_untitled_note)
                         } else {

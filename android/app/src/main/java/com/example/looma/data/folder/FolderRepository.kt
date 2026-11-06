@@ -9,10 +9,6 @@ import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/**
- * 只管理物理目录。目录树读取由 [com.example.looma.data.note.NoteFileStore] 的那一次扫描给出，
- * 这里只处理目录本身的新建、改名、移动与删除，校验与落盘都在 [VaultFileOps] 里。
- */
 class FolderRepository(private val vaultRepository: VaultRepository) {
 
     suspend fun createFolder(parent: FolderPath, name: String): VaultFolder =
@@ -41,7 +37,6 @@ class FolderRepository(private val vaultRepository: VaultRepository) {
             vaultFolder(vault.id, ops.moveFolder(path, destination))
         }
 
-    /** 删除结果只在回收站里留得下笔记数，界面用它告诉用户移走了几篇，撤回时用 id 搬回来 */
     suspend fun deleteFolder(path: FolderPath): List<String> = withContext(Dispatchers.IO) {
         val vault = vaultRepository.requireCurrentVault()
         VaultFileOps(File(vault.rootPath)).deleteFolder(path)

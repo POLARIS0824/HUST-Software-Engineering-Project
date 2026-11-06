@@ -14,12 +14,6 @@ internal interface SearchHistoryDao {
     @Upsert
     suspend fun upsert(entry: SearchHistoryEntity)
 
-    /**
-     * 只保留最近的 [keep] 条。
-     *
-     * 直接写 `LIMIT :keep`：prune 与 recent 用同一套排序，
-     * 两处各算一遍容易在时间戳相同时出现不一致。
-     */
     @Query(
         """
         DELETE FROM search_history

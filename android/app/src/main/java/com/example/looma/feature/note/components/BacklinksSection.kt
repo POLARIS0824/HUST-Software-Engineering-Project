@@ -16,12 +16,6 @@ import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.wiki.Backlink
 import com.example.looma.ui.theme.LoomaTokens
 
-/**
- * 阅读态底部的反向链接。
- *
- * 只列出引用了当前笔记的标题：正文片段要读别的文件，而索引里只有它的开头，
- * 为了这几行把整库读一遍不值得。没有反向链接时整块不出现。
- */
 @Composable
 fun BacklinksSection(
     backlinks: List<Backlink>,

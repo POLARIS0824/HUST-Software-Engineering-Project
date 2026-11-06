@@ -20,12 +20,6 @@ import com.example.looma.R
 import com.example.looma.feature.note.NoteUiState
 import com.example.looma.ui.theme.LoomaTokens
 
-/**
- * 写盘失败时贴在编辑区顶部的提示。
- *
- * 冲突时给的是两个都能用到底的动作：读回磁盘上的版本，或者带着留档覆盖。
- * 原来只有一个"重试"，而重试带着过期的修改时间，永远不可能成功。
- */
 @Composable
 internal fun NoteSaveBanner(
     state: NoteUiState,
@@ -70,7 +64,6 @@ internal fun NoteSaveBanner(
     }
 }
 
-/** 返回时冲刷失败：重试、放弃或取消，别让用户被卡在编辑页 */
 @Composable
 internal fun NoteLeaveDialog(
     state: NoteUiState,

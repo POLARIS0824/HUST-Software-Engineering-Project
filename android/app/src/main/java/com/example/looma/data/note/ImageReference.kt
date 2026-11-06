@@ -32,8 +32,6 @@ internal fun resolveImageSource(vaultRoot: String, noteFile: String, reference: 
         if (direct != null || '/' in src || File(src).extension.lowercase() !in LOCAL_IMAGE_EXTENSIONS) {
             return@runCatching direct
         }
-        // Filename-only Obsidian attachments may live anywhere in the vault.
-        // Files.walk does not follow directory symlinks; canonical containment still guards files.
         Files.walk(root.toPath()).use { paths ->
             paths.filter { path ->
                 path.fileName?.toString()?.equals(src, ignoreCase = true) == true &&

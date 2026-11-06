@@ -85,7 +85,6 @@ import com.example.looma.ui.components.LoomaIcon
 import com.example.looma.ui.components.LoomaLoadingIndicator
 import com.example.looma.ui.theme.LoomaTokens
 
-/** 首页全部事件出口；屏幕本身无状态，Preview 与测试可以直接给空实现 */
 @Immutable
 data class HomeActions(
     val onQueryChange: (String) -> Unit = {},
@@ -93,7 +92,6 @@ data class HomeActions(
     val onSearchResultClick: (NoteId) -> Unit = {},
     val onToggleLayout: () -> Unit = {},
     val onSortSelect: (HomeSort) -> Unit = {},
-    /** 点击与长按都只是事件：打开还是选中由 ViewModel 的选择规则决定 */
     val onNoteClick: (HomeNoteItem) -> Unit = {},
     val onNoteLongClick: (HomeNoteItem) -> Unit = {},
     val onFolderClick: (HomeFolderItem) -> Unit = {},
@@ -103,7 +101,6 @@ data class HomeActions(
     val onCreateNoteClick: () -> Unit = {},
     val onCreateFolderClick: () -> Unit = {},
     val onRenameFolderClick: () -> Unit = {},
-    /** 笔记与文件夹共用：都启动系统目录选择器 */
     val onMoveClick: () -> Unit = {},
     val onDeleteFolderClick: () -> Unit = {},
     val onConfirmRenameFolder: (String) -> Unit = {},
@@ -124,10 +121,6 @@ data class HomeActions(
     val onRetryClick: () -> Unit = {},
 )
 
-/**
- * 组合根：把 ViewModel 的状态接到无状态 UI 上。
- * 导航、生命周期、目录选择器和一次性事件都留在这里，ViewModel 不认识它们。
- */
 @Composable
 fun HomeRoute(
     viewModel: HomeViewModel,
@@ -140,18 +133,14 @@ fun HomeRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val untitledTitle = stringResource(R.string.home_untitled_note)
 
-    // 移动笔记和移动文件夹都走同一个系统目录选择器：选完换算成笔记库内的相对路径，
-    // 移动的是谁由当前选择决定，ViewModel 只有一个入口
     val moveTargetPicker = rememberVaultFolderPicker(
         vaultRoot = state.vaultRootPath,
         onPicked = viewModel::moveSelectionTo,
         onRejected = { viewModel.moveSelectionTo(null) },
     )
 
-    // 从编辑器或外部编辑器回到前台时重新扫描 Markdown；首次进入也走这里，因此 ViewModel 不再 init 加载
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refresh() }
 
-    // 新建成功是一次性事件：Route 负责导航，ViewModel 只交出一个 NoteId
     LaunchedEffect(state.createdNote) {
         state.createdNote?.let { noteId ->
             onCreatedNote(noteId)
@@ -159,7 +148,6 @@ fun HomeRoute(
         }
     }
 
-    // 点开笔记同理：选择态下的点击只改选择，不会走到这里
     LaunchedEffect(state.noteToOpen) {
         state.noteToOpen?.let { noteId ->
             onOpenNote(noteId)
@@ -167,8 +155,6 @@ fun HomeRoute(
         }
     }
 
-    // 选择模式优先消费返回键；否则仅在文件夹内接管，根目录交给 NavDisplay。
-    // 搜索展开时它自己的返回处理在 HomeScreen 内更晚注册，会先消费返回。
     BackHandler(enabled = state.isSelecting || state.isBrowsing) {
         if (state.isSelecting) viewModel.clearSelection() else viewModel.navigateUp()
     }
@@ -216,12 +202,6 @@ fun HomeRoute(
     )
 }
 
-/**
- * 把系统目录选择器的结果换算成笔记库内的相对路径。
- *
- * 笔记移动与文件夹移动各要一个 launcher，所以换算规则只写这一处；
- * 选到库外或取消都走 [onRejected]，用户取消不该被当成错误弹窗。
- */
 @Composable
 private fun rememberVaultFolderPicker(
     vaultRoot: String?,
@@ -237,7 +217,6 @@ private fun rememberVaultFolderPicker(
     }
 }
 
-/** 无状态：同一份 [HomeUiState] 渲染出同一屏，可单独 Preview / 测试 */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun HomeScreen(
@@ -249,7 +228,6 @@ fun HomeScreen(
     var sortSheetVisible by rememberSaveable { mutableStateOf(false) }
     val snackbarHostState = remember { SnackbarHostState() }
     val pullToRefreshState = rememberPullToRefreshState()
-    // 顶栏切换的动效曲线取自主题，和搜索条用的同一套 expressive 参数
     val topBarMotion = MaterialTheme.motionScheme
     val undoLabel = stringResource(R.string.action_undo)
     val messageText = state.message?.let { homeNoticeText(it.notice) }
@@ -273,8 +251,6 @@ fun HomeScreen(
             modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
             containerColor = LoomaTokens.colors.page,
             topBar = {
-                // 选择态与搜索态换顶栏时用主题里的 expressive 动效：淡入加一点上移，
-                // 和搜索条自己的 morph 是同一套弹簧参数，不会一个生硬一个顺滑
                 AnimatedContent(
                     targetState = state.isSelecting,
                     transitionSpec = {
@@ -338,7 +314,6 @@ fun HomeScreen(
                 isRefreshing = state.isRefreshing,
                 onRefresh = actions.onRefresh,
                 state = pullToRefreshState,
-                // 下拉指示器同样用 M3 Expressive 的 LoadingIndicator，和整页加载保持一致
                 indicator = {
                     PullToRefreshDefaults.LoadingIndicator(
                         state = pullToRefreshState,
@@ -360,7 +335,6 @@ fun HomeScreen(
             }
         }
 
-        // 顶栏收起后列表会滑到状态栏下方，用页面底色遮住状态栏区域，避免文字压在状态栏图标上
         Box(
             Modifier
                 .fillMaxWidth()
@@ -538,7 +512,6 @@ private fun HomeContent(
             HomeErrorBanner(error = error, onRetryClick = actions.onRetryClick)
         }
         when {
-            // 只有“什么都没有”时才占满屏幕，避免每次回到前台都闪一下进度条
             state.isLoading && state.notes.isEmpty() -> HomeCentered {
                 LoomaLoadingIndicator()
             }
@@ -572,8 +545,6 @@ private fun HomeContent(
                     if (!snapshot.files.isAtRoot) {
                         HomeBreadcrumb(crumbs = snapshot.files.crumbs, onBack = actions.onNavigateUp)
                     }
-                    // 选择态下点空白处取消选择；不在选择态时不挂 clickable，
-                    // 手势树与原来完全一致，滚动和下拉刷新都不受影响
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -636,7 +607,6 @@ private fun HomeCentered(content: @Composable () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { content() }
 }
 
-/** 右下角两枚动作：新建文件夹（小）与新建笔记（大），与 Keep 的层级一致 */
 @Composable
 private fun HomeActionButtons(
     isCreating: Boolean,

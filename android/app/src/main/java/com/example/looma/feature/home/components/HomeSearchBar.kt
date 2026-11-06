@@ -64,21 +64,6 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
-/**
- * AppBarWithSearch + 全屏搜索结果。
- *
- * 收起时是一条胶囊，夹在抽屉按钮和头像中间；这两者留在胶囊外面，
- * 展开时只淡出、不滑动，胶囊本身连续长成搜索结果面板。
- * 胶囊两边的宽度不随展开变化，所以展开过程中它不会被挤压。
- *
- * 展开时同一块表面从胶囊尺寸连续长到全屏，底色随搜索条的 progress
- * 从输入框色渐变到页面色，分隔线由展开条自己画出；
- * 结果跟着表面淡入，但比表面晚半拍落定，收起时按同一个函数反向播放。
- *
- * 输入框状态、展开状态、动画、键盘都由组件自己持有，
- * 对外只有 [onQueryChange]（输入 → ViewModel）、[onSearchSubmit] / [onSearchResultClick]
- * （写搜索历史）；过滤结果由 [HomeUiState.searchResults] 提供，组件不认识仓库。
- */
 @Composable
 internal fun HomeSearchBar(
     state: HomeUiState,
@@ -97,7 +82,6 @@ internal fun HomeSearchBar(
     val keyboard = LocalSoftwareKeyboardController.current
     val pageColor = LoomaTokens.colors.page
     val fieldColor = LoomaTokens.colors.searchField
-    // 展开表面与输入框同色起步，随 progress 走到页面色：一帧一色，没有第二份动画状态
     val sheetColor = lerp(fieldColor, pageColor, searchBarState.progress.coerceIn(0f, 1f))
     val fieldColors = SearchBarDefaults.inputFieldColors(
         focusedContainerColor = fieldColor,
@@ -123,16 +107,12 @@ internal fun HomeSearchBar(
         scope.launch { searchBarState.animateToCollapsed() }
     }
 
-    // 单向数据流：输入框只向上报告最新文本，ViewModel 不反向写回，避免状态互相覆盖
     LaunchedEffect(textFieldState) {
         snapshotFlow { textFieldState.text.toString() }
             .distinctUntilChanged()
             .collect(onQueryChange)
     }
 
-    // query 只在搜索展开期间有意义：收起（箭头、返回键、选中结果）后清空输入，
-    // 首页恢复全量笔记，避免“输入框有词、列表却是全量”的不一致。
-    // “已收起”由搜索条自己判定，别在这里另写一份 progress 阈值
     LaunchedEffect(searchBarState, textFieldState) {
         snapshotFlow { searchBarState.currentValue }
             .filter { it == SearchBarValue.Collapsed }
@@ -140,14 +120,10 @@ internal fun HomeSearchBar(
     }
 
     val inputField: @Composable () -> Unit = {
-        // 用 currentValue 而不是 targetValue：表面缩回胶囊大小之后才换回胶囊的工具，
-        // 否则整段收起过程都会在全屏表面上显示菜单和布局控件
         val expanded = searchBarState.currentValue == SearchBarValue.Expanded
         SearchBarDefaults.InputField(
             textFieldState = textFieldState,
             searchBarState = searchBarState,
-            // 撑满顶栏剩余宽度：收起时胶囊占满抽屉按钮和头像之间的这一格，
-            // 展开时长出去的那一圈只有左右各 8dp
             modifier = Modifier.fillMaxWidth(),
             colors = fieldColors,
             textStyle = LoomaTokens.type.body,
@@ -162,7 +138,6 @@ internal fun HomeSearchBar(
                 )
             },
             leadingIcon = {
-                // 收起时这一格是空的，靠占位文字说明这是搜索框；展开时返回箭头从左边长出来
                 AnimatedVisibility(
                     visible = expanded,
                     enter = searchIconEnter(Alignment.Start),
@@ -214,7 +189,6 @@ internal fun HomeSearchBar(
         colors = appBarColors,
         inputField = inputField,
         navigationIcon = {
-            // 抽屉入口留在胶囊外面，和 Keep 一样；只淡出不改宽度，否则权重胶囊会在展开中途跳一下
             Box(Modifier.graphicsLayer { alpha = 1f - searchBarState.progress }) {
                 IconButton(onClick = onMenuClick) {
                     LoomaIcon(
@@ -225,8 +199,6 @@ internal fun HomeSearchBar(
             }
         },
         actions = {
-            // 头像与胶囊之间留出和左侧抽屉按钮一样的空档；顶栏本身只给 4dp 边距，
-            // 24dp 图标自带 12dp 内缩，40dp 头像没有，所以这里补回来
             Box(
                 Modifier
                     .graphicsLayer { alpha = 1f - searchBarState.progress }
@@ -240,8 +212,6 @@ internal fun HomeSearchBar(
     ExpandedFullScreenSearchBar(
         state = searchBarState,
         inputField = {
-            // 内边距随 progress 从 0 长到 8dp：输入框起步就是胶囊本身，
-            // 落定时左右各留 8dp
             Box(Modifier.padding(horizontal = 8.dp * searchBarState.progress)) {
                 inputField()
             }
@@ -259,7 +229,6 @@ internal fun HomeSearchBar(
                     onSearchResultClick(noteId)
                 },
                 onRecentSearchClick = { query ->
-                    // 只把历史填回输入框；输入变化会经 snapshotFlow 触发新的搜索
                     textFieldState.setTextAndPlaceCursorAtEnd(query)
                 },
             )
@@ -271,7 +240,6 @@ internal fun HomeSearchBar(
 private fun HomeSearchPlaceholder(text: String) {
     Text(
         text = text,
-        // 占位文字不需要被读屏重复朗读
         modifier = Modifier.clearAndSetSemantics {},
         style = LoomaTokens.type.body,
         color = LoomaTokens.colors.muted,
@@ -324,10 +292,6 @@ private fun HomeAvatarButton(onClick: () -> Unit) {
     }
 }
 
-/**
- * 结果的淡入由展开条自己的内容层负责（它跟着 progress 变透明），这里只补一点上浮，
- * 让结果比表面晚落定。纯 progress 函数，不持有动画状态，收起时自动反向。
- */
 @Composable
 private fun HomeSearchPanel(progress: Float, content: @Composable () -> Unit) {
     val lift = ((progress - 0.5f) / 0.5f).coerceIn(0f, 1f)
@@ -340,14 +304,12 @@ private fun HomeSearchPanel(progress: Float, content: @Composable () -> Unit) {
     }
 }
 
-// 图标进出共用一套动效：淡入淡出之外还伸缩宽度，文字区的宽度跟着连续变化，不会在动画中途跳一下
 private fun searchIconEnter(align: Alignment.Horizontal): EnterTransition =
     fadeIn(tween(120)) + expandHorizontally(expandFrom = align, animationSpec = tween(180))
 
 private fun searchIconExit(align: Alignment.Horizontal): ExitTransition =
     fadeOut(tween(90)) + shrinkHorizontally(shrinkTowards = align, animationSpec = tween(160))
 
-/** 独立的搜索结果列表，可单独 Preview；关键字与结果都来自同一个状态快照 */
 @Composable
 internal fun HomeSearchResults(
     query: String,
@@ -357,7 +319,6 @@ internal fun HomeSearchResults(
     onRecentSearchClick: (String) -> Unit = {},
 ) {
     when {
-        // 输入框为空时先给最近搜索；没有历史就退回原来的引导文案
         query.isBlank() && recentSearches.isNotEmpty() -> LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(bottom = 24.dp),
@@ -431,8 +392,6 @@ internal fun HomeSearchResults(
 
 @Composable
 private fun HomeSearchHint(text: String) {
-    // 靠上而不是居中：展开时结果区的高度一直在长，居中会把提示文字一路往下带；
-    // 靠上之后它只跟着结果区一起淡入上浮，不会自己往下漂
     Box(Modifier.fillMaxSize().padding(start = 16.dp, end = 16.dp, top = 24.dp)) {
         Text(text, style = LoomaTokens.type.supporting, color = LoomaTokens.colors.muted)
     }

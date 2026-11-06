@@ -50,7 +50,6 @@ import com.example.looma.ui.format.formatDateTime
 import com.example.looma.ui.theme.LoomaTokens
 import kotlinx.coroutines.launch
 
-/** 组合根：只把状态接到无状态界面上，恢复结果的提示留给这一层 */
 @Composable
 fun TrashRoute(
     viewModel: TrashViewModel,
@@ -67,7 +66,6 @@ fun TrashRoute(
     val undoLabel = stringResource(R.string.action_undo)
     val undoneText = stringResource(R.string.trash_restore_undone)
     val undoFailedText = stringResource(R.string.action_undo_failed)
-    // 删除与清空都没有专属的失败文案，用通用的“动作失败”，免得把恢复失败的句子套到删除上
     val actionFailedText = stringResource(R.string.home_error_action)
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.load() }
@@ -195,7 +193,6 @@ fun TrashScreen(
                                 contentDescription = stringResource(R.string.trash_restore_all),
                             )
                         }
-                        // 清空是不可逆的，先落一个待确认状态，别让顶栏一下点掉整个回收站
                         IconButton(
                             onClick = { confirm = TrashConfirm.EmptyTrash },
                             enabled = state.canEmptyTrash,

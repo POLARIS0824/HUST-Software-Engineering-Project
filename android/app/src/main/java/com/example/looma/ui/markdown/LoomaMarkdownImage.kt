@@ -10,10 +10,6 @@ import com.mikepenz.markdown.compose.elements.ImageAltTooltip
 import com.mikepenz.markdown.utils.resolveImageAlt
 import com.mikepenz.markdown.utils.resolveImageLink
 
-/**
- * 渲染库的图片元素，替身版本：尺寸写在 alt 里（`![图|300](a.png)`）时，
- * 把它挪到 link 上交给自己那一侧的解析器，alt 本身去掉尺寸再展示。
- */
 @Composable
 internal fun LoomaMarkdownImage(model: MarkdownComponentModel) {
     val link = model.node.resolveImageLink(model.content, LocalReferenceLinkHandler.current) ?: return

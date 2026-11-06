@@ -31,14 +31,6 @@ import com.example.looma.feature.home.HomeNoteItem
 import com.example.looma.feature.home.HomeSelection
 import com.example.looma.ui.theme.LoomaTokens
 
-/**
- * 文件视图的唯一列表：根目录和每个文件夹共用一套渲染。
- *
- * 文件夹永远排在笔记前面；根目录额外插入“最近”一行。
- * 列表形态把当前层的文件夹收进一张分组卡片，网格形态每列各自一张卡片，
- * 所以列数只由 isGridMode 决定，列表按钮在根目录和文件夹内都有效。
- * 选择态只影响被选中卡片的描边：笔记可以多选，文件夹长按后单选。
- */
 @Composable
 internal fun HomeFilesGrid(
     files: HomeFilesState,
@@ -68,7 +60,6 @@ internal fun HomeFilesGrid(
         state = gridState,
         columns = StaggeredGridCells.Fixed(if (isGridMode) 2 else 1),
         modifier = modifier.fillMaxSize(),
-        // 底部留白避开悬浮按钮
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 172.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalItemSpacing = 10.dp,
@@ -133,7 +124,6 @@ internal fun HomeFilesGrid(
     }
 }
 
-/** 列表形态一整行装下所有文件夹，网格形态逐个平铺 */
 private fun LazyStaggeredGridScope.folderSection(
     folders: List<HomeFolderItem>,
     isGridMode: Boolean,

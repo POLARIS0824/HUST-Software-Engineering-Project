@@ -42,12 +42,6 @@ import com.example.looma.domain.wiki.wikiPathOf
 import com.example.looma.ui.components.LoomaIcon
 import com.example.looma.ui.theme.LoomaTokens
 
-/**
- * 插入双链时的候选面板：边输入边按标题过滤，选一条就把 `[[标题]]` 写进正文。
- *
- * 候选来自打开笔记时那份索引快照（[com.example.looma.domain.wiki.WikiContext.linkables]），
- * 所以这里不读盘、不查库，输入再快也只在这个列表上过滤。
- */
 @Composable
 internal fun WikiLinkPanel(
     candidates: List<WikiNote>,
@@ -149,7 +143,6 @@ internal fun WikiLinkPanel(
     }
 }
 
-/** 前缀优先，其次包含；大小写不敏感，空查询按标题序返回全部 */
 internal fun filterCandidates(candidates: List<WikiNote>, query: String): List<WikiNote> {
     val needle = query.trim()
     if (needle.isEmpty()) return candidates.take(MAX_MATCHES)
@@ -169,13 +162,6 @@ internal fun filterCandidates(candidates: List<WikiNote>, query: String): List<W
 
 private const val MAX_MATCHES = 6
 
-/**
- * 候选写进正文时的引用文本。
- *
- * 双链解析认的是文件名（[com.example.looma.domain.wiki.WikiGraph.resolve]），不是 H1 标题，
- * 所以这里用文件名；标题与文件名不一致时补一个别名，读起来仍是人看的那个标题。
- * 同名笔记存在于不同目录时改用带目录的写法，避免选错。
- */
 internal fun wikiReferenceFor(note: WikiNote, all: List<WikiNote>): String {
     val base = wikiNameOf(note.id.path)
     val duplicated = all.count { wikiNameOf(it.id.path).equals(base, ignoreCase = true) } > 1

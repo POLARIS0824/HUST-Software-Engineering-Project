@@ -11,10 +11,6 @@ import androidx.core.content.ContextCompat
 import com.example.looma.domain.model.FolderPath
 import java.io.File
 
-/**
- * File-based Vault 所需的共享存储权限，以及 SAF 目录 URI 到真实路径的转换。
- * 只接受本地 ExternalStorageProvider 的 primary 卷。
- */
 class VaultStorageAccess(context: Context) {
     private val appContext = context.applicationContext
 
@@ -68,12 +64,6 @@ class VaultStorageAccess(context: Context) {
         return directory
     }
 
-    /**
-     * 把目录选择器的结果换算成笔记库内的相对路径。
-     *
-     * 选中笔记库外、或不是共享存储里的目录时返回 null，调用方据此提示而不是抛异常：
-     * 用户取消或选错都是正常操作。
-     */
     fun resolveFolderWithin(uri: Uri, vaultRoot: String?): FolderPath? {
         val root = vaultRoot?.takeIf { it.isNotBlank() }
             ?.let { runCatching { File(it).canonicalFile }.getOrNull() }

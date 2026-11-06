@@ -21,16 +21,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/**
- * 只负责“文件 / 仓库 → [HomeUiState]”。
- *
- * - 一次扫描得到笔记与目录，之后浏览、排序、搜索都只在这份内存快照上做
- * - 选择、重命名、移动、删除、新建文件夹都在这里落到仓库；成功后再刷新一次快照
- * - 移动的目标目录由系统目录选择器给出，ViewModel 只接收校验通过的相对路径；
- *   移动的是笔记还是文件夹由当前选择决定，调用方不必区分
- * - 每个成功的动作都带着自己的逆向数据，Snackbar 上的撤回就是把它再执行一遍
- * - 不持有导航回调：新建成功写 [HomeUiState.createdNote]，点开笔记写 [HomeUiState.noteToOpen]
- */
 class HomeViewModel(
     private val vaultRepository: VaultRepository,
     private val noteRepository: NoteRepository,
@@ -43,11 +33,9 @@ class HomeViewModel(
     private var revealGeneration = 0L
     private var index: HomeVaultIndex = HomeVaultIndex.Empty
 
-    /** 本轮搜索是否已用磁盘正文替换过快照；刷新开始时复位，允许下一轮再补 */
     private var isTextHydrated = false
     private var hydrateJob: Job? = null
 
-    /** 重新扫描笔记库；同一时刻只保留最近一次请求 */
     fun refresh(): Job {
         refreshJob?.cancel()
         hydrateJob?.cancel()
@@ -65,7 +53,6 @@ class HomeViewModel(
                         .takeIf(index::contains)
                         ?: FolderPath.Root
                     val alive = notes.mapTo(mutableSetOf()) { it.listKey }
-                    // 文件夹被外部删掉、笔记被外部移走时，选择要跟着收敛，不能指向不存在的东西
                     val selection = current.selection.normalized(alive)
                     current.copy(
                         vaultName = vault.name,
@@ -87,7 +74,6 @@ class HomeViewModel(
                         },
                     )
                 }
-                // 索引已经上屏，再补最近搜索；拿到空表也不影响列表
                 loadRecentSearches()
             } catch (e: CancellationException) {
                 throw e
@@ -110,14 +96,12 @@ class HomeViewModel(
         return refreshJob!!
     }
 
-    /** 下拉刷新：只有用户自己触发时才转下拉指示器 */
     fun refreshFromUser() {
         if (_uiState.value.isCreating || _uiState.value.isActionRunning) return
         _uiState.update { it.copy(isRefreshing = true) }
         refresh()
     }
 
-    /** 打开文件夹；未知路径直接忽略，避免把状态带到快照之外 */
     fun openFolder(path: FolderPath) {
         if (!index.contains(path)) return
         _uiState.update {
@@ -129,7 +113,6 @@ class HomeViewModel(
         }
     }
 
-    /** 返回上一级；已经在根目录时什么也不做，交给系统返回键 */
     fun navigateUp() {
         val current = _uiState.value
         if (current.files.isAtRoot) return
@@ -137,7 +120,6 @@ class HomeViewModel(
     }
 
     fun setQuery(value: String) {
-        // 先用索引里的摘要 / 标签给出一份即时结果，正文补齐后再替换
         _uiState.update {
             it.copy(query = value, searchResults = it.notes.matching(value).orderedBy(it.sort))
         }
@@ -151,7 +133,6 @@ class HomeViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // 读正文失败就保留索引快照，搜索仍可按摘要工作
                 return@launch
             }
             if (texts.isEmpty()) return@launch
@@ -167,7 +148,6 @@ class HomeViewModel(
         }
     }
 
-    /** IME 搜索键与点击结果时记录；空 query 不写历史 */
     fun recordSearch() {
         val query = _uiState.value.query
         if (query.isBlank()) return
@@ -177,7 +157,6 @@ class HomeViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // 写历史失败不影响这次搜索本身
             }
             loadRecentSearches()
         }
@@ -215,16 +194,11 @@ class HomeViewModel(
         }
     }
 
-    /** HomeRoute 打开新笔记后调用，避免重复导航 */
     fun onCreatedNoteOpened() = _uiState.update { it.copy(createdNote = null) }
 
-    /** HomeRoute 打开点到的笔记后调用，避免重复导航 */
     fun onNoteOpened() = _uiState.update { it.copy(noteToOpen = null) }
 
-    /** 「最近」滚到最前面之后调用 */
     fun onRecentRevealed(request: RecentReveal) = _uiState.update { it.acknowledgeReveal(request) }
-
-    // ---- 选择：所有点击都从这里进入，规则在 [reduceHomeSelection] 里 ----
 
     fun onSelectionEvent(event: HomeSelectionEvent) {
         val current = _uiState.value
@@ -251,8 +225,6 @@ class HomeViewModel(
             dialogError = null,
         )
     }
-
-    // ---- 对话框 ----
 
     fun startRename() {
         val item = _uiState.value.singleNote() ?: return
@@ -317,8 +289,6 @@ class HomeViewModel(
         }
     }
 
-    // ---- 文件夹操作：长按进入和笔记相同的顶栏，三个动作都走对话框或目录选择器 ----
-
     fun startFolderRename() {
         val folder = _uiState.value.selectedFolder ?: return
         _uiState.update {
@@ -366,19 +336,11 @@ class HomeViewModel(
             val trashIds = folderRepository.deleteFolder(dialog.path)
             HomeMessage(
                 notice = HomeNotice.FolderDeleted(trashIds.size),
-                // 空文件夹没有笔记可搬回来，也就没有可撤回的东西
                 undo = HomeUndo.RestoreNotes(trashIds).takeIf { trashIds.isNotEmpty() },
             )
         }
     }
 
-    // ---- 移动：笔记与文件夹共用系统目录选择器 ----
-
-    /**
-     * 系统目录选择器给出的目标；null 表示选到了笔记库外。
-     *
-     * 移动的是笔记还是文件夹由当前选择决定，所以调用方不用告诉 ViewModel。
-     */
     fun moveSelectionTo(target: FolderPath?) {
         if (target == null) {
             _uiState.update { it.copy(message = HomeMessage(HomeNotice.InvalidMoveTarget)) }
@@ -398,7 +360,6 @@ class HomeViewModel(
         viewModelScope.launch {
             _uiState.update { it.copy(isActionRunning = true) }
             try {
-                // 记下移动后的新 id：重名会续号，撤回要按新路径搬
                 val moves = notes.map { note ->
                     val outcome = noteRepository.moveNote(note.id, target)
                     MovedNote(outcome.note.id, note.id.path.parentFolder())
@@ -472,7 +433,6 @@ class HomeViewModel(
         }
     }
 
-    /** Snackbar 上的撤回：按 [HomeUndo] 里记下的逆向数据把文件搬回去 */
     fun undo(action: HomeUndo) {
         if (_uiState.value.isActionRunning) return
         viewModelScope.launch {
@@ -490,11 +450,6 @@ class HomeViewModel(
         }
     }
 
-    /**
-     * 撤回只重放逆向动作，不做补偿逻辑：每一步失败都按整体失败上报。
-     *
-     * 删除的撤回是逐条恢复，只要有一条搬回来就算撤回了，其余留在回收站。
-     */
     private suspend fun applyUndo(action: HomeUndo): Boolean = runCatching {
         when (action) {
             is HomeUndo.RestoreNotes -> action.trashIds.count { trashId ->
@@ -530,7 +485,6 @@ class HomeViewModel(
 
     fun onMessageShown() = _uiState.update { it.copy(message = null) }
 
-    /** 最近搜索只是辅助信息，读失败就当作没有历史，不占用错误提示 */
     private suspend fun loadRecentSearches() {
         val recent = try {
             searchHistoryRepository.recent()
@@ -542,10 +496,6 @@ class HomeViewModel(
         _uiState.update { it.copy(recentSearches = recent) }
     }
 
-    /**
-     * 对话框里的确认动作：成功则关闭对话框、清空选择并刷新，失败把原因留在对话框上，
-     * 用户可以改个名字接着试。[message] 由动作本身给出，因为它常常带着结果计数和撤回数据。
-     */
     private fun runDialogAction(message: suspend () -> HomeMessage) {
         if (_uiState.value.isActionRunning) return
         viewModelScope.launch {
@@ -580,7 +530,6 @@ class HomeViewModel(
         }
     }
 
-    /** 刷新后路径可能已经不存在：笔记只留还活着的 key，文件夹不存在就退回未选择 */
     private fun HomeSelection.normalized(aliveNotes: Set<String>): HomeSelection = when (this) {
         HomeSelection.None -> this
         is HomeSelection.Notes -> HomeSelection.Notes.of(keys.filterTo(mutableSetOf()) { it in aliveNotes })
@@ -615,7 +564,6 @@ private fun VaultFileFailure.toHomeFileError(): HomeFileError = when (this) {
     else -> HomeFileError.GENERIC
 }
 
-/** 移动类动作失败时的提示：选错目标与重名要分开说 */
 private fun VaultFileException.toMessage(): HomeMessage = HomeMessage(
     when (failure) {
         VaultFileFailure.INVALID_PATH -> HomeNotice.InvalidMoveTarget

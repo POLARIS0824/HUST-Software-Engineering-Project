@@ -12,9 +12,6 @@ data class NoteId(
     val path: NotePath,
 )
 
-/**
- * 表示解析后的笔记业务数据
- */
 data class Note(
     val id: NoteId,
     val title: String,
@@ -23,9 +20,6 @@ data class Note(
     val tags: Set<String> = emptySet(),
 )
 
-/**
- * 表示首页、搜索所需的笔记摘要
- */
 data class NoteSummary(
     val id: NoteId,
     val title: String,

@@ -3,7 +3,6 @@ package com.example.looma.feature.home
 import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.NoteId
 
-/** 首页「点到了什么」的事件；屏幕只把点击翻译成事件，判断全在这里 */
 sealed interface HomeSelectionEvent {
     data class FolderTapped(val folder: HomeFolderItem) : HomeSelectionEvent
     data class FolderLongPressed(val folder: HomeFolderItem) : HomeSelectionEvent
@@ -12,19 +11,12 @@ sealed interface HomeSelectionEvent {
     data object BackgroundTapped : HomeSelectionEvent
 }
 
-/** 一次点击的结果只有三种：改选择、进文件夹、开笔记 */
 sealed interface HomeSelectionOutcome {
     data class Changed(val selection: HomeSelection) : HomeSelectionOutcome
     data class OpenFolder(val path: FolderPath) : HomeSelectionOutcome
     data class OpenNote(val id: NoteId) : HomeSelectionOutcome
 }
 
-/**
- * 首页点击的纯函数规则：同一份选择状态加同一个点击，永远得到同一个结果。
- *
- * 核心只有一条：**选择态下点击不导航**。文件夹被选中时，点别的文件夹是换选，
- * 点自己是不选，只有什么都没选中时点文件夹才是进去。
- */
 internal fun reduceHomeSelection(
     current: HomeSelection,
     event: HomeSelectionEvent,

@@ -6,10 +6,6 @@ import com.example.looma.domain.markdown.MarkdownCommand
 import com.example.looma.domain.markdown.MarkdownEditing
 import com.example.looma.domain.markdown.TextSelection
 
-/**
- * 把纯函数的编辑结果写回缓冲区。只替换前后缀之间真正变化的那一段，
- * 避免每次点按钮都整段重写，撤销栈和输入法组合状态都更干净。
- */
 internal fun applyMarkdownCommand(buffer: TextFieldState, command: MarkdownCommand) {
     val oldText = buffer.text.toString()
     val caret = buffer.selection

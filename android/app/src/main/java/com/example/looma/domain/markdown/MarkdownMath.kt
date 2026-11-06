@@ -8,12 +8,6 @@ import org.intellij.markdown.flavours.gfm.GFMElementTypes
 import org.intellij.markdown.parser.CancellationToken
 import org.intellij.markdown.parser.MarkdownParser
 
-/**
- * 正文里的一个数学公式。
- *
- * [range] 指原文坐标（含定界符），其它位置数据都以原文为准，所以渲染层不必改写正文。
- * [display] 来自 GFM 的 `$$...$$`，[block] 表示这个公式独占一段，应该按块级排版。
- */
 data class MathSpan(
     val range: IntRange,
     val latex: String,
@@ -21,7 +15,6 @@ data class MathSpan(
     val block: Boolean,
 )
 
-/** 收集 GFM 数学节点；代码块、行内代码、货币符号和转义美元符都不会被当作公式 */
 fun collectMathSpans(
     body: String,
     flavour: MarkdownFlavourDescriptor = WikiImageFlavour(),
@@ -62,7 +55,6 @@ private fun mathSpan(body: String, node: ASTNode, display: Boolean, block: Boole
     return MathSpan(node.startOffset until node.endOffset, latex, display, block)
 }
 
-/** 段落里只有这一个公式时按块级排版；和其它文字混排时仍按行内内容处理 */
 private fun isStandalone(node: ASTNode): Boolean {
     val parent = node.parent ?: return false
     if (parent.type != MarkdownElementTypes.PARAGRAPH) return false
@@ -71,10 +63,6 @@ private fun isStandalone(node: ASTNode): Boolean {
     }
 }
 
-/**
- * 空白行会把段落拆开，`$$` 块因此在中间断开。
- * 把公式内空白行的第一个字符换成零宽空格，段落不再断开；只做等长替换，复选框坐标不变。
- */
 fun preserveDisplayMathParagraphs(
     body: String,
     flavour: MarkdownFlavourDescriptor = WikiImageFlavour(),
@@ -169,10 +157,6 @@ private fun isEscaped(text: String, index: Int): Boolean {
     return backslashes % 2 == 1
 }
 
-/**
- * 以数字开头、含空格又没有数学运算符的行内内容按价格或普通文字处理。
- * `$2x$`、`$2$` 和 `$100 + 200$` 仍是公式，`$100 and $200` 与 `$5, tax is $2` 保持原文。
- */
 internal fun looksLikeCurrency(content: String): Boolean {
     val trimmed = content.trim()
     if (trimmed.isEmpty() || !trimmed[0].isDigit()) return false
