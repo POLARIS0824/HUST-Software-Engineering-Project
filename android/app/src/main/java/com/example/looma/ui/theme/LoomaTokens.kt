@@ -8,13 +8,16 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 @Immutable
 data class LoomaColors(
     val page: Color,
+    val noteCanvas: Color,
     val card: Color,
     val sheet: Color,
     val searchField: Color,
@@ -30,27 +33,48 @@ data class LoomaColors(
     val error: Color,
 )
 
-/** 首页的排版刻度，字号与行高集中在这里调整 */
 @Immutable
 data class LoomaTypography(
+    val heroTitle: TextStyle,
+    val pageTitle: TextStyle,
     val sectionTitle: TextStyle,
     val count: TextStyle,
     val cardTitle: TextStyle,
     val cardBody: TextStyle,
     val cardMeta: TextStyle,
+    val homeNoteTitle: TextStyle,
+    val homeNotePreview: LoomaPreviewTypography,
     val folderName: TextStyle,
     val breadcrumb: TextStyle,
-    val sheetTitle: TextStyle,
-    val sheetOption: TextStyle,
-    val searchText: TextStyle,
-    val emptyState: TextStyle,
+    val body: TextStyle,
+    val supporting: TextStyle,
     val avatar: TextStyle,
-    /** Markdown 阅读正文；标题比例与行距由它推导 */
-    val markdownBody: TextStyle,
+    val noteTitle: TextStyle,
+    val noteBody: TextStyle,
+    val noteHeadings: LoomaNoteHeadings,
+    val noteCode: TextStyle,
+)
+
+@Immutable
+data class LoomaNoteHeadings(
+    val h1: TextStyle,
+    val h2: TextStyle,
+    val h3: TextStyle,
+    val h4: TextStyle,
+    val h5: TextStyle,
+    val h6: TextStyle,
+)
+
+@Immutable
+data class LoomaPreviewTypography(
+    val body: TextStyle,
+    val headings: LoomaNoteHeadings,
+    val code: TextStyle,
 )
 
 fun loomaColors(scheme: ColorScheme): LoomaColors = LoomaColors(
     page = scheme.surfaceContainerLow,
+    noteCanvas = if (scheme.surface.luminance() > 0.5f) Color.White else scheme.surface,
     card = scheme.surfaceBright,
     sheet = scheme.surfaceContainerLow,
     searchField = scheme.surfaceBright,
@@ -67,29 +91,54 @@ fun loomaColors(scheme: ColorScheme): LoomaColors = LoomaColors(
 )
 
 fun loomaTypography(base: Typography): LoomaTypography = LoomaTypography(
-    sectionTitle = base.titleMedium.metric(size = 16, line = 24, weight = FontWeight.SemiBold),
-    count = base.labelMedium.metric(size = 12, line = 16),
-    cardTitle = base.titleMedium.metric(size = 16, line = 22, weight = FontWeight.SemiBold),
-    cardBody = base.bodySmall.metric(size = 12, line = 18),
-    cardMeta = base.labelMedium.metric(size = 12, line = 16),
-    folderName = base.titleSmall.metric(size = 15, line = 20, weight = FontWeight.Medium),
-    breadcrumb = base.bodyMedium.metric(size = 13, line = 18),
-    sheetTitle = base.titleLarge.metric(size = 22, line = 28, weight = FontWeight.Medium),
-    sheetOption = base.bodyLarge.metric(size = 16, line = 22),
-    searchText = base.bodyLarge.metric(size = 16, line = 22),
-    emptyState = base.bodySmall.metric(size = 14, line = 20),
-    avatar = base.titleMedium.metric(size = 16, line = 20, weight = FontWeight.SemiBold),
-    markdownBody = base.bodyLarge.metric(size = 16, line = 24),
+    heroTitle = base.headlineLargeEmphasized.copy(fontWeight = FontWeight(BRAND_HERO_WEIGHT)),
+    pageTitle = base.titleLargeEmphasized,
+    sectionTitle = base.titleMediumEmphasized,
+    count = base.labelMediumEmphasized.copy(fontFeatureSettings = TABULAR_FIGURES),
+    cardTitle = base.titleMedium,
+    cardBody = base.bodySmall,
+    cardMeta = base.labelMedium.copy(fontFeatureSettings = TABULAR_FIGURES),
+    homeNoteTitle = base.titleMediumEmphasized.copy(
+        fontSize = 18.sp,
+        lineHeight = 26.sp,
+        fontWeight = FontWeight.SemiBold,
+    ),
+    homeNotePreview = LoomaPreviewTypography(
+        body = base.bodyLarge,
+        headings = LoomaNoteHeadings(
+            h1 = base.titleMediumEmphasized,
+            h2 = base.bodyLargeEmphasized,
+            h3 = base.bodyLargeEmphasized,
+            h4 = base.bodyMediumEmphasized,
+            h5 = base.bodyMediumEmphasized,
+            h6 = base.bodySmall,
+        ),
+        code = base.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+    ),
+    folderName = base.titleSmall,
+    breadcrumb = base.bodyMedium,
+    body = base.bodyLarge,
+    supporting = base.bodyMedium,
+    avatar = base.titleMediumEmphasized,
+    noteTitle = base.headlineMediumEmphasized,
+    noteBody = base.bodyLarge.copy(lineHeight = BODY_LINE_HEIGHT.sp),
+    noteHeadings = LoomaNoteHeadings(
+        h1 = base.headlineMediumEmphasized,
+        h2 = base.headlineSmallEmphasized,
+        h3 = base.titleLargeEmphasized,
+        h4 = base.titleMediumEmphasized,
+        h5 = base.titleSmallEmphasized,
+        h6 = base.titleSmall,
+    ),
+    noteCode = base.bodyMedium.copy(fontFamily = FontFamily.Monospace, lineHeight = BODY_LINE_HEIGHT.sp),
 )
 
-private fun TextStyle.metric(size: Int, line: Int, weight: FontWeight? = null): TextStyle =
-    copy(
-        fontSize = size.sp,
-        lineHeight = line.sp,
-        fontWeight = weight ?: fontWeight,
-    )
+internal const val TABULAR_FIGURES = "\"tnum\" 1"
 
-/** 默认值只服务于没有 LoomaTheme 包裹的 Preview 与测试 */
+private const val BRAND_HERO_WEIGHT = 750
+
+internal const val BODY_LINE_HEIGHT = 26
+
 val LocalLoomaColors = staticCompositionLocalOf { loomaColors(lightColorScheme()) }
 val LocalLoomaTypography = staticCompositionLocalOf { loomaTypography(Typography()) }
 

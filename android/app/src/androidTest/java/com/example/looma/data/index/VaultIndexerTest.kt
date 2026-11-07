@@ -81,10 +81,6 @@ class VaultIndexerTest {
         assertEquals(listOf("tagged.md"), fourth.notes.map { it.id.path.relativePath })
     }
 
-    /**
-     * size + mtime 漏检是已知窗口，这条用例把它钉成可执行事实：
-     * 同长度、同 mtime 的外部改写不会触发重读，索引保留旧标题。
-     */
     @Test
     fun sameSizeAndMtimeIsTreatedAsUnchanged() = runBlocking {
         val file = File(vaultDir, "note.md")

@@ -3,7 +3,6 @@ package com.example.looma.domain.model
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-/** “文件属性”里的字数与字符数：中文按字算，拉丁按空白分词 */
 class NoteTextStatsTest {
 
     @Test

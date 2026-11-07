@@ -18,10 +18,6 @@ import com.example.looma.feature.note.NoteMode
 import com.example.looma.ui.components.LoomaIcon
 import com.example.looma.ui.theme.LoomaTokens
 
-/**
- * 笔记页顶栏只保留两个动作：左上角返回，右上角在阅读和编辑之间切换。
- * 标题由正文里的 H1 承担，顶栏不再重复一遍，和 Keep 的留白一致。
- */
 @Composable
 internal fun NoteTopBar(
     mode: NoteMode,
@@ -31,7 +27,7 @@ internal fun NoteTopBar(
 ) {
     Surface(
         modifier = modifier.fillMaxWidth(),
-        color = LoomaTokens.colors.page,
+        color = LoomaTokens.colors.noteCanvas,
     ) {
         Row(
             modifier = Modifier

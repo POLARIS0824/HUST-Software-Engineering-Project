@@ -1,25 +1,23 @@
 <resources>
     <string name="app_name">Looma</string>
 
-    <!-- Shell -->
     <string name="nav_back">返回</string>
     <string name="drawer_notes">笔记</string>
     <string name="drawer_trash">回收站</string>
     <string name="drawer_settings">设置</string>
 
-    <!-- Home -->
     <string name="home_search_placeholder">搜索 %1$s</string>
     <string name="home_section_recents">最近</string>
     <string name="home_section_folders">文件夹</string>
     <string name="home_section_notes">笔记</string>
-    <string name="home_folder_count">%1$d 个</string>
     <string name="home_empty_vault">还没有笔记，点击 + 新建</string>
     <string name="home_empty_folder">这个文件夹是空的</string>
     <string name="home_empty_note">空笔记</string>
     <string name="home_untitled_note">未命名笔记</string>
     <string name="home_sort_sheet_title">排序方式</string>
     <string name="home_sort_last_modified">最近修改</string>
-    <string name="home_sort_title">标题</string>
+    <string name="home_sort_title">标题 A–Z</string>
+    <string name="home_sort_title_descending">标题 Z–A</string>
     <string name="home_breadcrumb_root">首页</string>
     <string name="home_breadcrumb_back_description">返回上一级</string>
     <string name="home_switch_to_list_description">切换为列表</string>
@@ -36,6 +34,13 @@
     <string name="home_create_note_description">新建笔记</string>
     <string name="home_new_folder_description">新建文件夹</string>
     <string name="home_retry">重试</string>
+    <string name="home_stalled_relocation_banner">移动或重命名未完成：%1$s → %2$s</string>
+    <string name="home_stalled_relocation_abandon">放弃此操作</string>
+    <string name="home_stalled_relocation_abandon_title">放弃这次移动？</string>
+    <string name="home_stalled_relocation_abandon_message">Looma 将不再尝试把 %1$s 移动到 %2$s。已经移动的文件保持现状，尚未更新的链接保持不变。移动前的笔记副本保存在 .looma/abandoned-operations/%3$s。</string>
+    <string name="home_stalled_relocation_unfinished">有未完成的移动或重命名</string>
+    <string name="home_stalled_relocation_completed">移动或重命名已完成</string>
+    <string name="home_stalled_relocation_abandoned">已放弃这次移动</string>
     <string name="home_open_note_label">打开笔记</string>
     <string name="home_select_note_label">选择笔记</string>
     <string name="home_error_unreadable">有 %1$d 个笔记文件无法读取</string>
@@ -46,7 +51,6 @@
     <string name="home_error_invalid_name">该名称不可用</string>
     <string name="home_error_empty_name">请输入名称</string>
 
-    <!-- Selection -->
     <string name="home_selection_count">%1$d</string>
     <string name="home_selection_close">退出选择</string>
     <string name="home_selection_rename">重命名</string>
@@ -54,7 +58,6 @@
     <string name="home_selection_info">文件属性</string>
     <string name="home_selection_delete">删除</string>
 
-    <!-- Dialogs -->
     <string name="dialog_cancel">取消</string>
     <string name="dialog_confirm">确定</string>
     <string name="dialog_save">保存</string>
@@ -72,11 +75,12 @@
     <string name="home_info_checklist">任务</string>
     <string name="home_info_checklist_value">已完成 %1$d / %2$d</string>
 
-    <!-- Snackbars -->
     <string name="home_snackbar_deleted">已移入回收站：%1$d 项</string>
     <string name="home_snackbar_renamed">已重命名</string>
     <string name="home_snackbar_moved">已移动 %1$d 项</string>
-    <string name="home_undo">撤回</string>
+    <string name="action_undo">撤回</string>
+    <string name="action_undo_failed">撤销失败</string>
+    <string name="action_undone">已撤销</string>
     <string name="home_snackbar_restored">已恢复 %1$d 项</string>
     <string name="home_move_invalid_target">请选择笔记库内的文件夹</string>
     <string name="trash_delete">彻底删除</string>
@@ -86,7 +90,6 @@
     <string name="trash_deleted">已删除笔记</string>
     <string name="home_snackbar_folder_created">已创建文件夹</string>
 
-    <!-- Trash -->
     <string name="trash_title">回收站</string>
     <string name="trash_empty">回收站是空的</string>
     <string name="trash_empty_hint">删除的笔记会留在这里，直到你恢复它</string>
@@ -97,8 +100,22 @@
     <string name="trash_restore_failed">恢复这篇笔记失败</string>
     <string name="trash_load_failed">加载回收站失败</string>
     <string name="trash_retry">重试</string>
+    <string name="trash_restore_all">全部恢复</string>
+    <string name="trash_empty_trash">清空回收站</string>
+    <string name="trash_empty_confirm_title">清空回收站？</string>
+    <plurals name="trash_empty_confirm_message">
+        <item quantity="other">%1$d 篇笔记将被永久删除。</item>
+    </plurals>
+    <string name="trash_empty_confirm">清空</string>
+    <plurals name="trash_restored_count">
+        <item quantity="other">已恢复 %1$d 篇笔记</item>
+    </plurals>
+    <plurals name="trash_emptied_count">
+        <item quantity="other">已永久删除 %1$d 篇笔记</item>
+    </plurals>
+    <string name="trash_bulk_partial">已恢复 %1$d 篇，%2$d 篇失败</string>
+    <string name="trash_restore_undone">笔记已移回回收站</string>
 
-    <!-- Settings -->
     <string name="settings_title">设置</string>
     <string name="settings_section_vault">笔记库</string>
     <string name="settings_vault_none">尚未选择笔记库</string>
@@ -126,11 +143,12 @@
     <string name="settings_section_notes">笔记</string>
     <string name="settings_keep_empty_notes">保留空白笔记</string>
     <string name="settings_keep_empty_notes_desc">新笔记没有写任何内容也保留文件</string>
+    <string name="settings_show_inline_title">显示内联标题</string>
+    <string name="settings_show_inline_title_desc">文件名与首个标题不同时，在笔记顶部显示文件名</string>
     <string name="settings_section_about">关于</string>
     <string name="settings_version">版本 %1$s</string>
     <string name="settings_vault_unavailable">笔记库当前不可访问</string>
 
-    <!-- Vault setup -->
     <string name="vault_setup_title">选择 Looma 笔记库</string>
     <string name="vault_setup_subtitle">你的 Markdown 笔记将保存在所选文件夹中</string>
     <string name="vault_setup_choose">选择文件夹</string>
@@ -150,7 +168,6 @@
     <string name="vault_permission_all_files">请先授予全部文件访问权限</string>
     <string name="vault_permission_storage">请先授予存储空间读写权限</string>
 
-    <!-- Note editor -->
     <string name="editor_back">返回</string>
     <string name="note_edit">编辑</string>
     <string name="note_read">阅读</string>
@@ -187,4 +204,60 @@
     <string name="home_snackbar_renamed_failed">已重命名，%1$d 处引用未能更新</string>
     <string name="note_backlinks_title">反向链接 · %1$d</string>
     <string name="note_link_missing">没有名为「%1$s」的笔记</string>
+    <string name="editor_wikilink">插入双链</string>
+    <string name="editor_wikilink_search">搜索笔记</string>
+    <string name="editor_wikilink_empty">没有匹配的笔记</string>
+    <string name="editor_reload_from_disk">从磁盘重载</string>
+    <string name="editor_draft_restored">已恢复上次未保存的内容</string>
+
+    <string name="home_folder_actions_description">文件夹操作</string>
+    <string name="home_folder_rename_title">重命名文件夹</string>
+    <string name="home_folder_rename_hint">文件夹名称</string>
+    <string name="home_folder_delete_title">删除「%1$s」？</string>
+    <plurals name="home_folder_delete_message">
+        <item quantity="other">文件夹里的 %1$d 篇笔记会移入回收站。</item>
+    </plurals>
+    <string name="home_folder_delete_message_empty">这个文件夹是空的，删除后将直接移除。</string>
+    <string name="home_folder_delete_confirm">删除</string>
+    <string name="home_folder_snackbar_renamed">已重命名文件夹</string>
+    <string name="home_folder_snackbar_moved">已移动文件夹</string>
+    <plurals name="home_folder_snackbar_deleted">
+        <item quantity="other">已删除文件夹，%1$d 篇笔记移入回收站</item>
+    </plurals>
+    <string name="home_folder_snackbar_deleted_empty">已删除文件夹</string>
+    <string name="settings_toolbar_order">编辑器工具栏顺序</string>
+    <string name="settings_toolbar_order_desc">调整格式工具的排列顺序</string>
+    <string name="toolbar_move_up">上移%1$s</string>
+    <string name="toolbar_move_down">下移%1$s</string>
+    <string name="toolbar_reset">恢复默认顺序</string>
+    <string name="settings_section_images">图片</string>
+    <string name="settings_image_destination">图片上传方式</string>
+    <string name="settings_image_destination_local">本地附件</string>
+    <string name="settings_image_destination_local_desc">保存到笔记旁边，用 wiki 嵌入链接</string>
+    <string name="settings_image_destination_bed">图床</string>
+    <string name="settings_image_destination_bed_desc">上传到 S3 存储桶，用 URL 链接</string>
+    <string name="settings_image_destination_dialog_title">图片上传方式</string>
+    <string name="settings_image_bed">S3 图床</string>
+    <string name="settings_image_bed_configured">%1$s · %2$s</string>
+    <string name="settings_image_bed_not_configured">未配置</string>
+    <string name="settings_image_bed_sheet_title">S3 图床</string>
+    <string name="settings_image_bed_endpoint">Endpoint</string>
+    <string name="settings_image_bed_region">区域</string>
+    <string name="settings_image_bed_bucket">存储桶</string>
+    <string name="settings_image_bed_access_key">Access Key</string>
+    <string name="settings_image_bed_secret_key">Secret Key</string>
+    <string name="settings_image_bed_path_prefix">路径前缀</string>
+    <string name="settings_image_bed_public_url">公开访问地址</string>
+    <string name="settings_image_bed_path_style">Path Style 访问</string>
+    <string name="settings_image_bed_path_style_desc">按 endpoint/bucket/key 形式请求</string>
+    <string name="settings_image_bed_public_read">公共读 ACL</string>
+    <string name="settings_image_bed_public_read_desc">上传时设置 public-read 权限</string>
+    <string name="editor_insert_image">插入图片</string>
+    <string name="note_image_error_not_configured">请先在设置里配置 S3 图床</string>
+    <string name="note_image_error_unsupported">仅支持 PNG、JPEG、WebP、GIF 和 BMP 图片</string>
+    <string name="note_image_error_too_large">图片超过 12 MB</string>
+    <string name="note_image_error_storage">无法把图片写入笔记库</string>
+    <string name="note_image_error_network">无法连接图床</string>
+    <string name="note_image_error_rejected">图床拒绝了上传：%1$s</string>
+    <string name="note_image_error_unknown">图片上传失败</string>
 </resources>

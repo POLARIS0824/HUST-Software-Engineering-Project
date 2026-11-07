@@ -51,11 +51,8 @@ import androidx.compose.ui.unit.dp
 import com.example.looma.R
 import com.example.looma.ui.components.DelayedLoadingIndicator
 import com.example.looma.ui.theme.LoomaTheme
+import com.example.looma.ui.theme.LoomaTokens
 
-/**
- * 纯 UI：从外部接收状态、向外部通知事件
- * 不直接操作 SAF / File / 权限 / Repository
- */
 @Composable
 fun VaultSetupScreen(
     onChooseFolderClick: () -> Unit,
@@ -85,7 +82,6 @@ fun VaultSetupScreen(
                 VaultSetupHeader()
                 Spacer(Modifier.height(32.dp))
 
-                // 只要内容状态改变，新卡片就会淡入 + 从 92% 放大；旧卡片淡出
                 AnimatedContent(
                     targetState = content,
                     transitionSpec = {
@@ -141,7 +137,6 @@ fun VaultSetupScreen(
     }
 }
 
-/** 笔记库错误到文案的唯一映射，Setup 与 Settings 共用 */
 @Composable
 fun vaultErrorText(error: VaultSetupError?): String = stringResource(
     when (error) {
@@ -191,7 +186,7 @@ private fun VaultSetupHeader() {
         Spacer(Modifier.height(24.dp))
         Text(
             text = stringResource(R.string.vault_setup_title),
-            style = MaterialTheme.typography.headlineLargeEmphasized,
+            style = LoomaTokens.type.heroTitle,
             modifier = Modifier.semantics { heading() },
         )
         Spacer(Modifier.height(12.dp))
@@ -297,7 +292,6 @@ private fun VaultSetupActions(
     val secondaryLabel = stringResource(
         if (content is VaultContent.Pending) R.string.vault_setup_reselect else R.string.vault_setup_change,
     )
-    // 窄屏纵向排列；宽屏连体按钮，主按钮的文字与指示器不会抢占空间
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val narrow = maxWidth < 305.dp
         if (narrow) {

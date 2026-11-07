@@ -9,7 +9,6 @@ import java.time.Instant
 import java.util.Properties
 import java.util.UUID
 
-/** 文件操作失败的原因，界面据此挑文案，不用把中文塞进 data 层 */
 enum class VaultFileFailure {
     INVALID_PATH,
     INVALID_NAME,
@@ -25,7 +24,6 @@ class VaultFileException(
     cause: Throwable? = null,
 ) : IOException(failure.name, cause)
 
-/** 回收站里的一条记录：正文文件、原路径、删除时间 */
 internal data class TrashRecord(
     val trashId: String,
     val originalPath: NotePath,
@@ -34,16 +32,9 @@ internal data class TrashRecord(
     val metaFile: File,
 )
 
-/**
- * 一个 Vault 目录内的文件操作：校验路径、新建目录、重命名、移动、进回收站、恢复。
- *
- * 只依赖 java.io，不读 Markdown 正文，所以能在纯 JVM 单测里跑完整闭环。
- * 所有对外方法都先确认目标仍在 Vault 内，避免 `..` 或符号链接把操作带出笔记库。
- */
 internal class VaultFileOps(root: File) {
     private val root: File = root.canonicalFile
 
-    /** Vault 根目录，仅供同包内扫描与 Markdown 读写复用 */
     val rootDir: File get() = root
 
     init {
@@ -83,7 +74,6 @@ internal class VaultFileOps(root: File) {
         return directory
     }
 
-    /** 建立一层目录；同名目录已存在时报错，让界面给出明确反馈 */
     fun createFolder(parent: FolderPath, name: String): File {
         val parentDir = folderDirectory(parent)
         if (!parentDir.isDirectory) throw VaultFileException(VaultFileFailure.NOT_FOUND)
@@ -97,17 +87,78 @@ internal class VaultFileOps(root: File) {
         return candidate
     }
 
-    /** 改名，目标同名时拒绝，避免悄悄覆盖别人的笔记 */
-    fun rename(note: File, newName: String): File {
-        val destination = File(note.parentFile, "${validateName(newName, folder = false)}$MARKDOWN_SUFFIX").canonicalFile
-        if (!isInside(destination)) throw VaultFileException(VaultFileFailure.INVALID_PATH)
-        if (destination == note) return note
-        if (destination.exists()) throw VaultFileException(VaultFileFailure.NAME_TAKEN)
-        if (!note.renameTo(destination)) throw VaultFileException(VaultFileFailure.IO)
+    fun renameFolder(path: FolderPath, newName: String): FolderPath {
+        val directory = folderDirectory(path)
+        val destination = renameFolderDestination(path, newName)
+        if (destination != directory && !directory.renameTo(destination)) {
+            throw VaultFileException(VaultFileFailure.IO)
+        }
+        return FolderPath(destination.relativeTo(root).invariantSeparatorsPath)
+    }
+
+    fun renameFolderDestination(path: FolderPath, newName: String): File {
+        val directory = folderDirectory(path)
+        if (directory == root) throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        if (!directory.isDirectory) throw VaultFileException(VaultFileFailure.NOT_FOUND)
+        val parent = directory.parentFile ?: throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        val destination = File(parent, validateName(newName, folder = true)).canonicalFile
+        if (!isInside(destination) || destination == root) {
+            throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        }
+        if (destination != directory && destination.exists()) throw VaultFileException(VaultFileFailure.NAME_TAKEN)
         return destination
     }
 
-    /** 目录不存在就建出来；新建笔记与移动都依赖它 */
+    fun moveFolder(path: FolderPath, destination: FolderPath): FolderPath {
+        val source = folderDirectory(path)
+        val moved = moveFolderDestination(path, destination)
+        if (source != moved && !source.renameTo(moved)) throw VaultFileException(VaultFileFailure.IO)
+        return FolderPath(moved.relativeTo(root).invariantSeparatorsPath)
+    }
+
+    fun moveFolderDestination(path: FolderPath, destination: FolderPath): File {
+        val source = folderDirectory(path)
+        if (source == root) throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        if (!source.isDirectory) throw VaultFileException(VaultFileFailure.NOT_FOUND)
+        val target = folderDirectory(destination)
+        if (!target.isDirectory) throw VaultFileException(VaultFileFailure.NOT_FOUND)
+        if (target == source.parentFile) return source
+        val sourcePath = source.toPath()
+        if (target.toPath().startsWith(sourcePath)) {
+            throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        }
+        val moved = File(target, source.name).canonicalFile
+        if (!isInside(moved) || moved == root) {
+            throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        }
+        if (moved.exists()) throw VaultFileException(VaultFileFailure.NAME_TAKEN)
+        return moved
+    }
+
+    fun deleteFolder(path: FolderPath): List<TrashRecord> {
+        val directory = folderDirectory(path)
+        if (directory == root) throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        if (!directory.isDirectory) throw VaultFileException(VaultFileFailure.NOT_FOUND)
+        val notes = mutableListOf<File>()
+        collectNotes(directory, notes)
+        val records = notes.map { note -> trash(note) }
+        deleteEmptyDirectories(directory)
+        return records
+    }
+
+    fun rename(note: File, newName: String): File {
+        val destination = renameDestination(note, newName)
+        if (destination != note && !note.renameTo(destination)) throw VaultFileException(VaultFileFailure.IO)
+        return destination
+    }
+
+    fun renameDestination(note: File, newName: String): File {
+        val destination = File(note.parentFile, "${validateName(newName, folder = false)}$MARKDOWN_SUFFIX").canonicalFile
+        if (!isInside(destination)) throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        if (destination != note && destination.exists()) throw VaultFileException(VaultFileFailure.NAME_TAKEN)
+        return destination
+    }
+
     fun ensureFolder(path: FolderPath): File {
         val directory = folderDirectory(path)
         if (!directory.isDirectory && !directory.mkdirs()) {
@@ -116,7 +167,6 @@ internal class VaultFileOps(root: File) {
         return directory
     }
 
-    /** 在目录里按 `标题.md` 建一个空文件；重名时续号为 `标题 (1).md` */
     fun newNoteFile(folder: FolderPath, title: String, fallbackName: String): File {
         val directory = ensureFolder(folder)
         val base = safeFilename(title, fallbackName)
@@ -129,16 +179,19 @@ internal class VaultFileOps(root: File) {
         throw VaultFileException(VaultFileFailure.NAME_TAKEN)
     }
 
-    /** 移动到另一个目录；同名文件已存在时保留两者，按 `名字 (1).md` 续号 */
     fun move(note: File, target: FolderPath): File {
-        val directory = folderDirectory(target)
-        if (!directory.isDirectory && !directory.mkdirs()) {
-            throw VaultFileException(VaultFileFailure.IO)
-        }
-        if (directory == note.parentFile) return note
-        val destination = uniqueIn(directory, note.name)
-        if (!note.renameTo(destination)) throw VaultFileException(VaultFileFailure.IO)
+        val destination = moveDestination(note, target)
+        val directory = destination.parentFile ?: throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        if (!directory.isDirectory && !directory.mkdirs()) throw VaultFileException(VaultFileFailure.IO)
+        if (destination != note && !note.renameTo(destination)) throw VaultFileException(VaultFileFailure.IO)
         return destination
+    }
+
+    fun moveDestination(note: File, target: FolderPath): File {
+        val directory = folderDirectory(target)
+        if (directory.exists() && !directory.isDirectory) throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        if (directory == note.parentFile) return note
+        return uniqueIn(directory, note.name)
     }
 
     fun trash(note: File, deletedAt: Instant = Instant.now()): TrashRecord {
@@ -158,6 +211,9 @@ internal class VaultFileOps(root: File) {
             metaFile.delete()
             throw VaultFileException(VaultFileFailure.IO)
         }
+        trashedDrafts(trashId, originalPath)
+            .filter { it.live.exists() }
+            .forEach { draft -> moveBestEffort(draft.live, draft.trashed) }
         return TrashRecord(trashId, originalPath, deletedAt, trashFile, metaFile)
     }
 
@@ -171,19 +227,17 @@ internal class VaultFileOps(root: File) {
             .toList()
     }
 
-    /** 彻底删除一条回收站记录，正文与元数据一起删掉，不可恢复 */
-    fun deletePermanently(trashId: String) {
-        val record = trashed().firstOrNull { it.trashId == trashId }
-            ?: throw VaultFileException(VaultFileFailure.NOT_FOUND)
+    fun deletePermanently(trashId: String) = deletePermanently(recordOf(trashId))
+
+    internal fun deletePermanently(record: TrashRecord) {
         if (!record.file.delete()) throw VaultFileException(VaultFileFailure.IO)
         record.metaFile.delete()
+        trashedDrafts(record.trashId, record.originalPath).forEach { it.trashed.delete() }
     }
 
-    /** 回到原路径；原位置已有同名文件时拒绝，交由用户先处理冲突 */
-    fun restore(trashId: String): File {
-        if (!UUID_PATTERN.matches(trashId)) throw VaultFileException(VaultFileFailure.INVALID_PATH)
-        val record = trashed().firstOrNull { it.trashId == trashId }
-            ?: throw VaultFileException(VaultFileFailure.NOT_FOUND)
+    fun restore(trashId: String): File = restore(recordOf(trashId))
+
+    internal fun restore(record: TrashRecord): File {
         val destination = File(root, record.originalPath.relativePath).canonicalFile
         if (!isInside(destination) || destination == root) {
             throw VaultFileException(VaultFileFailure.INVALID_PATH)
@@ -194,7 +248,31 @@ internal class VaultFileOps(root: File) {
         }
         if (!record.file.renameTo(destination)) throw VaultFileException(VaultFileFailure.IO)
         record.metaFile.delete()
+        trashedDrafts(record.trashId, record.originalPath)
+            .filter { it.trashed.exists() && !it.live.exists() }
+            .forEach { draft -> moveBestEffort(draft.trashed, draft.live) }
         return destination
+    }
+
+    private fun moveBestEffort(source: File, target: File) {
+        val directory = checkNotNull(target.parentFile)
+        if (directory.isDirectory || directory.mkdirs()) source.renameTo(target)
+    }
+
+    private fun trashedDrafts(trashId: String, originalPath: NotePath): List<TrashedDraft> {
+        val directory = File(root, TRASHED_DRAFTS_DIRECTORY)
+        return listOf(
+            TrashedDraft(draftFile(root, originalPath), File(directory, "$trashId$META_SUFFIX")),
+            TrashedDraft(legacyDraftFile(root, originalPath), File(directory, "$trashId$MARKDOWN_SUFFIX")),
+        )
+    }
+
+    private data class TrashedDraft(val live: File, val trashed: File)
+
+    private fun recordOf(trashId: String): TrashRecord {
+        if (!UUID_PATTERN.matches(trashId)) throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        return trashed().firstOrNull { it.trashId == trashId }
+            ?: throw VaultFileException(VaultFileFailure.NOT_FOUND)
     }
 
     private fun readTrashRecord(trashDir: File, metaFile: File): TrashRecord? = runCatching {
@@ -216,6 +294,26 @@ internal class VaultFileOps(root: File) {
         if (!create) return null
         if (!directory.mkdirs()) throw VaultFileException(VaultFileFailure.IO)
         return directory
+    }
+
+    private fun collectNotes(directory: File, into: MutableList<File>) {
+        val children = directory.listFiles() ?: throw VaultFileException(VaultFileFailure.IO)
+        children.sortedBy { it.name }.forEach { child ->
+            if (child.isDirectory) {
+                if (child.name.startsWith('.') || !isInside(child)) return@forEach
+                collectNotes(child, into)
+            } else if (child.isFile && child.extension.equals("md", ignoreCase = true) && isInside(child)) {
+                into += child
+            }
+        }
+    }
+
+    private fun deleteEmptyDirectories(directory: File) {
+        directory.listFiles().orEmpty()
+            .filter { it.isDirectory && !it.name.startsWith('.') }
+            .forEach(::deleteEmptyDirectories)
+        val remaining = directory.listFiles() ?: return
+        if (remaining.isEmpty()) directory.delete()
     }
 
     private fun uniqueIn(directory: File, filename: String): File {
@@ -262,6 +360,7 @@ internal class VaultFileOps(root: File) {
 
     companion object {
         const val TRASH_DIRECTORY = ".looma/trash"
+        private const val TRASHED_DRAFTS_DIRECTORY = "$TRASH_DIRECTORY/drafts"
         const val MARKDOWN_SUFFIX = ".md"
         private const val META_SUFFIX = ".properties"
         private const val MAX_NAME_LENGTH = 72
@@ -273,7 +372,6 @@ internal class VaultFileOps(root: File) {
     }
 }
 
-/** 把用户输入变成安全的文件名；只处理文件系统规则，不猜内容 */
 internal fun safeFilename(raw: String, fallback: String): String {
     val name = raw.trim()
         .removeSuffix(VaultFileOps.MARKDOWN_SUFFIX)

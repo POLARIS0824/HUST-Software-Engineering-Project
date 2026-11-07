@@ -22,9 +22,8 @@ BASE_URL = (
     "materialsymbolsrounded/{name}/default/24px.svg"
 )
 
-# Material Symbols 名称 -> res/drawable 文件名（不含 .xml）
 ICONS = {
-    # 应用骨架与文件管理
+
     "menu": "ic_menu",
     "search": "ic_search",
     "add": "ic_add",
@@ -41,7 +40,7 @@ ICONS = {
     "drive_file_move": "ic_move",
     "restore_from_trash": "ic_restore",
     "settings": "ic_settings",
-    # 编辑器格式栏
+
     "undo": "ic_editor_undo",
     "redo": "ic_editor_redo",
     "format_bold": "ic_editor_bold",
@@ -68,10 +67,8 @@ DRAWABLE_DIR = Path(__file__).resolve().parent.parent / "app/src/main/res/drawab
 SVG_NAMESPACE = "{http://www.w3.org/2000/svg}"
 FILL_COLOR = "#FF000000"
 
-
 class IconError(Exception):
     """单个图标抓取或解析失败。"""
-
 
 def fetch_svg(name: str) -> bytes:
     url = BASE_URL.format(name=name)
@@ -89,7 +86,6 @@ def fetch_svg(name: str) -> bytes:
     if not body:
         raise IconError(f"{url} 返回空响应")
     return body
-
 
 def extract_paths(svg: bytes) -> list:
     """按文档顺序取出所有 <path> 的 d 属性。"""
@@ -109,7 +105,6 @@ def extract_paths(svg: bytes) -> list:
         raise IconError("SVG 中没有 <path>")
     return paths
 
-
 def escape_attr(value: str) -> str:
     return (
         value.replace("&", "&amp;")
@@ -118,9 +113,8 @@ def escape_attr(value: str) -> str:
         .replace('"', "&quot;")
     )
 
-
 def render_vector(paths: list) -> str:
-    # Material Symbols 的 viewBox 是 "0 -960 960 960"，用 translateY 把坐标系移回原点
+
     lines = [
         '<?xml version="1.0" encoding="utf-8"?>',
         '<vector xmlns:android="http://schemas.android.com/apk/res/android"',
@@ -137,7 +131,6 @@ def render_vector(paths: list) -> str:
     lines.extend(['    </group>', '</vector>', ''])
     return "\n".join(lines)
 
-
 def write_if_changed(path: Path, content: str) -> bool:
     if path.is_file():
         with open(path, encoding="utf-8", newline="") as existing:
@@ -146,7 +139,6 @@ def write_if_changed(path: Path, content: str) -> bool:
     with open(path, "w", encoding="utf-8", newline="\n") as target:
         target.write(content)
     return True
-
 
 def select_icons(args: list) -> dict:
     """支持按 Material 名称或 drawable 名称筛选，未指定时返回全部。"""
@@ -166,7 +158,6 @@ def select_icons(args: list) -> dict:
     if unknown:
         raise SystemExit(f"未知图标：{', '.join(unknown)}（可选：{', '.join(ICONS)}）")
     return selected
-
 
 def main(argv: list) -> int:
     if any(arg in ("-h", "--help") for arg in argv):
@@ -215,7 +206,6 @@ def main(argv: list) -> int:
             print(f"  {failure}", file=sys.stderr)
         return 1
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main(sys.argv[1:]))

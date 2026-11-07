@@ -40,7 +40,7 @@ android/
 
 ### 环境要求
 
-- JDK 21 或更高版本
+- JDK 25（`gradle/gradle-daemon-jvm.properties` 的 `toolchainVersion` 就是 25，CI 也装 25）
 - Android SDK（Platform 37，Build Tools 35 或更新版本）
 
 ### 常用命令

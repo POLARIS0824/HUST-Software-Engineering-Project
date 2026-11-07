@@ -8,10 +8,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -32,8 +30,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
@@ -42,18 +40,12 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.looma.R
 import com.example.looma.domain.model.NoteProperties
+import com.example.looma.domain.model.StalledRelocation
 import com.example.looma.feature.home.HomeFileError
-import com.example.looma.feature.home.HomeFileDialog
 import com.example.looma.ui.format.formatDateTime
 import com.example.looma.ui.format.formatFileSize
 import com.example.looma.ui.theme.LoomaTokens
 
-/**
- * 重命名与新建文件夹共用同一个输入对话框，只有标题、初始值和按钮文案不同。
- *
- * 用自绘 Dialog 而不是 AlertDialog：输入法弹出时窗口按 imePadding 上移，
- * 确认按钮不会被键盘盖住。
- */
 @Composable
 internal fun HomeTextInputDialog(
     title: String,
@@ -127,7 +119,6 @@ internal fun HomeTextInputDialog(
     }
 }
 
-/** 文件属性：路径、大小、修改时间、字数与任务完成情况 */
 @Composable
 internal fun HomePropertiesDialog(
     properties: NoteProperties,
@@ -196,6 +187,114 @@ private fun PropertyRow(label: String, value: String) {
             modifier = Modifier.weight(1.2f),
         )
     }
+}
+
+@Composable
+internal fun HomeDeleteFolderDialog(
+    folderName: String,
+    noteCount: Int,
+    error: HomeFileError?,
+    busy: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.home_folder_delete_title, folderName),
+                style = MaterialTheme.typography.headlineSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = if (noteCount > 0) {
+                        pluralStringResource(
+                            R.plurals.home_folder_delete_message,
+                            noteCount,
+                            noteCount,
+                        )
+                    } else {
+                        stringResource(R.string.home_folder_delete_message_empty)
+                    },
+                    style = LoomaTokens.type.cardBody,
+                    color = LoomaTokens.colors.title,
+                )
+                if (error != null) {
+                    Text(
+                        text = fileErrorText(error),
+                        style = LoomaTokens.type.cardBody,
+                        color = LoomaTokens.colors.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = !busy) {
+                Text(
+                    text = stringResource(R.string.home_folder_delete_confirm),
+                    color = LoomaTokens.colors.error,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.dialog_cancel)) }
+        },
+    )
+}
+
+@Composable
+internal fun HomeAbandonStalledRelocationDialog(
+    stalled: StalledRelocation,
+    error: HomeFileError?,
+    busy: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.home_stalled_relocation_abandon_title),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(
+                        R.string.home_stalled_relocation_abandon_message,
+                        stalled.sourcePath,
+                        stalled.destinationPath,
+                        stalled.journalId,
+                    ),
+                    style = LoomaTokens.type.cardBody,
+                    color = LoomaTokens.colors.title,
+                )
+                if (error != null) {
+                    Text(
+                        text = fileErrorText(error),
+                        style = LoomaTokens.type.cardBody,
+                        color = LoomaTokens.colors.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = !busy) {
+                Text(
+                    text = stringResource(R.string.home_stalled_relocation_abandon),
+                    color = LoomaTokens.colors.error,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.dialog_cancel)) }
+        },
+    )
 }
 
 @Composable

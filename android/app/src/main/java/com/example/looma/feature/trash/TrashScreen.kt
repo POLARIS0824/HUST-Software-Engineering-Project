@@ -17,9 +17,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -33,6 +35,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -46,7 +50,6 @@ import com.example.looma.ui.format.formatDateTime
 import com.example.looma.ui.theme.LoomaTokens
 import kotlinx.coroutines.launch
 
-/** 组合根：只把状态接到无状态界面上，恢复结果的提示留给这一层 */
 @Composable
 fun TrashRoute(
     viewModel: TrashViewModel,
@@ -56,9 +59,14 @@ fun TrashRoute(
     val state by viewModel.uiState.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val resources = LocalContext.current.resources
     val restoredText = stringResource(R.string.trash_restored)
     val failedText = stringResource(R.string.trash_restore_failed)
     val deletedText = stringResource(R.string.trash_deleted)
+    val undoLabel = stringResource(R.string.action_undo)
+    val undoneText = stringResource(R.string.trash_restore_undone)
+    val undoFailedText = stringResource(R.string.action_undo_failed)
+    val actionFailedText = stringResource(R.string.home_error_action)
 
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.load() }
 
@@ -67,16 +75,73 @@ fun TrashRoute(
         snackbarHostState = snackbarHostState,
         onNavigateUp = onNavigateUp,
         onRestoreClick = { trashId ->
-            viewModel.restore(trashId) { restored ->
+            viewModel.restore(trashId) { restoredId ->
                 scope.launch {
-                    snackbarHostState.showSnackbar(if (restored) restoredText else failedText)
+                    if (restoredId == null) {
+                        snackbarHostState.showSnackbar(failedText)
+                        return@launch
+                    }
+                    val result = snackbarHostState.showSnackbar(
+                        message = restoredText,
+                        actionLabel = undoLabel,
+                    )
+                    if (result != SnackbarResult.ActionPerformed) return@launch
+                    viewModel.trashAgain(restoredId) { undone ->
+                        scope.launch {
+                            snackbarHostState.showSnackbar(if (undone) undoneText else undoFailedText)
+                        }
+                    }
                 }
             }
         },
         onDeleteClick = { trashId ->
             viewModel.deletePermanently(trashId) { deleted ->
                 scope.launch {
-                    snackbarHostState.showSnackbar(if (deleted) deletedText else failedText)
+                    snackbarHostState.showSnackbar(if (deleted) deletedText else actionFailedText)
+                }
+            }
+        },
+        onRestoreAllClick = {
+            viewModel.restoreAll { outcome ->
+                scope.launch {
+                    snackbarHostState.showSnackbar(
+                        when {
+                            outcome == null -> failedText
+                            outcome.isFullSuccess -> resources.getQuantityString(
+                                R.plurals.trash_restored_count,
+                                outcome.total,
+                                outcome.total,
+                            )
+
+                            else -> resources.getString(
+                                R.string.trash_bulk_partial,
+                                outcome.succeeded,
+                                outcome.failed,
+                            )
+                        },
+                    )
+                }
+            }
+        },
+        onEmptyTrashClick = {
+            viewModel.emptyTrash { outcome ->
+                scope.launch {
+                    snackbarHostState.showSnackbar(
+                        when {
+                            outcome == null -> actionFailedText
+                            outcome.isFullSuccess -> resources.getQuantityString(
+                                R.plurals.trash_emptied_count,
+                                outcome.total,
+                                outcome.total,
+                            )
+
+                            else -> resources.getString(
+                                R.string.trash_bulk_partial,
+                                outcome.succeeded,
+                                outcome.failed,
+                            )
+                        },
+                    )
                 }
             }
         },
@@ -92,10 +157,12 @@ fun TrashScreen(
     onNavigateUp: () -> Unit,
     onRestoreClick: (String) -> Unit,
     onDeleteClick: (String) -> Unit,
+    onRestoreAllClick: () -> Unit,
+    onEmptyTrashClick: () -> Unit,
     onRetryClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var pendingDelete by remember { mutableStateOf<TrashEntry?>(null) }
+    var confirm by remember { mutableStateOf<TrashConfirm?>(null) }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -106,7 +173,7 @@ fun TrashScreen(
                 title = {
                     Text(
                         text = stringResource(R.string.trash_title),
-                        style = LoomaTokens.type.sheetTitle,
+                        style = LoomaTokens.type.pageTitle,
                         color = LoomaTokens.colors.title,
                     )
                 },
@@ -116,6 +183,25 @@ fun TrashScreen(
                             iconRes = R.drawable.ic_arrow_back,
                             contentDescription = stringResource(R.string.nav_back),
                         )
+                    }
+                },
+                actions = {
+                    if (state.items.isNotEmpty()) {
+                        IconButton(onClick = onRestoreAllClick, enabled = state.canRestoreAll) {
+                            LoomaIcon(
+                                iconRes = R.drawable.ic_restore,
+                                contentDescription = stringResource(R.string.trash_restore_all),
+                            )
+                        }
+                        IconButton(
+                            onClick = { confirm = TrashConfirm.EmptyTrash },
+                            enabled = state.canEmptyTrash,
+                        ) {
+                            LoomaIcon(
+                                iconRes = R.drawable.ic_delete,
+                                contentDescription = stringResource(R.string.trash_empty_trash),
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -163,32 +249,49 @@ fun TrashScreen(
                     )
                 }
 
-                else -> LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    items(state.items, key = { it.trashId }) { item ->
-                        TrashRow(
-                            item = item,
-                            isRestoring = state.restoringId == item.trashId,
-                            onRestoreClick = { onRestoreClick(item.trashId) },
-                            onDeleteClick = { pendingDelete = item },
-                        )
+                else -> Column(Modifier.fillMaxSize()) {
+                    if (state.busy == TrashBusy.Bulk) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                    }
+                    LazyColumn(
+                        modifier = Modifier.weight(1f),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        items(state.items, key = { it.trashId }) { item ->
+                            TrashRow(
+                                item = item,
+                                isRestoring = state.busy == TrashBusy.Row(item.trashId),
+                                actionsEnabled = state.busy == TrashBusy.None,
+                                onRestoreClick = { onRestoreClick(item.trashId) },
+                                onDeleteClick = { confirm = TrashConfirm.DeleteOne(item) },
+                            )
+                        }
                     }
                 }
             }
         }
     }
 
-    pendingDelete?.let { entry ->
-        TrashDeleteDialog(
-            onConfirm = {
-                onDeleteClick(entry.trashId)
-                pendingDelete = null
-            },
-            onDismiss = { pendingDelete = null },
-        )
+    confirm?.let { pending ->
+        when (pending) {
+            is TrashConfirm.DeleteOne -> TrashDeleteDialog(
+                onConfirm = {
+                    onDeleteClick(pending.entry.trashId)
+                    confirm = null
+                },
+                onDismiss = { confirm = null },
+            )
+
+            TrashConfirm.EmptyTrash -> TrashEmptyDialog(
+                noteCount = state.items.size,
+                onConfirm = {
+                    onEmptyTrashClick()
+                    confirm = null
+                },
+                onDismiss = { confirm = null },
+            )
+        }
     }
 }
 
@@ -213,9 +316,33 @@ private fun TrashDeleteDialog(
 }
 
 @Composable
+private fun TrashEmptyDialog(
+    noteCount: Int,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.trash_empty_confirm_title)) },
+        text = {
+            Text(pluralStringResource(R.plurals.trash_empty_confirm_message, noteCount, noteCount))
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm) {
+                Text(stringResource(R.string.trash_empty_confirm))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.dialog_cancel)) }
+        },
+    )
+}
+
+@Composable
 private fun TrashRow(
     item: TrashEntry,
     isRestoring: Boolean,
+    actionsEnabled: Boolean,
     onRestoreClick: () -> Unit,
     onDeleteClick: () -> Unit,
 ) {
@@ -263,13 +390,13 @@ private fun TrashRow(
             if (isRestoring) {
                 CircularProgressIndicator(Modifier.size(20.dp))
             } else {
-                IconButton(onClick = onRestoreClick) {
+                IconButton(onClick = onRestoreClick, enabled = actionsEnabled) {
                     LoomaIcon(
                         iconRes = R.drawable.ic_restore,
                         contentDescription = stringResource(R.string.trash_restore),
                     )
                 }
-                IconButton(onClick = onDeleteClick) {
+                IconButton(onClick = onDeleteClick, enabled = actionsEnabled) {
                     LoomaIcon(
                         iconRes = R.drawable.ic_delete,
                         contentDescription = stringResource(R.string.trash_delete),

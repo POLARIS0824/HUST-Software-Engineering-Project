@@ -4,7 +4,6 @@ import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.model.NotePath
 import com.example.looma.domain.model.VaultId
 
-/** 测试里只需要路径和标题，VaultId 固定一个 */
 internal fun wikiNote(
     path: String,
     title: String = path.substringAfterLast('/').removeSuffix(".md"),

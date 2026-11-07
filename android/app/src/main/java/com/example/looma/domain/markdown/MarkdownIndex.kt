@@ -8,13 +8,6 @@ import org.intellij.markdown.flavours.gfm.GFMFlavourDescriptor
 import org.intellij.markdown.parser.CancellationToken
 import org.intellij.markdown.parser.MarkdownParser
 
-/**
- * 把 Markdown 原文解析成渲染和写回共用的一份结果。
- *
- * 只依赖 org.intellij:markdown，不碰 Android 和 Compose，能在纯单测里跑。
- * 渲染器画 [MarkdownDocument.body]，写回改 [MarkdownDocument.source] 上 [MarkdownCheckbox.range] 指的三个字符，
- * 两边来自同一次解析，不会各算一份位置。
- */
 object MarkdownIndex {
 
     fun index(source: String, fallbackTitle: String): MarkdownDocument {
@@ -22,11 +15,13 @@ object MarkdownIndex {
         val facts = Facts()
         walk(parse(body.text), body.text, body.start, facts)
 
+        val heading = facts.title?.takeIf { it.isNotBlank() }
         return MarkdownDocument(
             source = source,
             body = body.text,
             bodyStart = body.start,
-            title = facts.title?.takeIf { it.isNotBlank() } ?: fallbackTitle,
+            title = heading ?: fallbackTitle,
+            heading = heading,
             checkboxes = facts.checkboxes,
             links = WikiLinks.occurrences(body.text, body.start, facts.code),
         )
@@ -39,7 +34,6 @@ object MarkdownIndex {
 
     private fun walk(node: ASTNode, text: String, base: Int, facts: Facts) {
         when (node.type) {
-            // 代码块与行内代码里的 [[..]] 是示例，不是链接；整棵子树都不再往下找
             MarkdownElementTypes.CODE_FENCE,
             MarkdownElementTypes.CODE_BLOCK,
             MarkdownElementTypes.CODE_SPAN,
@@ -64,10 +58,6 @@ object MarkdownIndex {
         ?.trim()
         .orEmpty()
 
-    /**
-     * 复选框标记没有公开的 token 常量，所以按结构找：列表项里那个 "[ ]" / "[x]" 子节点。
-     * 它和渲染器拿到的节点是同一棵树上的同一个节点，偏移因此一致。
-     */
     private fun checkboxIn(item: ASTNode, text: String, base: Int): MarkdownCheckbox? {
         val marker = item.children.firstOrNull { child ->
             val slice = child.getTextInNode(text)
@@ -84,28 +74,14 @@ object MarkdownIndex {
     private class Facts {
         var title: String? = null
         val checkboxes = mutableListOf<MarkdownCheckbox>()
-        /** 代码区间，坐标与 [MarkdownDocument.body] 一致 */
         val code = mutableListOf<IntRange>()
     }
 
     private data class Body(val text: String, val start: Int)
 
-    /** 只剥掉文件开头那段合法 frontmatter，剥不掉就整段当正文，宁可多显示也不丢内容 */
     private fun splitBody(source: String): Body {
-        if (!source.startsWith("---")) return Body(source, 0)
-        if (source.length > 3 && source[3] != '\n' && source[3] != '\r') return Body(source, 0)
-        var cursor = source.indexOf('\n').let { if (it < 0) return Body(source, 0) else it + 1 }
-        while (cursor < source.length) {
-            val lineEnd = source.indexOf('\n', cursor).let { if (it < 0) source.length else it }
-            val line = source.substring(cursor, lineEnd).trimEnd('\r')
-            if (line.trim() == "---") {
-                val start = if (lineEnd < source.length) lineEnd + 1 else lineEnd
-                return Body(source.substring(start), start)
-            }
-            if (lineEnd >= source.length) break
-            cursor = lineEnd + 1
-        }
-        return Body(source, 0)
+        val start = frontmatterEnd(source)
+        return Body(source.substring(start), start)
     }
 
     private val MARKER = Regex("""^\[[ xX]]\s*$""")

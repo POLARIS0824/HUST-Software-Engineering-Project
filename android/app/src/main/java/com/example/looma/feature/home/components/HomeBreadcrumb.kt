@@ -17,7 +17,6 @@ import com.example.looma.feature.home.HomeCrumb
 import com.example.looma.ui.components.LoomaIcon
 import com.example.looma.ui.theme.LoomaTokens
 
-/** 文件夹层级提示：返回箭头加“首页 / 父级 / 当前” */
 @Composable
 internal fun HomeBreadcrumb(
     crumbs: List<HomeCrumb>,
@@ -25,7 +24,6 @@ internal fun HomeBreadcrumb(
     modifier: Modifier = Modifier,
 ) {
     if (crumbs.isEmpty()) return
-    // 根标签属于展示层；HomeVaultIndex 只产出路径与各段名称
     val rootLabel = stringResource(R.string.home_breadcrumb_root)
     Row(
         modifier = modifier.fillMaxWidth().padding(start = 4.dp, end = 16.dp),

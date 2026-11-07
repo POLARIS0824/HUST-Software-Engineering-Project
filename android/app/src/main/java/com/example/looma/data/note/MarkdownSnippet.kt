@@ -1,10 +1,5 @@
 package com.example.looma.data.note
 
-/**
- * 卡片里要渲染的 Markdown 开头。
- *
- * 去掉 frontmatter 和与标题重复的一级标题，按行截断，避免把代码块或强调符号切一半。
- */
 internal fun markdownSnippetOf(
     source: String,
     title: String,
@@ -24,11 +19,20 @@ internal fun markdownSnippetOf(
         }
         .joinToString("\n")
         .trim()
+        .withoutTags()
+        .trim()
     if (withoutTitle.length <= maxChars) return withoutTitle
     val clipped = withoutTitle.take(maxChars)
     val lastLineBreak = clipped.lastIndexOf('\n')
     return if (lastLineBreak > maxChars / 2) clipped.substring(0, lastLineBreak).trimEnd() else clipped.trimEnd()
 }
+
+private fun String.withoutTags(): String = lines()
+    .mapNotNull { line ->
+        val cleaned = TAG_PATTERN.replace(line, "")
+        if (cleaned.isBlank() && line.isNotBlank()) null else cleaned
+    }
+    .joinToString("\n")
 
 private fun String.stripFrontmatter(): String {
     if (!startsWith("---")) return this

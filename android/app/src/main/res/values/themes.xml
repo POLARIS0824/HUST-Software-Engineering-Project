@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <!-- AppCompat 主题是应用级语言切换的前提；DayNight 同时负责深色窗口背景 -->
     <style name="Theme.Looma" parent="Theme.AppCompat.DayNight.NoActionBar" />
 </resources>

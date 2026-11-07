@@ -1,8 +1,3 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!--
-  Type.kt 通过 resources.getIdentifier("google_sans_flex", "font", ...) 按名字查找字体，
-  静态资源分析看不到这层引用，release 的 optimizeResource 会把整个字体删掉（APK 里不再有
-  res/font/google_sans_flex.ttf）。这里显式声明保留，debug / release 都能带上该字体。
--->
 <resources xmlns:tools="http://schemas.android.com/tools"
     tools:keep="@font/google_sans_flex" />

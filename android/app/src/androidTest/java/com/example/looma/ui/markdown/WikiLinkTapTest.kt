@@ -17,11 +17,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * 双链在渲染层的行为：点得到、点不到、点错地方。
- *
- * 这里只证明"能不能点、点到的是哪个目标"；解析后去跳转还是提示由 feature 层决定。
- */
 @RunWith(AndroidJUnit4::class)
 class WikiLinkTapTest {
 

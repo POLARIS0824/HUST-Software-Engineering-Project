@@ -18,12 +18,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.example.looma.R
 import com.example.looma.feature.note.NoteUiState
+import com.example.looma.ui.theme.LoomaTokens
 
-/** 写盘失败时贴在编辑区顶部的提示；冲突时提供覆盖保存，其余错误提供重试 */
 @Composable
 internal fun NoteSaveBanner(
     state: NoteUiState,
     onRetry: () -> Unit,
+    onReload: () -> Unit,
     onOverwrite: () -> Unit,
 ) {
     Surface(color = MaterialTheme.colorScheme.errorContainer) {
@@ -38,9 +39,19 @@ internal fun NoteSaveBanner(
                     if (state.isConflict) R.string.editor_conflict else R.string.editor_save_failed,
                 ),
                 modifier = Modifier.weight(1f),
-                style = MaterialTheme.typography.bodySmall,
+                style = LoomaTokens.type.supporting,
                 color = MaterialTheme.colorScheme.onErrorContainer,
             )
+            if (state.isConflict) {
+                TextButton(
+                    onClick = onReload,
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                    ),
+                ) {
+                    Text(stringResource(R.string.editor_reload_from_disk))
+                }
+            }
             TextButton(
                 onClick = if (state.isConflict) onOverwrite else onRetry,
                 colors = ButtonDefaults.textButtonColors(
@@ -53,7 +64,6 @@ internal fun NoteSaveBanner(
     }
 }
 
-/** 返回时冲刷失败：重试、放弃或取消，别让用户被卡在编辑页 */
 @Composable
 internal fun NoteLeaveDialog(
     state: NoteUiState,

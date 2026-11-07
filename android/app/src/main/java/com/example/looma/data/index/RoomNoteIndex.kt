@@ -7,18 +7,12 @@ import com.example.looma.domain.model.NotePath
 import com.example.looma.domain.model.VaultId
 import java.time.Instant
 
-/**
- * Room 版的 [NoteIndex]。
- *
- * `@Upsert` 只覆盖主表，标签与链接在重扫时必须先删后插，否则已从正文删掉的标签会残留。
- */
 internal class RoomNoteIndex(private val database: NoteIndexDatabase) : NoteIndex {
 
     private val dao = database.noteIndexDao()
 
     override suspend fun load(vaultId: VaultId): List<IndexedNote> {
         val key = vaultId.value
-        // 三张表必须在同一个事务里读：写穿只改其中一部分时，不能让图拼出「有笔记、没链接」的快照
         return database.withTransaction {
             val tagsByPath = dao.tags(key).groupBy { it.notePath }
             val linksByPath = dao.links(key).groupBy { it.notePath }
@@ -44,10 +38,11 @@ internal class RoomNoteIndex(private val database: NoteIndexDatabase) : NoteInde
         database.withTransaction {
             val vaultId = delta.vaultId.value
             val upsertPaths = delta.upserts.map { it.id.path.relativePath }
-            // 写穿与重扫都在一次事务里重建子表，读到的一半旧一半新不会出现
             if (upsertPaths.isNotEmpty()) {
-                dao.deleteTags(vaultId, upsertPaths)
-                dao.deleteLinks(vaultId, upsertPaths)
+                upsertPaths.chunked(MAX_SQL_PATHS).forEach { paths ->
+                    dao.deleteTags(vaultId, paths)
+                    dao.deleteLinks(vaultId, paths)
+                }
                 val indexedAt = System.currentTimeMillis()
                 dao.upsertNotes(delta.upserts.map { it.toEntity(vaultId, indexedAt) })
                 val tags = delta.upserts.flatMap { note -> note.tagEntities(vaultId) }
@@ -56,7 +51,9 @@ internal class RoomNoteIndex(private val database: NoteIndexDatabase) : NoteInde
                 if (links.isNotEmpty()) dao.insertLinks(links)
             }
             if (delta.removed.isNotEmpty()) {
-                dao.deleteNotes(vaultId, delta.removed.map { it.relativePath })
+                delta.removed.map { it.relativePath }.chunked(MAX_SQL_PATHS).forEach { paths ->
+                    dao.deleteNotes(vaultId, paths)
+                }
             }
         }
     }
@@ -83,5 +80,9 @@ internal class RoomNoteIndex(private val database: NoteIndexDatabase) : NoteInde
         return links.mapIndexed { index, link ->
             NoteLinkEntity(vaultId, path, index, link.target, link.embedded)
         }
+    }
+
+    private companion object {
+        const val MAX_SQL_PATHS = 500
     }
 }

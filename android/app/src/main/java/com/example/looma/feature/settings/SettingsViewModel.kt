@@ -6,14 +6,16 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.looma.data.settings.AppSettings
+import com.example.looma.data.settings.ImageUploadTarget
+import com.example.looma.data.settings.S3ImageBedConfig
 import com.example.looma.data.settings.SettingsRepository
 import com.example.looma.data.settings.ThemePreset
+import com.example.looma.domain.markdown.ToolbarItem
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-/** 设置页的状态与写入；写入后 DataStore 会回流，MainActivity 据此换主题 */
 class SettingsViewModel(
     private val repository: SettingsRepository,
 ) : ViewModel() {
@@ -28,10 +30,6 @@ class SettingsViewModel(
         viewModelScope.launch { repository.setDynamicColor(enabled) }
     }
 
-    /**
-     * 选预设就意味着要这套颜色，所以同时关掉动态取色，
-     * 否则系统壁纸配色会盖住用户刚选的主题。
-     */
     fun setThemePreset(preset: ThemePreset) {
         viewModelScope.launch {
             repository.setThemePreset(preset)
@@ -41,6 +39,22 @@ class SettingsViewModel(
 
     fun setKeepEmptyNotes(keep: Boolean) {
         viewModelScope.launch { repository.setKeepEmptyNotes(keep) }
+    }
+
+    fun setShowInlineTitle(show: Boolean) {
+        viewModelScope.launch { repository.setShowInlineTitle(show) }
+    }
+
+    fun setToolbarOrder(order: List<ToolbarItem>) {
+        viewModelScope.launch { repository.setToolbarOrder(order) }
+    }
+
+    fun setImageUploadTarget(target: ImageUploadTarget) {
+        viewModelScope.launch { repository.setImageUploadTarget(target) }
+    }
+
+    fun setS3ImageBed(config: S3ImageBedConfig) {
+        viewModelScope.launch { repository.setS3ImageBed(config) }
     }
 
     companion object {

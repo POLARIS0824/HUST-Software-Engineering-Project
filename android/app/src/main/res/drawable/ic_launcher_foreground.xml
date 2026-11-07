@@ -1,5 +1,4 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 图形按可见安全区（108dp 画布的中央 72dp）绘制：笔画外接框 43.68x42.72dp，约占可见区 61% -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">

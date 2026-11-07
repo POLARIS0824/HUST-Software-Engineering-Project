@@ -4,7 +4,6 @@ import com.example.looma.domain.model.NoteId
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
 
-/** 正文的进程内缓存；mtime 变化即失效，名字/位置变了条目跟着 key 搬 */
 internal class NoteTextCache {
 
     private data class Entry(val modifiedAt: Instant, val text: String)
@@ -20,6 +19,10 @@ internal class NoteTextCache {
 
     fun move(from: NoteId, to: NoteId) {
         entries.remove(from)?.let { entries[to] = it }
+    }
+
+    fun clear() {
+        entries.clear()
     }
 
     fun remove(id: NoteId) {

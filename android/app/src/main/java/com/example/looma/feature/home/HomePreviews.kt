@@ -21,16 +21,12 @@ import com.example.looma.ui.theme.LoomaTheme
 import com.example.looma.ui.theme.LoomaTokens
 import java.time.Instant
 
-/**
- * Preview 数据与真实仓库无关；状态直接按 ViewModel 的产出规则预计算，
- * 这样 Preview 看到的列表顺序与搜索过滤和真机一致。
- */
 private fun previewState(
     query: String = "",
     isGridMode: Boolean = true,
     notes: List<HomeNoteItem> = previewNotes(),
     path: FolderPath = FolderPath.Root,
-    selection: Set<String> = emptySet(),
+    selection: HomeSelection = HomeSelection.None,
 ): HomeUiState = HomeUiState(
     vaultName = "Looma",
     notes = notes.orderedBy(HomeSort.LAST_MODIFIED),
@@ -40,7 +36,7 @@ private fun previewState(
     isLoading = false,
     files = previewIndex(notes).files(path, HomeSort.LAST_MODIFIED),
     selection = selection,
-    selectedItems = notes.filter { it.listKey in selection },
+    selectedNotes = notes.selected(selection, HomeSort.LAST_MODIFIED),
 )
 
 private fun previewIndex(notes: List<HomeNoteItem>): HomeVaultIndex {
@@ -148,7 +144,9 @@ private fun HomeSelectionPreview() {
     val notes = previewNotes()
     LoomaTheme(dynamicColor = false) {
         HomeScreen(
-            state = previewState(selection = notes.take(2).map { it.listKey }.toSet()),
+            state = previewState(
+                selection = HomeSelection.Notes.of(notes.take(2).map { it.listKey }.toSet()),
+            ),
             actions = HomeActions(),
         )
     }
@@ -163,7 +161,7 @@ private fun HomeSearchResultsPreview() {
                 Text(
                     text = "搜索 Java",
                     modifier = Modifier.padding(20.dp),
-                    style = LoomaTokens.type.sheetTitle,
+                    style = LoomaTokens.type.pageTitle,
                 )
                 HomeSearchResults(
                     query = "Java",

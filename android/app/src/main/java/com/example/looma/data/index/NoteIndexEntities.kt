@@ -58,7 +58,6 @@ internal data class NoteLinkEntity(
     val embedded: Boolean,
 )
 
-/** 搜索记录按 vault 隔离：切换笔记库后不会看到另一个库的查询 */
 @Entity(tableName = "search_history", primaryKeys = ["vaultId", "key"])
 internal data class SearchHistoryEntity(
     val vaultId: String,

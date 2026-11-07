@@ -1,12 +1,10 @@
 package com.example.looma.domain.markdown
 
-/** 文本缓冲区的选区；偏移是 UTF-16 下标，start 可能大于 end。 */
 data class TextSelection(val start: Int, val end: Int) {
     val from: Int get() = minOf(start, end)
     val to: Int get() = maxOf(start, end)
 }
 
-/** 一次编辑的结果；selection 始终有序。 */
 data class MarkdownEdit(val text: String, val selection: TextSelection)
 
 enum class MarkdownCommand {
@@ -27,12 +25,6 @@ data class MarkdownFormatState(
     val inCodeBlock: Boolean = false,
 )
 
-/**
- * 源码模式的 Markdown 编辑引擎：只做"文本 + 选区 → 新文本 + 新选区"的纯变换。
- *
- * 不依赖 Android 和 Compose，所以工具条上每个按钮都能在单测里验证。
- * 行内样式按成对的标记扫描，块级命令只改行首前缀，正文内容原样保留。
- */
 object MarkdownEditing {
 
     fun apply(command: MarkdownCommand, text: String, selection: TextSelection): MarkdownEdit {
@@ -88,8 +80,6 @@ object MarkdownEditing {
         )
     }
 
-    // ---------------------------------------------------------------- inline
-
     private fun toggleInline(
         text: String,
         from: Int,
@@ -99,7 +89,6 @@ object MarkdownEditing {
         val marker = style.marker
         val length = marker.length
 
-        // 选区外侧紧贴成对标记：去掉它们
         if (isWrappedOutside(text, from, to, style)) {
             return removeRanges(
                 text = text,
@@ -108,7 +97,6 @@ object MarkdownEditing {
             )
         }
 
-        // 选区自身包含成对标记：去掉内侧标记，保留选中文字
         if (isWrappedInside(text, from, to, style)) {
             return removeRanges(
                 text = text,
@@ -117,7 +105,6 @@ object MarkdownEditing {
             )
         }
 
-        // 选区落在已有 span 里：按"关闭当前样式"处理
         val span = findSpan(text, from, to, style)
         if (span != null) {
             return removeRanges(
@@ -127,7 +114,6 @@ object MarkdownEditing {
             )
         }
 
-        // 没有可关闭的样式：插入标记
         if (from == to) {
             val updated = text.substring(0, from) + marker + marker + text.substring(from)
             return MarkdownEdit(updated, TextSelection(from + length, from + length))
@@ -146,7 +132,6 @@ object MarkdownEditing {
         val before = runEndingAt(text, from, char)
         val after = runStartingAt(text, to, char)
         return when (style) {
-            // 单个星号/反引号只认长度为 1 的 run，避免把 ** 当成斜体
             MarkdownInlineStyle.Italic, MarkdownInlineStyle.Code -> before == 1 && after == 1
             MarkdownInlineStyle.Bold -> before >= 2 && after >= 2
             MarkdownInlineStyle.Strikethrough, MarkdownInlineStyle.Highlight -> before >= 2 && after >= 2
@@ -212,8 +197,6 @@ object MarkdownEditing {
         return mapped.coerceAtLeast(0)
     }
 
-    // ------------------------------------------------------------------ link
-
     private fun applyLink(text: String, from: Int, to: Int): MarkdownEdit {
         val label = text.substring(from, to)
         val existing = LINK.matchEntire(label)
@@ -232,8 +215,6 @@ object MarkdownEditing {
         )
     }
 
-    // --------------------------------------------------------------- heading
-
     private fun applyHeading(text: String, from: Int, to: Int, level: Int): MarkdownEdit {
         val lines = linesInRange(text, from, to)
         val parsed = lines.map { parseLine(it.text) }
@@ -241,7 +222,6 @@ object MarkdownEditing {
         val allTarget = nonBlank.isNotEmpty() && nonBlank.all { it.headingLevel == level }
         val rewrites = lines.mapIndexedNotNull { index, line ->
             val info = parsed[index]
-            // 多行选择里跳过空行；但光标停在空行时仍要能插入前缀，否则没法开始一个新列表
             if (line.text.isBlank() && from != to) return@mapIndexedNotNull null
             val heading = if (allTarget) "" else "#".repeat(level) + " "
             Rewrite(
@@ -253,8 +233,6 @@ object MarkdownEditing {
         }
         return rewriteLines(text, from, to, rewrites)
     }
-
-    // ------------------------------------------------------------- line style
 
     private enum class ListKind { Bullet, Numbered, Checklist }
 
@@ -305,8 +283,6 @@ object MarkdownEditing {
         return rewriteLines(text, from, to, rewrites)
     }
 
-    // ----------------------------------------------------------------- blocks
-
     private fun applyCodeBlock(text: String, from: Int, to: Int): MarkdownEdit {
         val leading = if (from > 0 && text[from - 1] != '\n') "\n" else ""
         if (from == to) {
@@ -338,7 +314,6 @@ object MarkdownEditing {
     }
 
     private fun insertDivider(text: String, from: Int, to: Int): MarkdownEdit {
-        // 开头必须留一行空行，否则 "---" 落在第 1 行，整段会被当成 frontmatter 藏起来
         val leading = when {
             from == 0 -> "\n"
             text[from - 1] != '\n' -> "\n\n"
@@ -352,8 +327,6 @@ object MarkdownEditing {
             selection = TextSelection(caret, caret),
         )
     }
-
-    // ------------------------------------------------------------- line model
 
     private data class LineSlice(val start: Int, val end: Int, val text: String)
 
@@ -476,8 +449,6 @@ object MarkdownEditing {
         if (!toMapped) newTo = to + deltaBefore(to)
         return MarkdownEdit(builder.toString(), TextSelection(newFrom, newTo))
     }
-
-    // ------------------------------------------------------------------ spans
 
     private data class Span(
         val style: MarkdownInlineStyle,

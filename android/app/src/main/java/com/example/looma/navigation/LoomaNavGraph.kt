@@ -12,6 +12,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -25,6 +26,7 @@ import androidx.navigation3.ui.NavDisplay
 import com.example.looma.R
 import com.example.looma.data.folder.FolderRepository
 import com.example.looma.data.note.NoteRepository
+import com.example.looma.data.image.ImageUploader
 import com.example.looma.data.search.SearchHistoryRepository
 import com.example.looma.data.settings.SettingsRepository
 import com.example.looma.data.vault.VaultRepository
@@ -45,13 +47,6 @@ import com.example.looma.feature.vault.VaultState
 import com.example.looma.ui.components.LoomaLoadingIndicator
 import kotlinx.coroutines.launch
 
-/**
- * App-level navigation only. Features never receive or modify the NavBackStack.
- * Vault setup is a prerequisite; a successfully selected vault replaces the root.
- *
- * 侧边栏也在这里：它属于应用外壳，只有顶层目的地可以打开，
- * 笔记页的返回栈不受它影响。
- */
 @Composable
 fun LoomaNavGraph(
     vaultRepository: VaultRepository,
@@ -59,6 +54,7 @@ fun LoomaNavGraph(
     folderRepository: FolderRepository,
     searchHistoryRepository: SearchHistoryRepository,
     settingsRepository: SettingsRepository,
+    imageUploader: ImageUploader,
     vaultSetupViewModel: VaultSetupViewModel,
     modifier: Modifier = Modifier,
 ) {
@@ -66,7 +62,6 @@ fun LoomaNavGraph(
     LifecycleEventEffect(Lifecycle.Event.ON_START) { vaultSetupViewModel.refreshVaultStatus() }
     val status = setupState.vaultState
 
-    // Avoid creating a saved back stack before DataStore's first value arrives.
     if (status is VaultState.Checking) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             LoomaLoadingIndicator()
@@ -74,11 +69,9 @@ fun LoomaNavGraph(
         return
     }
 
-    // 启动时不会自动选择笔记库；没有可用笔记库时，门禁页是唯一的根
     val start: NavKey = if (status is VaultState.Ready) LoomaRoute.Home else LoomaRoute.VaultSetup
     val backStack = rememberNavBackStack(start)
 
-    // A successful selection is a root change, not a push: Back must not reopen setup.
     LaunchedEffect(setupState.selectionSaved, status) {
         if (setupState.selectionSaved && status is VaultState.Ready) {
             backStack.clear()
@@ -122,19 +115,28 @@ fun LoomaNavGraph(
     ) {
         NavDisplay(
             modifier = Modifier.fillMaxSize(),
+
             backStack = backStack,
-            onBack = { if (backStack.size > 1) backStack.removeLastOrNull() },
+            onBack = {
+                if (backStack.size > 1) {
+                    backStack.removeLastOrNull()
+                }
+            },
+
             entryDecorators = listOf(
                 rememberSaveableStateHolderNavEntryDecorator(),
                 rememberViewModelStoreNavEntryDecorator(),
             ),
+
             entryProvider = entryProvider {
+
                 entry<LoomaRoute.VaultSetup> {
                     VaultSetupRoute(
                         viewModel = vaultSetupViewModel,
                         modifier = Modifier.fillMaxSize().safeDrawingPadding(),
                     )
                 }
+
                 entry<LoomaRoute.Home> {
                     val homeViewModel: HomeViewModel = viewModel(
                         factory = HomeViewModel.factory(
@@ -147,6 +149,9 @@ fun LoomaNavGraph(
                     HomeRoute(
                         viewModel = homeViewModel,
                         onOpenNote = { noteId -> backStack.add(LoomaRoute.Note.from(noteId)) },
+                        onCreatedNote = { noteId ->
+                            backStack.add(LoomaRoute.Note.from(noteId, isNew = true))
+                        },
                         onMenuClick = { scope.launch { drawerState.open() } },
                         onSettingsClick = {
                             if (backStack.lastOrNull() != LoomaRoute.Settings) {
@@ -155,6 +160,7 @@ fun LoomaNavGraph(
                         },
                     )
                 }
+
                 entry<LoomaRoute.Trash> {
                     val trashViewModel: TrashViewModel = viewModel(
                         factory = TrashViewModel.factory(noteRepository),
@@ -164,6 +170,7 @@ fun LoomaNavGraph(
                         onNavigateUp = { if (backStack.size > 1) backStack.removeLastOrNull() },
                     )
                 }
+
                 entry<LoomaRoute.Settings> {
                     val settingsViewModel: SettingsViewModel = viewModel(
                         factory = SettingsViewModel.factory(settingsRepository),
@@ -179,19 +186,29 @@ fun LoomaNavGraph(
                         onNavigateUp = { if (backStack.size > 1) backStack.removeLastOrNull() },
                     )
                 }
+
                 entry<LoomaRoute.Note> { route ->
                     val noteId = NoteId(
                         vaultId = VaultId(route.vaultId),
                         path = NotePath(route.relativePath),
                     )
                     val noteViewModel: NoteViewModel = viewModel(
-                        factory = NoteViewModel.factory(noteRepository, settingsRepository, noteId),
+                        factory = NoteViewModel.factory(
+                            repository = noteRepository,
+                            settingsRepository = settingsRepository,
+                            imageUploader = imageUploader,
+                            noteId = noteId,
+                            isNewNote = route.isNew,
+                        ),
                     )
                     NoteRoute(
                         viewModel = noteViewModel,
-                        fallbackTitle = route.relativePath
-                            .substringAfterLast('/')
-                            .substringBeforeLast('.'),
+                        fallbackTitle = if (route.isNew) {
+                            stringResource(R.string.home_untitled_note)
+                        } else {
+                            route.relativePath.substringAfterLast('/').substringBeforeLast('.')
+                        },
+                        isNew = route.isNew,
                         onNavigateUp = { if (backStack.size > 1) backStack.removeLastOrNull() },
                         onOpenNote = { noteId -> backStack.add(LoomaRoute.Note.from(noteId)) },
                     )

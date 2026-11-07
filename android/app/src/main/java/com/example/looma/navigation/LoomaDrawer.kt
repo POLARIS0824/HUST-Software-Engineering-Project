@@ -23,7 +23,6 @@ import com.example.looma.R
 import com.example.looma.ui.components.LoomaIcon
 import com.example.looma.ui.theme.LoomaTokens
 
-/** 侧边栏的三个入口；顺序与 Keep 的 Notes / Trash / Settings 一致 */
 enum class LoomaDestination(
     @StringRes val label: Int,
     @DrawableRes val icon: Int,
@@ -33,10 +32,6 @@ enum class LoomaDestination(
     Settings(R.string.drawer_settings, R.drawable.ic_settings),
 }
 
-/**
- * 侧边栏是应用级外壳，不是某个 feature 的一部分：
- * 它只知道三个顶层入口和当前高亮项，具体路由由调用方决定。
- */
 @Composable
 fun LoomaDrawer(
     drawerState: DrawerState,
@@ -54,7 +49,6 @@ fun LoomaDrawer(
         drawerContent = {
             ModalDrawerSheet(
                 drawerContainerColor = LoomaTokens.colors.sheet,
-                // 侧边栏永远不铺满屏幕：窄屏取 86%，宽屏最多 320dp，右侧始终露出内容
                 modifier = Modifier.fillMaxWidth(0.86f).widthIn(max = 320.dp),
             ) {
                 Column(
@@ -65,10 +59,9 @@ fun LoomaDrawer(
                     val appName = stringResource(R.string.app_name)
                     Text(
                         text = appName,
-                        style = LoomaTokens.type.sheetTitle,
+                        style = LoomaTokens.type.pageTitle,
                         color = LoomaTokens.colors.title,
                     )
-                    // 笔记库和 App 同名时只显示一次，避免标题重复
                     if (vaultName.isNotBlank() && vaultName != appName) {
                         Spacer(Modifier.height(2.dp))
                         Text(
@@ -85,7 +78,7 @@ fun LoomaDrawer(
                         label = {
                             Text(
                                 text = stringResource(destination.label),
-                                style = LoomaTokens.type.sheetOption,
+                                style = LoomaTokens.type.body,
                             )
                         },
                         icon = {

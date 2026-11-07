@@ -31,6 +31,16 @@ class MarkdownIndexTest {
     }
 
     @Test
+    fun `the first heading is exposed separately from the fallback title`() {
+        assertEquals("周会记录", MarkdownIndex.index(source, "兜底标题").heading)
+
+        val untitled = MarkdownIndex.index("只有正文", "兜底标题")
+
+        assertNull(untitled.heading)
+        assertEquals("兜底标题", untitled.title)
+    }
+
+    @Test
     fun `checkbox ranges point at the markers in the original text`() {
         val document = MarkdownIndex.index(source, "兜底标题")
 

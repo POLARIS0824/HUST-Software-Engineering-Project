@@ -8,16 +8,6 @@ import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import com.example.looma.domain.markdown.WikiLinks
 
-/**
- * 把已经渲染好的段落文本叠上双链标注。
- *
- * 只加样式与链接，**不改字**：字符串长度和字符位置都不动，
- * 所以复选框写回用的原文坐标不受影响。
- *
- * `[[..]]` 在渲染文本里逐字保留（渲染库不认识这个语法），
- * 因此在渲染坐标里直接找就行，不需要从原文坐标换算过来；
- * [codeBackground] 用来跳过行内代码，那里的 `[[..]]` 只是示例。
- */
 internal fun AnnotatedString.withWikiLinks(
     codeBackground: Color,
     isResolved: (String) -> Boolean,

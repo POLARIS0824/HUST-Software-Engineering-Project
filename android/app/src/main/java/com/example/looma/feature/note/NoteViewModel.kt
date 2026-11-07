@@ -1,83 +1,146 @@
 package com.example.looma.feature.note
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import com.example.looma.data.image.ImageUpload
+import com.example.looma.data.image.ImageUploadException
+import com.example.looma.data.image.ImageUploadFailure
+import com.example.looma.data.image.ImageUploader
 import com.example.looma.data.note.NoteChangedExternallyException
 import com.example.looma.data.note.NoteRepository
 import com.example.looma.data.settings.SettingsRepository
 import com.example.looma.domain.model.NoteId
+import com.example.looma.domain.model.NoteWriteMode
 import com.example.looma.domain.wiki.WikiContext
-import kotlinx.coroutines.flow.first
+import com.example.looma.feature.note.NoteViewModel.Companion.SAVE_INTERVAL_MS
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
-/**
- * 笔记页的"文档会话"：加载、自动保存、离开前冲刷。
- *
- * 阅读和编辑共用同一份缓冲区，所以不存在两个页面各读一次盘、互相看不到对方修改的问题。
- * 正文缓冲区和光标属于 Compose 的 TextFieldState，不进入 ViewModel。
- */
 class NoteViewModel(
     private val repository: NoteRepository,
     private val settingsRepository: SettingsRepository,
+    private val imageUploader: ImageUploader,
     private val noteId: NoteId,
+    isNewNote: Boolean,
 ) : ViewModel() {
-    private val _uiState = MutableStateFlow(NoteUiState())
+    private val _uiState = MutableStateFlow(NoteUiState(isNewNote = isNewNote))
     val uiState: StateFlow<NoteUiState> = _uiState.asStateFlow()
 
+    private data class SaveRequest(val content: String, val mode: NoteWriteMode)
+
+    private val editorWrites = Mutex()
+    private var operationGeneration = 0
     private var loadJob: Job? = null
-    private var debounceJob: Job? = null
-    private var saveJob: Job? = null
-    private var saveRequested = false
-    private var forceNextSave = false
+    private var autosaveTick: Job? = null
     private var leaving = false
 
-    init { load() }
-
-    fun load() {
-        if (_uiState.value.isDirty || loadJob?.isActive == true) return
-        loadJob = viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, loadFailed = false) }
-            try {
-                val note = repository.readNote(noteId)
-                val keepEmptyNotes = settingsRepository.settings.first().keepEmptyNotes
-                // 索引只是缓存：读它失败不该让笔记打不开，链接退化成全部未解析即可
-                val wiki = runCatching { repository.wikiContext(noteId) }.getOrDefault(WikiContext.Empty)
+    init {
+        load()
+        viewModelScope.launch {
+            settingsRepository.settings.collect { settings ->
                 _uiState.update {
                     it.copy(
-                        content = note.content,
-                        savedContent = note.content,
-                        modifiedAt = note.modifiedAt,
-                        isLoading = false,
-                        saveState = NoteSaveState.Idle,
-                        saveFailed = false,
-                        loadFailed = false,
-                        isConflict = false,
-                        keepEmptyNotes = keepEmptyNotes,
-                        wiki = wiki,
+                        showInlineTitle = settings.showInlineTitle,
+                        toolbarOrder = settings.toolbarOrder,
                     )
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, loadFailed = true) }
             }
         }
     }
 
-    /**
-     * 回到这篇笔记时重取双链快照：刚刚从别的笔记回来，那边的改动可能新增了反向链接，
-     * 或让原本未解析的目标存在了。只读索引，不读盘。
-     */
+    fun load() {
+        if (_uiState.value.isDirty || loadJob?.isActive == true) return
+        loadJob = enqueue { generation ->
+            _uiState.update { it.copy(isLoading = true, loadFailed = false) }
+            try {
+                val opened = repository.openNote(noteId)
+                val keepEmptyNotes = settingsRepository.settings.first().keepEmptyNotes
+                val wiki = runCatching { repository.wikiContext(noteId) }
+                    .onFailure { if (it is CancellationException) throw it }
+                    .getOrDefault(WikiContext.Empty)
+                val imageContext = runCatching { repository.imageContext(noteId) }
+                    .onFailure { if (it is CancellationException) throw it }
+                    .getOrNull()
+                if (generation != operationGeneration) return@enqueue
+                val conflict = opened.conflictRevision != null
+                val dirty = opened.note.content != opened.diskContent
+                _uiState.update {
+                    it.copy(
+                        content = opened.note.content,
+                        savedContent = opened.diskContent,
+                        modifiedAt = opened.note.modifiedAt,
+                        revision = opened.note.revision,
+                        conflictRevision = opened.conflictRevision,
+                        isLoading = false,
+                        saveState = when {
+                            conflict -> NoteSaveState.Failed
+                            dirty -> NoteSaveState.Pending
+                            else -> NoteSaveState.Idle
+                        },
+                        saveFailed = conflict,
+                        loadFailed = false,
+                        isConflict = conflict,
+                        keepEmptyNotes = keepEmptyNotes,
+                        wiki = wiki,
+                        imageContext = imageContext,
+                        restoredDraft = opened.restoredDraft,
+                        reloadToken = it.reloadToken + 1,
+                    )
+                }
+                if (dirty && !conflict) scheduleAutosave()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                if (generation == operationGeneration) {
+                    _uiState.update { it.copy(isLoading = false, loadFailed = true) }
+                }
+            }
+        }
+    }
+
+    fun syncWithDisk() {
+        val current = _uiState.value
+        if (current.isLoading || current.isDirty || current.isConflict || current.saveFailed) return
+        enqueue {
+            try {
+                val disk = repository.readNote(noteId)
+                _uiState.update { state ->
+                    if (!state.canAdoptDiskRevision(disk.revision)) {
+                        state
+                    } else {
+                        state.copy(
+                            content = disk.content,
+                            savedContent = disk.content,
+                            modifiedAt = disk.modifiedAt,
+                            revision = disk.revision,
+                            reloadToken = state.reloadToken + 1,
+                            saveState = NoteSaveState.Idle,
+                            saveFailed = false,
+                            isConflict = false,
+                            restoredDraft = false,
+                        )
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+            }
+        }
+    }
+
     fun refreshWiki() {
         if (_uiState.value.isLoading) return
         viewModelScope.launch {
@@ -87,165 +150,296 @@ class NoteViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                // 保留上一份快照：链接样式过时，比整篇笔记报错要好
             }
         }
     }
 
-    /** 缓冲区每次变化都会到这里；700ms 没有新输入才真正写盘 */
+    fun uploadImage(uri: Uri) {
+        if (_uiState.value.isUploadingImage) return
+        viewModelScope.launch {
+            _uiState.update { it.copy(isUploadingImage = true, imageUploadError = null) }
+            try {
+                val settings = settingsRepository.settings.first()
+                val upload = imageUploader.upload(uri, settings)
+                val snippet = when (upload) {
+                    is ImageUpload.Attachment -> "![[${upload.fileName}]]"
+                    is ImageUpload.Remote -> "![](${upload.url})"
+                }
+                _uiState.update {
+                    it.copy(
+                        isUploadingImage = false,
+                        imageInsertion = ImageInsertion(snippet, System.nanoTime()),
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: ImageUploadException) {
+                _uiState.update {
+                    it.copy(isUploadingImage = false, imageUploadError = e.toNoteError())
+                }
+            } catch (_: Exception) {
+                _uiState.update {
+                    it.copy(isUploadingImage = false, imageUploadError = NoteImageError.Unknown)
+                }
+            }
+        }
+    }
+
+    fun onImageInserted() {
+        _uiState.update { it.copy(imageInsertion = null) }
+    }
+
+    fun onImageErrorShown() {
+        _uiState.update { it.copy(imageUploadError = null) }
+    }
+
     fun onContentChanged(value: String) {
         val current = _uiState.value
-        if (current.content == value) return
+        if (current.isLoading || current.loadFailed || current.leaveReady || current.content == value) return
         _uiState.update {
             it.copy(
                 content = value,
                 saveState = if (it.isConflict) NoteSaveState.Failed else NoteSaveState.Pending,
                 saveFailed = if (it.isConflict) it.saveFailed else false,
+                restoredDraft = false,
             )
         }
-        if (current.isConflict) return
-
-        saveRequested = true
-        debounceJob?.cancel()
-        debounceJob = viewModelScope.launch {
-            delay(AUTOSAVE_DELAY_MS)
-            ensureSaveLoop()
-        }
+        scheduleAutosave()
     }
 
     fun retrySave() {
-        saveRequested = true
-        ensureSaveLoop()
+        cancelAutosave()
+        enqueue { generation ->
+            if (!_uiState.value.isLoading) saveCurrent(generation)
+        }
     }
 
-    /** 外部改动冲突时用户选择以本地内容为准 */
     fun overwrite() {
-        forceNextSave = true
-        _uiState.update {
-            it.copy(isConflict = false, saveFailed = false, saveState = NoteSaveState.Pending)
-        }
-        retrySave()
+        if (_uiState.value.isLoading) return
+        val request = overwriteRequest()
+        cancelAutosave()
+        enqueue { generation -> saveCurrent(generation, request) }
     }
 
-    /**
-     * 返回前把缓冲区写完。写失败时停在 [NoteUiState.leaveBlocked]，
-     * 由界面让用户选择重试、覆盖还是放弃。
-     */
-    fun saveThenLeave(force: Boolean = false, onSaved: () -> Unit) {
-        // 连续按返回只允许发起一次离开流程，否则回调会把返回栈多弹一层
-        if (leaving) return
-        leaving = true
-        if (force) forceNextSave = true
-        debounceJob?.cancel()
-        saveRequested = true
-        ensureSaveLoop()
-        viewModelScope.launch {
-            saveJob?.join()
-            // 冲刷期间如果又有输入，再等一轮
-            if (_uiState.value.content != _uiState.value.savedContent) {
-                saveRequested = true
-                ensureSaveLoop()
-                saveJob?.join()
+    fun reloadFromDisk() {
+        operationGeneration++
+        cancelAutosave()
+        leaving = false
+        _uiState.update { it.copy(isLoading = true, leaveBlocked = false, leaveReady = false) }
+        loadJob = enqueue { generation ->
+            try {
+                val note = repository.reloadNote(noteId)
+                if (generation != operationGeneration) return@enqueue
+                _uiState.update {
+                    it.copy(
+                        content = note.content,
+                        savedContent = note.content,
+                        modifiedAt = note.modifiedAt,
+                        revision = note.revision,
+                        conflictRevision = null,
+                        isLoading = false,
+                        loadFailed = false,
+                        saveState = NoteSaveState.Idle,
+                        saveFailed = false,
+                        isConflict = false,
+                        restoredDraft = false,
+                        reloadToken = it.reloadToken + 1,
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                if (generation == operationGeneration) {
+                    _uiState.update {
+                        it.copy(isLoading = false, saveFailed = true, saveState = NoteSaveState.Failed)
+                    }
+                }
             }
+        }
+    }
+
+    fun onEnterBackground() {
+        cancelAutosave()
+        enqueue { generation ->
             val state = _uiState.value
-            if (state.content == state.savedContent && state.saveState != NoteSaveState.Failed) {
-                onSaved()
-            } else {
-                leaving = false
-                _uiState.update { it.copy(leaveBlocked = true) }
+            if (!state.isLoading && (state.isDirty || state.isConflict || state.saveFailed)) {
+                checkpoint()
+                if (!_uiState.value.isConflict) saveCurrent(generation)
             }
         }
     }
 
-    /**
-     * 离开笔记的统一入口。
-     *
-     * 干净状态下也要处理「误触新建」：按设置把空白笔记送进回收站，
-     * 因此返回键在会丢弃空笔记时也要接管，而不是直接退栈。
-     */
-    fun requestLeave(onLeave: () -> Unit) {
-        val state = _uiState.value
-        when {
-            state.willDiscardEmpty -> viewModelScope.launch {
-                runCatching { repository.deleteNote(noteId) }
-                onLeave()
+    fun saveThenLeave(force: Boolean = false) {
+        if (leaving || _uiState.value.isLoading || _uiState.value.leaveReady) return
+        val request = if (force) overwriteRequest() else null
+        leaving = true
+        cancelAutosave()
+        enqueue { generation ->
+            try {
+                val state = _uiState.value
+                val saved = if (request == null && state.willDiscardEmpty) {
+                    discardEmpty(state)
+                } else {
+                    saveCurrent(generation, request)
+                }
+                if (generation == operationGeneration) {
+                    _uiState.update { it.copy(leaveReady = saved, leaveBlocked = !saved) }
+                }
+            } finally {
+                leaving = false
             }
-            state.needsLeaveGuard -> saveThenLeave(onSaved = onLeave)
-            else -> onLeave()
         }
+    }
+
+    fun requestLeave() {
+        saveThenLeave()
     }
 
     fun onLeaveHandled() {
-        leaving = false
         _uiState.update { it.copy(leaveBlocked = false) }
     }
 
-    private fun ensureSaveLoop() {
-        if (saveJob?.isActive == true) return
-        saveJob = viewModelScope.launch {
-            while (saveRequested) {
-                saveRequested = false
-                if (!persistOnce()) break
+    fun onLeaveReadyHandled() {
+        _uiState.update { it.copy(leaveReady = false) }
+    }
+
+    private fun overwriteRequest(): SaveRequest {
+        val state = _uiState.value
+        return SaveRequest(
+            state.content,
+            NoteWriteMode.Overwrite(state.conflictRevision ?: state.revision),
+        )
+    }
+
+    private fun cancelAutosave() {
+        autosaveTick?.cancel()
+        autosaveTick = null
+    }
+
+    private fun scheduleAutosave() {
+        if (autosaveTick?.isActive == true) return
+        autosaveTick = viewModelScope.launch {
+            delay(SAVE_INTERVAL_MS)
+            autosaveTick = null
+            enqueue { generation ->
+                val state = _uiState.value
+                when {
+                    state.isConflict -> checkpoint()
+                    state.isDirty -> saveCurrent(generation)
+                }
             }
-            saveJob = null
-            // 收尾时刚好又有新输入，接上下一轮（冲突时不自动重试）
-            if (saveRequested && !_uiState.value.isConflict) ensureSaveLoop()
         }
     }
 
-    private suspend fun persistOnce(): Boolean {
-        val snapshot = _uiState.value
-        if (snapshot.content == snapshot.savedContent) return true
+    private fun enqueue(action: suspend (Int) -> Unit): Job {
+        val generation = operationGeneration
+        return viewModelScope.launch {
+            editorWrites.withLock {
+                if (generation == operationGeneration) action(generation)
+            }
+        }
+    }
 
+    private suspend fun saveCurrent(generation: Int, request: SaveRequest? = null): Boolean {
+        if (request != null && !persistOnce(request)) return false
+        while (generation == operationGeneration) {
+            val state = _uiState.value
+            if (!state.isDirty && !state.isConflict && !state.saveFailed) return true
+            if (!persistOnce(SaveRequest(state.content, NoteWriteMode.Checked(state.revision)))) return false
+        }
+        return false
+    }
+
+    private suspend fun persistOnce(request: SaveRequest): Boolean {
         _uiState.update { it.copy(saveState = NoteSaveState.Saving, saveFailed = false) }
-        return try {
-            val updated = repository.saveNote(
-                id = noteId,
-                content = snapshot.content,
-                expectedModifiedAt = if (forceNextSave) null else snapshot.modifiedAt,
-            )
-            forceNextSave = false
+        try {
+            val updated = repository.saveNote(noteId, request.content, request.mode)
             _uiState.update { state ->
                 state.copy(
-                    savedContent = snapshot.content,
+                    savedContent = request.content,
                     modifiedAt = updated.modifiedAt,
-                    saveState = if (state.content == snapshot.content) {
+                    revision = updated.revision,
+                    conflictRevision = null,
+                    saveState = if (state.content == request.content) {
                         NoteSaveState.Saved
                     } else {
                         NoteSaveState.Pending
                     },
+                    saveFailed = false,
                     isConflict = false,
+                    restoredDraft = false,
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            recordFailure(e)
+            checkpoint()
+            return false
+        }
+        return checkpoint()
+    }
+
+    private suspend fun checkpoint(): Boolean {
+        val state = _uiState.value
+        return try {
+            repository.writeDraft(noteId, state.content, state.revision)
             true
         } catch (e: CancellationException) {
             throw e
-        } catch (_: NoteChangedExternallyException) {
-            _uiState.update {
-                it.copy(
-                    saveState = NoteSaveState.Failed,
-                    isConflict = true,
-                    saveFailed = true,
-                )
-            }
-            false
         } catch (e: Exception) {
-            _uiState.update {
-                it.copy(saveState = NoteSaveState.Failed, saveFailed = true)
-            }
+            recordFailure(e)
             false
+        }
+    }
+
+    private suspend fun discardEmpty(state: NoteUiState): Boolean {
+        return try {
+            repository.discardNote(noteId, state.revision)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            recordFailure(e)
+            checkpoint()
+            false
+        }
+    }
+
+    private fun recordFailure(error: Exception) {
+        _uiState.update {
+            it.copy(
+                saveState = NoteSaveState.Failed,
+                saveFailed = true,
+                isConflict = it.isConflict || error is NoteChangedExternallyException,
+                conflictRevision = (error as? NoteChangedExternallyException)?.actualRevision
+                    ?: it.conflictRevision,
+            )
         }
     }
 
     companion object {
-        private const val AUTOSAVE_DELAY_MS = 700L
+        private const val SAVE_INTERVAL_MS = 2_000L
 
         fun factory(
             repository: NoteRepository,
             settingsRepository: SettingsRepository,
+            imageUploader: ImageUploader,
             noteId: NoteId,
+            isNewNote: Boolean = false,
         ): ViewModelProvider.Factory = viewModelFactory {
-            initializer { NoteViewModel(repository, settingsRepository, noteId) }
+            initializer {
+                NoteViewModel(repository, settingsRepository, imageUploader, noteId, isNewNote)
+            }
         }
     }
+}
+
+private fun ImageUploadException.toNoteError(): NoteImageError = when (failure) {
+    ImageUploadFailure.NotConfigured -> NoteImageError.NotConfigured
+    ImageUploadFailure.UnsupportedImage -> NoteImageError.UnsupportedImage
+    ImageUploadFailure.ImageTooLarge -> NoteImageError.ImageTooLarge
+    ImageUploadFailure.ReadFailed, ImageUploadFailure.StorageFailed -> NoteImageError.Storage
+    ImageUploadFailure.Rejected -> NoteImageError.Rejected(detail.orEmpty())
+    ImageUploadFailure.Network -> NoteImageError.Network
 }

@@ -12,20 +12,15 @@ data class NoteId(
     val path: NotePath,
 )
 
-/**
- * 表示解析后的笔记业务数据
- */
 data class Note(
     val id: NoteId,
     val title: String,
     val content: String,
     val modifiedAt: Instant,
     val tags: Set<String> = emptySet(),
+    val revision: NoteRevision = NoteRevision.of(content.toByteArray(Charsets.UTF_8)),
 )
 
-/**
- * 表示首页、搜索所需的笔记摘要
- */
 data class NoteSummary(
     val id: NoteId,
     val title: String,

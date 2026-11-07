@@ -6,12 +6,6 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 import com.example.looma.data.search.SearchHistoryDao
 
-/**
- * 索引库缓存 Markdown 正文的派生数据，搜索历史则是用户数据。
- *
- * schema 导出到 `app/schemas/`：升版要写显式 Migration，不能靠丢表重建，
- * 否则搜索历史会被静默清空。
- */
 @Database(
     entities = [
         IndexedNoteEntity::class,

@@ -45,6 +45,20 @@ class MarkdownSnippetTest {
     }
 
     @Test
+    fun `tag-only line is dropped`() {
+        val source = "# 标题\n\n#工作 #项目\n\n正文"
+
+        assertEquals("正文", markdownSnippetOf(source, "标题"))
+    }
+
+    @Test
+    fun `inline tag is removed but text stays`() {
+        val source = "今天完成 #工作"
+
+        assertEquals("今天完成", markdownSnippetOf(source, "标题"))
+    }
+
+    @Test
     fun `blank body stays blank`() {
         assertEquals("", markdownSnippetOf("", "空"))
     }

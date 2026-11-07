@@ -6,6 +6,8 @@ import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.looma.data.note.NoteRepository
+import com.example.looma.data.note.TrashBulkOutcome
+import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.model.TrashedNote
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -15,7 +17,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-/** 回收站：列出被删笔记，恢复时把文件搬回原路径 */
 class TrashViewModel(
     private val noteRepository: NoteRepository,
 ) : ViewModel() {
@@ -33,52 +34,103 @@ class TrashViewModel(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiState.update { it.copy(items = emptyList(), isLoading = false, loadFailed = true) }
+                _uiState.update {
+                    it.copy(items = emptyList(), isLoading = false, loadFailed = true)
+                }
             }
         }
     }
 
-    /**
-     * 恢复一篇笔记。失败时保留在列表里，让用户先处理原位置的同名文件，
-     * 所以无论成败都重新加载一次，只是提示不同。
-     */
-    fun restore(trashId: String, onFinished: (Boolean) -> Unit) {
-        if (_uiState.value.restoringId != null) return
+    fun restore(trashId: String, onFinished: (NoteId?) -> Unit) {
+        if (_uiState.value.busy != TrashBusy.None) return
+        _uiState.update { it.copy(busy = TrashBusy.Row(trashId)) }
         viewModelScope.launch {
-            _uiState.update { it.copy(restoringId = trashId) }
-            var restored = false
+            var restored: NoteId? = null
             try {
-                noteRepository.restoreNote(trashId)
-                restored = true
-                load()
+                restored = noteRepository.restoreNote(trashId).id
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                load()
             } finally {
-                _uiState.update { it.copy(restoringId = null) }
+                _uiState.update { it.copy(busy = TrashBusy.None) }
+                load()
                 onFinished(restored)
             }
         }
     }
 
-    /** 彻底删除一条回收站记录；失败时保留在列表里 */
-    fun deletePermanently(trashId: String, onFinished: (Boolean) -> Unit) {
-        if (_uiState.value.restoringId != null) return
+    fun trashAgain(id: NoteId, onFinished: (Boolean) -> Unit) {
+        if (_uiState.value.busy != TrashBusy.None) return
+        _uiState.update { it.copy(busy = TrashBusy.Row(id.path.relativePath)) }
         viewModelScope.launch {
-            _uiState.update { it.copy(restoringId = trashId) }
+            var undone = false
+            try {
+                noteRepository.deleteNote(id)
+                undone = true
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+            } finally {
+                _uiState.update { it.copy(busy = TrashBusy.None) }
+                load()
+                onFinished(undone)
+            }
+        }
+    }
+
+    fun deletePermanently(trashId: String, onFinished: (Boolean) -> Unit) {
+        if (_uiState.value.busy != TrashBusy.None) return
+        _uiState.update { it.copy(busy = TrashBusy.Row(trashId)) }
+        viewModelScope.launch {
             var deleted = false
             try {
                 noteRepository.deleteTrashedNote(trashId)
                 deleted = true
-                load()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                load()
             } finally {
-                _uiState.update { it.copy(restoringId = null) }
+                _uiState.update { it.copy(busy = TrashBusy.None) }
+                load()
                 onFinished(deleted)
+            }
+        }
+    }
+
+    fun restoreAll(onFinished: (TrashBulkOutcome?) -> Unit) {
+        if (_uiState.value.busy != TrashBusy.None) return
+        val trashIds = _uiState.value.items.map { it.trashId }
+        _uiState.update { it.copy(busy = TrashBusy.Bulk) }
+        viewModelScope.launch {
+            var outcome: TrashBulkOutcome? = null
+            try {
+                outcome = noteRepository.restoreTrashedNotes(trashIds)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+            } finally {
+                _uiState.update { it.copy(busy = TrashBusy.None) }
+                load()
+                onFinished(outcome)
+            }
+        }
+    }
+
+    fun emptyTrash(onFinished: (TrashBulkOutcome?) -> Unit) {
+        if (_uiState.value.busy != TrashBusy.None) return
+        val trashIds = _uiState.value.items.map { it.trashId }
+        _uiState.update { it.copy(busy = TrashBusy.Bulk) }
+        viewModelScope.launch {
+            var outcome: TrashBulkOutcome? = null
+            try {
+                outcome = noteRepository.deleteTrashedNotes(trashIds)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+            } finally {
+                _uiState.update { it.copy(busy = TrashBusy.None) }
+                load()
+                onFinished(outcome)
             }
         }
     }

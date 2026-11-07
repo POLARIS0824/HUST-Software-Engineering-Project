@@ -22,13 +22,6 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
-/**
- * 改名后的引用改写：文件真的被改了，索引真的跟上了，失败只计数不反悔。
- *
- * 跑在真实 Vault 上（临时目录），因为整条路径依赖文件系统与当前笔记库。
- * 当前笔记库直接改 DataStore，跑完按原来的 id/名字/路径写回去：
- * 走 `setCurrentVault` 会重新生成 id，索引就得整库重建一次，测试不该留下这种副作用。
- */
 @RunWith(AndroidJUnit4::class)
 class RenameRelinkTest {
 
@@ -56,7 +49,6 @@ class RenameRelinkTest {
             VaultPreferences(context).saveVault(vaultId, "relink", root.path)
             database = Room.inMemoryDatabaseBuilder(context, NoteIndexDatabase::class.java).build()
             repository = NoteRepository(vaults, RoomNoteIndex(database))
-            // 先扫一遍，索引里才有引用关系；改写阶段读的就是索引快照
             repository.listNotes()
         }
     }
@@ -78,9 +70,7 @@ class RenameRelinkTest {
         assertEquals(0, outcome.linksFailed)
         assertEquals("Renamed", outcome.note.id.path.relativePath.substringAfterLast('/').removeSuffix(".md"))
 
-        // 同一篇里出现两次，两种写法都换，别名原样保留
         assertEquals("# From\n\n见 [[Renamed]] 与 [[Renamed|别名]]。\n", read("From.md"))
-        // 无关的引用一个字都不动
         assertEquals("# Other\n\n[[Unrelated]]\n", read("Other.md"))
         assertEquals("# Target\n\n目标笔记。\n", read("Renamed.md"))
 
@@ -92,18 +82,17 @@ class RenameRelinkTest {
     fun aNoteThatLinksToItselfIsRewrittenToo() = runBlocking {
         repository.renameNote(id("Self.md"), "Myself")
 
-        // 只换文件名和引用目标，正文标题保持原样
         assertEquals("# Self\n\n[[Myself]]\n", read("Myself.md"))
     }
 
     @Test
-    fun aReferrerThatVanishedIsCountedAndTheRenameStillStands() = runBlocking {
+    fun aReferrerThatVanishedIsNotTakenFromTheStaleIndex() = runBlocking {
         File(root, "From.md").delete()
 
         val outcome = repository.renameNote(id("Target.md"), "Renamed")
 
         assertEquals(0, outcome.linksUpdated)
-        assertEquals(1, outcome.linksFailed)
+        assertEquals(0, outcome.linksFailed)
         assertTrue(File(root, "Renamed.md").isFile)
     }
 
@@ -122,6 +111,37 @@ class RenameRelinkTest {
             "# From\n\n见 [[Target]] 与 [[Archive/Target]]。\n",
             read("From.md"),
         )
+    }
+
+    @Test
+    fun aReferrerCreatedAfterTheLastScanIsRewritten() = runBlocking {
+        write("Late.md", "[[Target|late]]\n")
+
+        repository.renameNote(id("Target.md"), "Renamed")
+
+        assertEquals("[[Renamed|late]]\n", read("Late.md"))
+        assertTrue(repository.wikiContext(id("Renamed.md")).backlinks.any { it.id.path.relativePath == "Late.md" })
+    }
+
+    @Test
+    fun folderRenameMovesDraftAndUpdatesBacklinks() = runBlocking {
+        File(root, "Inbox").mkdirs()
+        write("Inbox/Nested.md", "# Nested\noriginal\n")
+        write("Ref.md", "[[Inbox/Nested]]\n")
+        val original = repository.readNote(id("Inbox/Nested.md"))
+        repository.writeDraft(original.id, "# Nested\nunsaved\n", original.revision)
+
+        repository.renameFolder(FolderPath("Inbox"), "Archive")
+
+        assertEquals("[[Archive/Nested]]\n", read("Ref.md"))
+        val opened = repository.openNote(id("Archive/Nested.md"))
+        assertTrue(opened.restoredDraft)
+        assertEquals("# Nested\nunsaved\n", opened.note.content)
+        assertEquals("# Nested\noriginal\n", opened.diskContent)
+        assertEquals(original.revision, opened.note.revision)
+        val notes = repository.listNotes().items.map { it.summary.id.path.relativePath }
+        assertTrue("Archive/Nested.md" in notes)
+        assertTrue("Inbox/Nested.md" !in notes)
     }
 
     private fun id(path: String): NoteId {

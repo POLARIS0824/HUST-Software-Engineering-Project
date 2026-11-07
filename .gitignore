@@ -6,3 +6,7 @@ android/.idea/
 
 # 体积大的技能镜像只留在本机
 .agents/skills/m3-skill/
+
+.windows/
+
+.agents/tasks/*

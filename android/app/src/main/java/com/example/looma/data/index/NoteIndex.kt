@@ -10,13 +10,11 @@ import com.example.looma.domain.model.VaultId
 import java.io.File
 import java.time.Instant
 
-/** 判断索引行是否还代表磁盘上的文件：大小与 mtime 都没变才算没改过 */
 internal data class FileFingerprint(
     val sizeBytes: Long,
     val modifiedAtMillis: Long,
 )
 
-/** 一篇笔记的索引行；[tags] 顺序即卡片展示顺序，[links] 顺序即正文出现顺序 */
 internal data class IndexedNote(
     val id: NoteId,
     val title: String,
@@ -35,17 +33,12 @@ internal data class IndexDelta(
     val removed: List<NotePath> = emptyList(),
 )
 
-/** 上层只依赖这个端口，Room 类型不越出 data/index */
 internal interface NoteIndex {
     suspend fun load(vaultId: VaultId): List<IndexedNote>
 
     suspend fun apply(delta: IndexDelta)
 }
 
-/**
- * 唯一的“文件 + 正文 → 索引行”组装点：扫描和写穿都走它，
- * 否则两条路径可能算出不同的摘要或封面。
- */
 internal fun indexedNote(
     vaultId: VaultId,
     root: File,

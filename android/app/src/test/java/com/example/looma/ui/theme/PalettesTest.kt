@@ -6,11 +6,6 @@ import com.example.looma.data.settings.ThemePreset
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/**
- * 预设主题不能只是好看：文字和底色必须够对比。
- *
- * 用 WCAG 的相对亮度比做检查，正文目标 4.5:1，主色按钮上的文字至少 3:1。
- */
 class PalettesTest {
 
     private val presets = ThemePreset.entries.filter { it.seed != null }

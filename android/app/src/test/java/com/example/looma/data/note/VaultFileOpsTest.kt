@@ -4,6 +4,7 @@ import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.NotePath
 import java.io.File
 import java.time.Instant
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -12,12 +13,6 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 
-/**
- * 文件管理闭环的落盘行为：目录、改名、移动、回收站、恢复。
- *
- * 全部跑在临时目录上，断言的是用户能看到的结果（文件在不在、叫什么名字），
- * 而不是内部实现。
- */
 class VaultFileOpsTest {
 
     @get:Rule
@@ -212,5 +207,258 @@ class VaultFileOpsTest {
             ops.restore("5f0f0f0f-0000-0000-0000-000000000000")
         }
         assertEquals(VaultFileFailure.NOT_FOUND, error.failure)
+    }
+
+    @Test
+    fun `renameFolder renames the directory in place and keeps its notes`() {
+        setUp()
+        note("项目/计划.md")
+        note("项目/细节/周报.md")
+
+        val renamed = ops.renameFolder(FolderPath("项目"), "归档")
+
+        assertEquals(FolderPath("归档"), renamed)
+        assertFalse(File(root, "项目").exists())
+        assertTrue(File(root, "归档/计划.md").isFile)
+        assertTrue(File(root, "归档/细节/周报.md").isFile)
+    }
+
+    @Test
+    fun `renameFolder refuses a sibling with the same name`() {
+        setUp()
+        note("项目/计划.md")
+        note("归档/旧.md")
+
+        val error = assertThrows(VaultFileException::class.java) {
+            ops.renameFolder(FolderPath("项目"), "归档")
+        }
+
+        assertEquals(VaultFileFailure.NAME_TAKEN, error.failure)
+        assertTrue(File(root, "项目/计划.md").isFile)
+        assertTrue(File(root, "归档/旧.md").isFile)
+    }
+
+    @Test
+    fun `renameFolder rejects a name that would leave the vault`() {
+        setUp()
+        note("项目/计划.md")
+
+        val error = assertThrows(VaultFileException::class.java) {
+            ops.renameFolder(FolderPath("项目"), "../逃逸")
+        }
+
+        assertEquals(VaultFileFailure.INVALID_NAME, error.failure)
+        assertTrue(File(root, "项目/计划.md").isFile)
+    }
+
+    @Test
+    fun `moveFolder moves the directory and its notes under another folder`() {
+        setUp()
+        note("项目/计划.md")
+        ops.createFolder(FolderPath.Root, "档案")
+
+        val moved = ops.moveFolder(FolderPath("项目"), FolderPath("档案"))
+
+        assertEquals(FolderPath("档案/项目"), moved)
+        assertFalse(File(root, "项目").exists())
+        assertTrue(File(root, "档案/项目/计划.md").isFile)
+    }
+
+    @Test
+    fun `moveFolder can move a folder back to the root`() {
+        setUp()
+        note("档案/项目/计划.md")
+
+        val moved = ops.moveFolder(FolderPath("档案/项目"), FolderPath.Root)
+
+        assertEquals(FolderPath("项目"), moved)
+        assertTrue(File(root, "项目/计划.md").isFile)
+    }
+
+    @Test
+    fun `moveFolder refuses to move a folder into itself or a descendant`() {
+        setUp()
+        note("项目/子目录/计划.md")
+
+        val intoSelf = assertThrows(VaultFileException::class.java) {
+            ops.moveFolder(FolderPath("项目"), FolderPath("项目"))
+        }
+        val intoChild = assertThrows(VaultFileException::class.java) {
+            ops.moveFolder(FolderPath("项目"), FolderPath("项目/子目录"))
+        }
+
+        assertEquals(VaultFileFailure.INVALID_PATH, intoSelf.failure)
+        assertEquals(VaultFileFailure.INVALID_PATH, intoChild.failure)
+        assertTrue(File(root, "项目/子目录/计划.md").isFile)
+    }
+
+    @Test
+    fun `moveFolder reports a name collision at the destination`() {
+        setUp()
+        note("项目/计划.md")
+        note("档案/项目/旧.md")
+
+        val error = assertThrows(VaultFileException::class.java) {
+            ops.moveFolder(FolderPath("项目"), FolderPath("档案"))
+        }
+
+        assertEquals(VaultFileFailure.NAME_TAKEN, error.failure)
+        assertTrue(File(root, "项目/计划.md").isFile)
+        assertTrue(File(root, "档案/项目/旧.md").isFile)
+    }
+
+    @Test
+    fun `deleteFolder moves every note to the trash and removes the directory`() {
+        setUp()
+        note("项目/计划.md")
+        note("项目/周报/第 1 周.md")
+
+        val trashed = ops.deleteFolder(FolderPath("项目"))
+
+        assertEquals(2, trashed.size)
+        assertFalse(File(root, "项目").exists())
+        assertEquals(
+            setOf("项目/计划.md", "项目/周报/第 1 周.md"),
+            ops.trashed().map { it.originalPath.relativePath }.toSet(),
+        )
+    }
+
+    @Test
+    fun `deleteFolder skips dot directories such as looma`() {
+        setUp()
+        note("项目/计划.md")
+        note("项目/.looma/私货.md")
+
+        val trashed = ops.deleteFolder(FolderPath("项目"))
+
+        assertEquals(1, trashed.size)
+        assertEquals("项目/计划.md", ops.trashed().single().originalPath.relativePath)
+        assertTrue(File(root, "项目/.looma/私货.md").isFile)
+        assertTrue(File(root, "项目").isDirectory)
+    }
+
+    @Test
+    fun `deleteFolder keeps the directory when files other than notes remain`() {
+        setUp()
+        note("项目/计划.md")
+        note("项目/封面.png")
+
+        val trashed = ops.deleteFolder(FolderPath("项目"))
+
+        assertEquals(1, trashed.size)
+        assertFalse(File(root, "项目/计划.md").exists())
+        assertTrue(File(root, "项目/封面.png").isFile)
+        assertTrue(File(root, "项目").isDirectory)
+    }
+
+    @Test
+    fun `deleteFolder leaves notes in place when the trash cannot be created`() {
+        setUp()
+        File(root, ".looma").mkdirs()
+        File(root, ".looma/trash").writeText("not a directory")
+        note("项目/计划.md")
+        note("项目/周报/第 1 周.md")
+
+        val error = assertThrows(VaultFileException::class.java) {
+            ops.deleteFolder(FolderPath("项目"))
+        }
+
+        assertEquals(VaultFileFailure.IO, error.failure)
+        assertTrue(File(root, "项目/计划.md").isFile)
+        assertTrue(File(root, "项目/周报/第 1 周.md").isFile)
+    }
+
+    @Test
+    fun `deleteFolder refuses the vault root`() {
+        setUp()
+        note("笔记.md")
+
+        val error = assertThrows(VaultFileException::class.java) {
+            ops.deleteFolder(FolderPath.Root)
+        }
+
+        assertEquals(VaultFileFailure.INVALID_PATH, error.failure)
+        assertTrue(File(root, "笔记.md").isFile)
+    }
+
+    @Test
+    fun `trash moves drafts aside and restore brings back identical bytes`() {
+        setUp()
+        val original = note("项目/周报.md")
+        val path = NotePath("项目/周报.md")
+        val draftBytes = draft(draftFile(root, path), "version=1\ncontent=未保存\n")
+        val legacyBytes = draft(legacyDraftFile(root, path), "旧草稿")
+
+        val record = ops.trash(original)
+
+        assertFalse(draftFile(root, path).exists())
+        assertFalse(legacyDraftFile(root, path).exists())
+        assertTrue(File(root, ".looma/trash/drafts/${record.trashId}.properties").isFile)
+        assertTrue(File(root, ".looma/trash/drafts/${record.trashId}.md").isFile)
+        assertEquals(listOf(record.trashId), ops.trashed().map { it.trashId })
+
+        ops.restore(record.trashId)
+
+        assertArrayEquals(draftBytes, draftFile(root, path).readBytes())
+        assertArrayEquals(legacyBytes, legacyDraftFile(root, path).readBytes())
+        assertFalse(File(root, ".looma/trash/drafts/${record.trashId}.properties").exists())
+        assertFalse(File(root, ".looma/trash/drafts/${record.trashId}.md").exists())
+    }
+
+    @Test
+    fun `restore keeps a draft that already exists at the original path`() {
+        setUp()
+        val original = note("周报.md")
+        val path = NotePath("周报.md")
+        draft(draftFile(root, path), "trashed")
+        val record = ops.trash(original)
+        val newerBytes = draft(draftFile(root, path), "newer")
+
+        ops.restore(record.trashId)
+
+        assertArrayEquals(newerBytes, draftFile(root, path).readBytes())
+    }
+
+    @Test
+    fun `permanent delete removes the trashed drafts`() {
+        setUp()
+        val original = note("周报.md")
+        val path = NotePath("周报.md")
+        draft(draftFile(root, path), "version=1\ncontent=未保存\n")
+        draft(legacyDraftFile(root, path), "旧草稿")
+        val record = ops.trash(original)
+
+        ops.deletePermanently(record.trashId)
+
+        assertFalse(File(root, ".looma/trash/drafts/${record.trashId}.properties").exists())
+        assertFalse(File(root, ".looma/trash/drafts/${record.trashId}.md").exists())
+        assertFalse(draftFile(root, path).exists())
+        assertTrue(ops.trashed().isEmpty())
+    }
+
+    @Test
+    fun `deleteFolder trashes the drafts of the notes inside`() {
+        setUp()
+        note("项目/计划.md")
+        note("项目/周报/第 1 周.md")
+        val planned = NotePath("项目/计划.md")
+        val weekly = NotePath("项目/周报/第 1 周.md")
+        draft(draftFile(root, planned), "plan draft")
+        draft(draftFile(root, weekly), "weekly draft")
+
+        val records = ops.deleteFolder(FolderPath("项目"))
+
+        assertEquals(setOf(planned, weekly), records.map { it.originalPath }.toSet())
+        assertFalse(draftFile(root, planned).exists())
+        assertFalse(draftFile(root, weekly).exists())
+        records.forEach { record ->
+            assertTrue(File(root, ".looma/trash/drafts/${record.trashId}.properties").isFile)
+        }
+    }
+
+    private fun draft(file: File, content: String): ByteArray {
+        file.parentFile?.mkdirs()
+        file.writeText(content)
+        return file.readBytes()
     }
 }
