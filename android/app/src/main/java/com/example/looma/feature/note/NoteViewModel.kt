@@ -14,6 +14,7 @@ import com.example.looma.data.note.NoteChangedExternallyException
 import com.example.looma.data.note.NoteRepository
 import com.example.looma.data.settings.SettingsRepository
 import com.example.looma.domain.model.NoteId
+import com.example.looma.domain.model.NoteWriteMode
 import com.example.looma.domain.wiki.WikiContext
 import com.example.looma.feature.note.NoteViewModel.Companion.SAVE_INTERVAL_MS
 import kotlinx.coroutines.CancellationException
@@ -25,6 +26,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class NoteViewModel(
     private val repository: NoteRepository,
@@ -36,41 +39,60 @@ class NoteViewModel(
     private val _uiState = MutableStateFlow(NoteUiState(isNewNote = isNewNote))
     val uiState: StateFlow<NoteUiState> = _uiState.asStateFlow()
 
+    private data class SaveRequest(val content: String, val mode: NoteWriteMode)
+
+    private val editorWrites = Mutex()
+    private var operationGeneration = 0
     private var loadJob: Job? = null
-    private var saveTick: Job? = null
-    private var saveJob: Job? = null
-    private var saveRequested = false
-    private var forceNextSave = false
+    private var autosaveTick: Job? = null
     private var leaving = false
 
     init {
         load()
         viewModelScope.launch {
             settingsRepository.settings.collect { settings ->
-                _uiState.update { it.copy(toolbarOrder = settings.toolbarOrder) }
+                _uiState.update {
+                    it.copy(
+                        showInlineTitle = settings.showInlineTitle,
+                        toolbarOrder = settings.toolbarOrder,
+                    )
+                }
             }
         }
     }
 
     fun load() {
         if (_uiState.value.isDirty || loadJob?.isActive == true) return
-        loadJob = viewModelScope.launch {
+        loadJob = enqueue { generation ->
             _uiState.update { it.copy(isLoading = true, loadFailed = false) }
             try {
                 val opened = repository.openNote(noteId)
                 val keepEmptyNotes = settingsRepository.settings.first().keepEmptyNotes
-                val wiki = runCatching { repository.wikiContext(noteId) }.getOrDefault(WikiContext.Empty)
-                val imageContext = runCatching { repository.imageContext(noteId) }.getOrNull()
+                val wiki = runCatching { repository.wikiContext(noteId) }
+                    .onFailure { if (it is CancellationException) throw it }
+                    .getOrDefault(WikiContext.Empty)
+                val imageContext = runCatching { repository.imageContext(noteId) }
+                    .onFailure { if (it is CancellationException) throw it }
+                    .getOrNull()
+                if (generation != operationGeneration) return@enqueue
+                val conflict = opened.conflictRevision != null
+                val dirty = opened.note.content != opened.diskContent
                 _uiState.update {
                     it.copy(
                         content = opened.note.content,
-                        savedContent = opened.note.content,
+                        savedContent = opened.diskContent,
                         modifiedAt = opened.note.modifiedAt,
+                        revision = opened.note.revision,
+                        conflictRevision = opened.conflictRevision,
                         isLoading = false,
-                        saveState = NoteSaveState.Idle,
-                        saveFailed = false,
+                        saveState = when {
+                            conflict -> NoteSaveState.Failed
+                            dirty -> NoteSaveState.Pending
+                            else -> NoteSaveState.Idle
+                        },
+                        saveFailed = conflict,
                         loadFailed = false,
-                        isConflict = false,
+                        isConflict = conflict,
                         keepEmptyNotes = keepEmptyNotes,
                         wiki = wiki,
                         imageContext = imageContext,
@@ -78,10 +100,43 @@ class NoteViewModel(
                         reloadToken = it.reloadToken + 1,
                     )
                 }
+                if (dirty && !conflict) scheduleAutosave()
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _uiState.update { it.copy(isLoading = false, loadFailed = true) }
+                if (generation == operationGeneration) {
+                    _uiState.update { it.copy(isLoading = false, loadFailed = true) }
+                }
+            }
+        }
+    }
+
+    fun syncWithDisk() {
+        val current = _uiState.value
+        if (current.isLoading || current.isDirty || current.isConflict || current.saveFailed) return
+        enqueue {
+            try {
+                val disk = repository.readNote(noteId)
+                _uiState.update { state ->
+                    if (!state.canAdoptDiskRevision(disk.revision)) {
+                        state
+                    } else {
+                        state.copy(
+                            content = disk.content,
+                            savedContent = disk.content,
+                            modifiedAt = disk.modifiedAt,
+                            revision = disk.revision,
+                            reloadToken = state.reloadToken + 1,
+                            saveState = NoteSaveState.Idle,
+                            saveFailed = false,
+                            isConflict = false,
+                            restoredDraft = false,
+                        )
+                    }
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
             }
         }
     }
@@ -140,7 +195,7 @@ class NoteViewModel(
 
     fun onContentChanged(value: String) {
         val current = _uiState.value
-        if (current.content == value) return
+        if (current.isLoading || current.loadFailed || current.leaveReady || current.content == value) return
         _uiState.update {
             it.copy(
                 content = value,
@@ -149,185 +204,217 @@ class NoteViewModel(
                 restoredDraft = false,
             )
         }
-        if (current.isConflict) return
-        scheduleSave()
+        scheduleAutosave()
     }
 
     fun retrySave() {
-        viewModelScope.launch {
-            val disk = runCatching { repository.modifiedAtOf(noteId) }.getOrNull()
-            val known = _uiState.value.modifiedAt
-            if (disk != null && known != null && disk != known) {
-                _uiState.update {
-                    it.copy(isConflict = true, saveFailed = true, saveState = NoteSaveState.Failed)
-                }
-                return@launch
-            }
-            saveRequested = true
-            ensureSaveLoop()
+        cancelAutosave()
+        enqueue { generation ->
+            if (!_uiState.value.isLoading) saveCurrent(generation)
         }
     }
 
     fun overwrite() {
-        viewModelScope.launch {
-            repository.backupConflict(noteId)
-            forceNextSave = true
-            _uiState.update {
-                it.copy(isConflict = false, saveFailed = false, saveState = NoteSaveState.Pending)
-            }
-            retrySave()
-        }
+        if (_uiState.value.isLoading) return
+        val request = overwriteRequest()
+        cancelAutosave()
+        enqueue { generation -> saveCurrent(generation, request) }
     }
 
     fun reloadFromDisk() {
-        loadJob?.cancel()
-        saveTick?.cancel()
-        saveTick = null
-        saveRequested = false
-        _uiState.update {
-            it.copy(isConflict = false, saveFailed = false, saveState = NoteSaveState.Idle)
-        }
-        loadJob = viewModelScope.launch {
+        operationGeneration++
+        cancelAutosave()
+        leaving = false
+        _uiState.update { it.copy(isLoading = true, leaveBlocked = false, leaveReady = false) }
+        loadJob = enqueue { generation ->
             try {
-                val opened = repository.openNote(noteId)
+                val note = repository.reloadNote(noteId)
+                if (generation != operationGeneration) return@enqueue
                 _uiState.update {
                     it.copy(
-                        content = opened.note.content,
-                        savedContent = opened.note.content,
-                        modifiedAt = opened.note.modifiedAt,
+                        content = note.content,
+                        savedContent = note.content,
+                        modifiedAt = note.modifiedAt,
+                        revision = note.revision,
+                        conflictRevision = null,
+                        isLoading = false,
+                        loadFailed = false,
                         saveState = NoteSaveState.Idle,
                         saveFailed = false,
                         isConflict = false,
-                        restoredDraft = opened.restoredDraft,
+                        restoredDraft = false,
                         reloadToken = it.reloadToken + 1,
                     )
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
-                _uiState.update { it.copy(saveFailed = true, saveState = NoteSaveState.Failed) }
+                if (generation == operationGeneration) {
+                    _uiState.update {
+                        it.copy(isLoading = false, saveFailed = true, saveState = NoteSaveState.Failed)
+                    }
+                }
             }
         }
     }
 
     fun onEnterBackground() {
-        val state = _uiState.value
-        if (state.isLoading || !state.isDirty) return
-        viewModelScope.launch {
-            runCatching { repository.writeDraft(noteId, state.content) }
-            saveRequested = true
-            ensureSaveLoop()
-        }
-    }
-
-    fun saveThenLeave(force: Boolean = false, onSaved: () -> Unit) {
-        if (leaving) return
-        leaving = true
-        if (force) forceNextSave = true
-        saveTick?.cancel()
-        saveTick = null
-        saveRequested = true
-        ensureSaveLoop()
-        viewModelScope.launch {
-            saveJob?.join()
-            if (_uiState.value.content != _uiState.value.savedContent) {
-                saveRequested = true
-                ensureSaveLoop()
-                saveJob?.join()
-            }
+        cancelAutosave()
+        enqueue { generation ->
             val state = _uiState.value
-            if (state.content == state.savedContent && state.saveState != NoteSaveState.Failed) {
-                onSaved()
-            } else {
-                leaving = false
-                _uiState.update { it.copy(leaveBlocked = true) }
+            if (!state.isLoading && (state.isDirty || state.isConflict || state.saveFailed)) {
+                checkpoint()
+                if (!_uiState.value.isConflict) saveCurrent(generation)
             }
         }
     }
 
-    fun requestLeave(onLeave: () -> Unit) {
-        val state = _uiState.value
-        when {
-            state.willDiscardEmpty -> viewModelScope.launch {
-                runCatching { repository.discardNote(noteId) }
-                onLeave()
+    fun saveThenLeave(force: Boolean = false) {
+        if (leaving || _uiState.value.isLoading || _uiState.value.leaveReady) return
+        val request = if (force) overwriteRequest() else null
+        leaving = true
+        cancelAutosave()
+        enqueue { generation ->
+            try {
+                val state = _uiState.value
+                val saved = if (request == null && state.willDiscardEmpty) {
+                    discardEmpty(state)
+                } else {
+                    saveCurrent(generation, request)
+                }
+                if (generation == operationGeneration) {
+                    _uiState.update { it.copy(leaveReady = saved, leaveBlocked = !saved) }
+                }
+            } finally {
+                leaving = false
             }
-            state.needsLeaveGuard -> saveThenLeave(onSaved = onLeave)
-            else -> onLeave()
         }
+    }
+
+    fun requestLeave() {
+        saveThenLeave()
     }
 
     fun onLeaveHandled() {
-        leaving = false
         _uiState.update { it.copy(leaveBlocked = false) }
     }
 
-    private fun scheduleSave() {
-        if (saveTick?.isActive == true) return
-        saveTick = viewModelScope.launch {
+    fun onLeaveReadyHandled() {
+        _uiState.update { it.copy(leaveReady = false) }
+    }
+
+    private fun overwriteRequest(): SaveRequest {
+        val state = _uiState.value
+        return SaveRequest(
+            state.content,
+            NoteWriteMode.Overwrite(state.conflictRevision ?: state.revision),
+        )
+    }
+
+    private fun cancelAutosave() {
+        autosaveTick?.cancel()
+        autosaveTick = null
+    }
+
+    private fun scheduleAutosave() {
+        if (autosaveTick?.isActive == true) return
+        autosaveTick = viewModelScope.launch {
             delay(SAVE_INTERVAL_MS)
-            saveTick = null
-            if (_uiState.value.isDirty && !_uiState.value.isConflict) {
-                saveRequested = true
-                ensureSaveLoop()
+            autosaveTick = null
+            enqueue { generation ->
+                val state = _uiState.value
+                when {
+                    state.isConflict -> checkpoint()
+                    state.isDirty -> saveCurrent(generation)
+                }
             }
         }
     }
 
-    private fun ensureSaveLoop() {
-        if (saveJob?.isActive == true) return
-        saveJob = viewModelScope.launch {
-            while (saveRequested) {
-                saveRequested = false
-                if (!persistOnce()) break
+    private fun enqueue(action: suspend (Int) -> Unit): Job {
+        val generation = operationGeneration
+        return viewModelScope.launch {
+            editorWrites.withLock {
+                if (generation == operationGeneration) action(generation)
             }
-            saveJob = null
-            if (saveRequested && !_uiState.value.isConflict) ensureSaveLoop()
         }
     }
 
-    private suspend fun persistOnce(): Boolean {
-        val snapshot = _uiState.value
-        if (snapshot.content == snapshot.savedContent) return true
+    private suspend fun saveCurrent(generation: Int, request: SaveRequest? = null): Boolean {
+        if (request != null && !persistOnce(request)) return false
+        while (generation == operationGeneration) {
+            val state = _uiState.value
+            if (!state.isDirty && !state.isConflict && !state.saveFailed) return true
+            if (!persistOnce(SaveRequest(state.content, NoteWriteMode.Checked(state.revision)))) return false
+        }
+        return false
+    }
 
+    private suspend fun persistOnce(request: SaveRequest): Boolean {
         _uiState.update { it.copy(saveState = NoteSaveState.Saving, saveFailed = false) }
-        return try {
-            val updated = repository.saveNote(
-                id = noteId,
-                content = snapshot.content,
-                expectedModifiedAt = if (forceNextSave) null else snapshot.modifiedAt,
-            )
-            forceNextSave = false
+        try {
+            val updated = repository.saveNote(noteId, request.content, request.mode)
             _uiState.update { state ->
                 state.copy(
-                    savedContent = snapshot.content,
+                    savedContent = request.content,
                     modifiedAt = updated.modifiedAt,
-                    saveState = if (state.content == snapshot.content) {
+                    revision = updated.revision,
+                    conflictRevision = null,
+                    saveState = if (state.content == request.content) {
                         NoteSaveState.Saved
                     } else {
                         NoteSaveState.Pending
                     },
+                    saveFailed = false,
                     isConflict = false,
                     restoredDraft = false,
                 )
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            recordFailure(e)
+            checkpoint()
+            return false
+        }
+        return checkpoint()
+    }
+
+    private suspend fun checkpoint(): Boolean {
+        val state = _uiState.value
+        return try {
+            repository.writeDraft(noteId, state.content, state.revision)
             true
         } catch (e: CancellationException) {
             throw e
-        } catch (_: NoteChangedExternallyException) {
-            _uiState.update {
-                it.copy(
-                    saveState = NoteSaveState.Failed,
-                    isConflict = true,
-                    saveFailed = true,
-                )
-            }
-            false
         } catch (e: Exception) {
-            _uiState.update {
-                it.copy(saveState = NoteSaveState.Failed, saveFailed = true)
-            }
+            recordFailure(e)
             false
+        }
+    }
+
+    private suspend fun discardEmpty(state: NoteUiState): Boolean {
+        return try {
+            repository.discardNote(noteId, state.revision)
+            true
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            recordFailure(e)
+            checkpoint()
+            false
+        }
+    }
+
+    private fun recordFailure(error: Exception) {
+        _uiState.update {
+            it.copy(
+                saveState = NoteSaveState.Failed,
+                saveFailed = true,
+                isConflict = it.isConflict || error is NoteChangedExternallyException,
+                conflictRevision = (error as? NoteChangedExternallyException)?.actualRevision
+                    ?: it.conflictRevision,
+            )
         }
     }
 

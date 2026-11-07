@@ -1,8 +1,8 @@
 package com.example.looma.feature.note
 
-import com.example.looma.domain.markdown.EditorDocument
 import com.example.looma.domain.markdown.ImageContext
 import com.example.looma.domain.markdown.ToolbarItem
+import com.example.looma.domain.model.NoteRevision
 import com.example.looma.domain.wiki.WikiContext
 import java.time.Instant
 
@@ -24,6 +24,9 @@ data class NoteUiState(
     val content: String = "",
     val savedContent: String = "",
     val modifiedAt: Instant? = null,
+    val revision: NoteRevision = NoteRevision.Unknown,
+    val conflictRevision: NoteRevision? = null,
+    val leaveReady: Boolean = false,
     val isLoading: Boolean = true,
     val loadFailed: Boolean = false,
     val saveState: NoteSaveState = NoteSaveState.Idle,
@@ -36,6 +39,7 @@ data class NoteUiState(
     val imageContext: ImageContext? = null,
     val restoredDraft: Boolean = false,
     val reloadToken: Int = 0,
+    val showInlineTitle: Boolean = true,
     val toolbarOrder: List<ToolbarItem> = ToolbarItem.DEFAULT_ORDER,
     val isUploadingImage: Boolean = false,
     val imageInsertion: ImageInsertion? = null,
@@ -55,6 +59,16 @@ data class NoteUiState(
             !isConflict &&
             isEmptyDraft
 
+    fun canAdoptDiskRevision(diskRevision: NoteRevision): Boolean =
+        !isLoading &&
+            !isDirty &&
+            !isConflict &&
+            !saveFailed &&
+            !leaveReady &&
+            !leaveBlocked &&
+            saveState != NoteSaveState.Saving &&
+            diskRevision != revision
+
     private val isEmptyDraft: Boolean
-        get() = EditorDocument.split(content).let { it.title.isBlank() && it.body.isBlank() }
+        get() = content.isBlank()
 }

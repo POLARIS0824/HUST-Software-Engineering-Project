@@ -17,12 +17,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.text.input.KeyboardActionHandler
 import androidx.compose.foundation.text.input.TextFieldDecorator
-import androidx.compose.foundation.text.input.TextFieldLineLimits
 import androidx.compose.foundation.text.input.TextFieldState
-import androidx.compose.foundation.text.input.rememberTextFieldState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.IconButton
@@ -37,10 +33,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -53,7 +50,6 @@ import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextRange
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -61,10 +57,10 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.looma.R
 import com.example.looma.data.note.resolveImageSource
-import com.example.looma.domain.markdown.EditorDocument
 import com.example.looma.domain.markdown.MarkdownEditing
 import com.example.looma.domain.markdown.MarkdownIndex
 import com.example.looma.domain.markdown.TextSelection
+import com.example.looma.domain.markdown.inlineTitleFor
 import com.example.looma.domain.markdown.withCheckboxChecked
 import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.wiki.WikiContext
@@ -85,7 +81,6 @@ import com.example.looma.ui.markdown.LocalImageSourceResolver
 import com.example.looma.ui.markdown.MarkdownBody
 import com.example.looma.ui.theme.LoomaTheme
 import com.example.looma.ui.theme.LoomaTokens
-import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 
 @Composable
@@ -98,7 +93,14 @@ fun NoteRoute(
     isNew: Boolean = false,
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
-    val requestLeave = { viewModel.requestLeave(onLeave = onNavigateUp) }
+    val requestLeave = viewModel::requestLeave
+    val navigateUp by rememberUpdatedState(onNavigateUp)
+    LaunchedEffect(state.leaveReady) {
+        if (state.leaveReady) {
+            viewModel.onLeaveReadyHandled()
+            navigateUp()
+        }
+    }
     val editorActive = LocalNavAnimatedContentScope.current.transition.targetState == EnterExitState.Visible
     val imagePicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
@@ -109,11 +111,14 @@ fun NoteRoute(
         )
     }
 
-    LifecycleEventEffect(Lifecycle.Event.ON_START) { viewModel.refreshWiki() }
+    LifecycleEventEffect(Lifecycle.Event.ON_START) {
+        viewModel.syncWithDisk()
+        viewModel.refreshWiki()
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_PAUSE) { viewModel.onEnterBackground() }
 
     BackHandler(enabled = state.needsLeaveGuard || state.willDiscardEmpty) {
-        viewModel.requestLeave(onLeave = onNavigateUp)
+        viewModel.requestLeave()
     }
 
     when {
@@ -163,8 +168,8 @@ fun NoteRoute(
     if (state.leaveBlocked) {
         NoteLeaveDialog(
             state = state,
-            onRetry = { viewModel.saveThenLeave(onSaved = onNavigateUp) },
-            onOverwrite = { viewModel.saveThenLeave(force = true, onSaved = onNavigateUp) },
+            onRetry = { viewModel.saveThenLeave() },
+            onOverwrite = { viewModel.saveThenLeave(force = true) },
             onDiscard = {
                 viewModel.onLeaveHandled()
                 onNavigateUp()
@@ -191,21 +196,11 @@ private fun NoteWorkspace(
     editorActive: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    val loaded = remember(state.reloadToken) { EditorDocument.split(state.content) }
-    val buffers = key(state.reloadToken) {
-        rememberTextFieldState(initialText = loaded.title) to
-            rememberTextFieldState(
-                initialText = loaded.body,
-                initialSelection = TextRange(loaded.body.length),
-            )
-    }
-    val titleBuffer = buffers.first
-    val bodyBuffer = buffers.second
+    val contentBuffer = rememberEditorBuffer(state.reloadToken, state.content)
     var mode by rememberSaveable { mutableStateOf(NoteMode.Edit) }
     var linkPanelOpen by rememberSaveable { mutableStateOf(false) }
     val readScroll = rememberScrollState()
     val editScroll = rememberScrollState()
-    val titleFocus = remember { FocusRequester() }
     val bodyFocus = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
     val keyboard = LocalSoftwareKeyboardController.current
@@ -231,18 +226,21 @@ private fun NoteWorkspace(
         }
     }
 
-    LaunchedEffect(bodyBuffer, titleBuffer) {
-        snapshotFlow {
-            EditorDocument(titleBuffer.text.toString(), bodyBuffer.text.toString()).render()
+    val notifyContentChanged by rememberUpdatedState(onContentChanged)
+    LaunchedEffect(contentBuffer) {
+        var lastContent = state.content
+        snapshotFlow { contentBuffer.text.toString() }.collect { content ->
+            if (content != lastContent) {
+                lastContent = content
+                notifyContentChanged(content)
+            }
         }
-            .distinctUntilChanged()
-            .collect(onContentChanged)
     }
 
     LaunchedEffect(mode) {
         if (mode == NoteMode.Edit) {
             if (isNew) {
-                titleFocus.requestFocus()
+                bodyFocus.requestFocus()
             }
         } else {
             linkPanelOpen = false
@@ -253,7 +251,7 @@ private fun NoteWorkspace(
 
     LaunchedEffect(state.imageInsertion) {
         val insertion = state.imageInsertion ?: return@LaunchedEffect
-        insertSnippet(bodyBuffer, insertion.snippet)
+        insertSnippet(contentBuffer, insertion.snippet)
         onImageInserted()
         bodyFocus.requestFocus()
     }
@@ -264,11 +262,11 @@ private fun NoteWorkspace(
         onImageErrorShown()
     }
 
-    val bodyText = bodyBuffer.text.toString()
-    val selection = bodyBuffer.selection
-    val formatState = remember(bodyText, selection) {
+    val contentText = contentBuffer.text.toString()
+    val selection = contentBuffer.selection
+    val formatState = remember(contentText, selection) {
         MarkdownEditing.formatState(
-            text = bodyText,
+            text = contentText,
             selection = TextSelection(selection.start, selection.end),
         )
     }
@@ -307,17 +305,17 @@ private fun NoteWorkspace(
 
             when (mode) {
                 NoteMode.Read -> NoteReadBody(
-                    title = titleBuffer.text.toString(),
-                    bodyText = bodyText,
-                    fallbackTitle = fallbackTitle,
+                    content = contentText,
+                    fileName = fallbackTitle,
+                    showInlineTitle = state.showInlineTitle,
                     scrollState = readScroll,
                     wiki = state.wiki,
                     onWikiLinkClick = onWikiLinkClick,
                     onOpenNote = onOpenNote,
                     onCheckboxToggle = { position, checked ->
-                        val document = MarkdownIndex.index(bodyBuffer.text.toString(), fallbackTitle)
+                        val document = MarkdownIndex.index(contentBuffer.text.toString(), fallbackTitle)
                         if (document.withCheckboxChecked(position, checked) != null) {
-                            bodyBuffer.edit {
+                            contentBuffer.edit {
                                 replace(
                                     position,
                                     position + MARKER_LENGTH,
@@ -330,28 +328,19 @@ private fun NoteWorkspace(
                 )
 
                 NoteMode.Edit -> {
-                    Column(modifier = Modifier.weight(1f)) {
-                        NoteTitleField(
-                            active = editorActive,
-                            buffer = titleBuffer,
-                            placeholder = fallbackTitle,
-                            focusRequester = titleFocus,
-                            onNext = { bodyFocus.requestFocus() },
-                        )
-                        NoteBodyEditor(
-                            active = editorActive,
-                            buffer = bodyBuffer,
-                            focusRequester = bodyFocus,
-                            scrollState = editScroll,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
+                    NoteBodyEditor(
+                        active = editorActive,
+                        buffer = contentBuffer,
+                        focusRequester = bodyFocus,
+                        scrollState = editScroll,
+                        modifier = Modifier.weight(1f),
+                    )
                     if (linkPanelOpen) {
                         WikiLinkPanel(
                             candidates = state.wiki.linkables,
                             onPick = { note ->
                                 insertWikiLink(
-                                    buffer = bodyBuffer,
+                                    buffer = contentBuffer,
                                     reference = wikiReferenceFor(note, state.wiki.linkables),
                                 )
                                 linkPanelOpen = false
@@ -366,19 +355,19 @@ private fun NoteWorkspace(
                     NoteFormatBar(
                         formatState = formatState,
                         toolbarOrder = state.toolbarOrder,
-                        canUndo = bodyBuffer.undoState.canUndo,
-                        canRedo = bodyBuffer.undoState.canRedo,
+                        canUndo = contentBuffer.undoState.canUndo,
+                        canRedo = contentBuffer.undoState.canRedo,
                         isUploadingImage = state.isUploadingImage,
                         onCommand = { command ->
-                            applyMarkdownCommand(bodyBuffer, command)
+                            applyMarkdownCommand(contentBuffer, command)
                             bodyFocus.requestFocus()
                         },
                         onUndo = {
-                            bodyBuffer.undoState.undo()
+                            contentBuffer.undoState.undo()
                             bodyFocus.requestFocus()
                         },
                         onRedo = {
-                            bodyBuffer.undoState.redo()
+                            contentBuffer.undoState.redo()
                             bodyFocus.requestFocus()
                         },
                         onWikiLink = {
@@ -395,44 +384,6 @@ private fun NoteWorkspace(
             }
         }
     }
-}
-
-@Composable
-private fun NoteTitleField(
-    active: Boolean,
-    buffer: TextFieldState,
-    placeholder: String,
-    focusRequester: FocusRequester,
-    onNext: () -> Unit,
-) {
-    val text = buffer.text.toString()
-    NoteTextField(
-        state = buffer,
-        active = active,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 10.dp)
-            .focusRequester(focusRequester),
-        lineLimits = TextFieldLineLimits.SingleLine,
-        textStyle = LoomaTokens.type.noteTitle.copy(
-            color = LoomaTokens.colors.title,
-        ),
-        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
-        onKeyboardAction = KeyboardActionHandler { onNext() },
-        decorator = TextFieldDecorator { inner ->
-            Box {
-                if (text.isEmpty()) {
-                    Text(
-                        text = placeholder,
-                        style = LoomaTokens.type.noteTitle,
-                        color = LoomaTokens.colors.muted,
-                        maxLines = 1,
-                    )
-                }
-                inner()
-            }
-        },
-    )
 }
 
 @Composable
@@ -492,9 +443,9 @@ private fun DraftRestoredNotice(modifier: Modifier = Modifier) {
 
 @Composable
 private fun NoteReadBody(
-    title: String,
-    bodyText: String,
-    fallbackTitle: String,
+    content: String,
+    fileName: String,
+    showInlineTitle: Boolean,
     scrollState: ScrollState,
     wiki: WikiContext,
     onWikiLinkClick: (String) -> Unit,
@@ -502,8 +453,11 @@ private fun NoteReadBody(
     onCheckboxToggle: (position: Int, checked: Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val document = remember(bodyText, fallbackTitle) {
-        MarkdownIndex.index(bodyText, fallbackTitle)
+    val document = remember(content, fileName) {
+        MarkdownIndex.index(content, fileName)
+    }
+    val inline = remember(fileName, document.heading, showInlineTitle) {
+        inlineTitleFor(fileName, document.heading, showInlineTitle)
     }
     Column(
         modifier = modifier
@@ -512,11 +466,13 @@ private fun NoteReadBody(
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(
-            text = title.ifBlank { fallbackTitle },
-            style = LoomaTokens.type.noteTitle,
-            color = LoomaTokens.colors.title,
-        )
+        inline?.let { title ->
+            Text(
+                text = title.text,
+                style = LoomaTokens.type.noteTitle,
+                color = LoomaTokens.colors.title,
+            )
+        }
         MarkdownBody(
             document = document,
             onCheckboxToggle = onCheckboxToggle,
@@ -538,6 +494,24 @@ private fun insertSnippet(buffer: TextFieldState, snippet: String) {
     buffer.edit {
         replace(start, end, snippet)
         this.selection = TextRange(start + snippet.length)
+    }
+}
+
+@Composable
+private fun rememberEditorBuffer(reloadToken: Int, text: String): TextFieldState {
+    val selectionOnlySaver = remember(text) {
+        Saver<TextFieldState, IntArray>(
+            save = { buffer -> intArrayOf(buffer.selection.start, buffer.selection.end) },
+            restore = { (start, end) ->
+                TextFieldState(
+                    initialText = text,
+                    initialSelection = TextRange(start.coerceIn(0, text.length), end.coerceIn(0, text.length)),
+                )
+            },
+        )
+    }
+    return rememberSaveable(reloadToken, saver = selectionOnlySaver) {
+        TextFieldState(initialText = text, initialSelection = TextRange(text.length))
     }
 }
 

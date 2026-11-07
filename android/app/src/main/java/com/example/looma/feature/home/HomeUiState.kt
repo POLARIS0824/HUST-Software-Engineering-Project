@@ -4,6 +4,7 @@ import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.NoteId
 import com.example.looma.domain.model.NoteProperties
 import com.example.looma.domain.model.NoteSummary
+import com.example.looma.domain.model.StalledRelocation
 import java.util.Locale
 
 sealed interface HomeError {
@@ -72,6 +73,9 @@ sealed interface HomeNotice {
     data object InvalidMoveTarget : HomeNotice
     data object Undone : HomeNotice
     data object UndoFailed : HomeNotice
+    data object StalledRelocationUnfinished : HomeNotice
+    data object StalledRelocationCompleted : HomeNotice
+    data object StalledRelocationAbandoned : HomeNotice
 }
 
 sealed interface HomeFileDialog {
@@ -85,6 +89,8 @@ sealed interface HomeFileDialog {
         val folderName: String,
         val noteCount: Int,
     ) : HomeFileDialog
+
+    data class AbandonStalledRelocation(val stalled: StalledRelocation) : HomeFileDialog
 }
 
 data class HomeNoteItem(
@@ -136,6 +142,7 @@ data class HomeUiState(
     val dialogError: HomeFileError? = null,
     val isActionRunning: Boolean = false,
     val message: HomeMessage? = null,
+    val stalledRelocation: StalledRelocation? = null,
 ) {
     val isBrowsing: Boolean get() = !files.isAtRoot
     val isSelecting: Boolean get() = selection != HomeSelection.None

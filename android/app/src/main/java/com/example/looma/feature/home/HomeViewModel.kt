@@ -8,18 +8,23 @@ import androidx.lifecycle.viewmodel.viewModelFactory
 import com.example.looma.data.folder.FolderRepository
 import com.example.looma.data.note.NoteListEntry
 import com.example.looma.data.note.NoteRepository
+import com.example.looma.data.note.RelocationStalledException
 import com.example.looma.data.note.VaultFileException
 import com.example.looma.data.note.VaultFileFailure
 import com.example.looma.data.search.SearchHistoryRepository
 import com.example.looma.data.vault.VaultRepository
 import com.example.looma.domain.model.FolderPath
+import com.example.looma.domain.model.StalledRelocation
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class HomeViewModel(
     private val vaultRepository: VaultRepository,
@@ -30,23 +35,21 @@ class HomeViewModel(
     private val _uiState = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
     private var refreshJob: Job? = null
+    private var searchJob: Job? = null
     private var revealGeneration = 0L
     private var index: HomeVaultIndex = HomeVaultIndex.Empty
 
-    private var isTextHydrated = false
-    private var hydrateJob: Job? = null
-
     fun refresh(): Job {
         refreshJob?.cancel()
-        hydrateJob?.cancel()
-        hydrateJob = null
-        isTextHydrated = false
+        searchJob?.cancel()
         refreshJob = viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 val vault = vaultRepository.requireCurrentVault()
                 val result = noteRepository.listNotes()
-                val notes = result.items.map { it.toHomeItem() }
+                val query = _uiState.value.query
+                val loaded = result.items.map { it.toHomeItem() }
+                val notes = if (query.isBlank()) loaded else hydrateFullText(loaded)
                 index = HomeVaultIndex.build(result.folders, notes)
                 _uiState.update { current ->
                     val path = current.files.path
@@ -58,13 +61,14 @@ class HomeViewModel(
                         vaultName = vault.name,
                         vaultRootPath = vault.rootPath,
                         notes = notes.orderedBy(current.sort),
-                        searchResults = notes.matching(current.query).orderedBy(current.sort),
+                        searchResults = notes.matching(query).orderedBy(current.sort),
                         files = index.files(path, current.sort),
                         recentReveal = current.recentReveal?.takeIf { request ->
                             request.presentIn(index.recents())
                         },
                         selection = selection,
                         selectedNotes = notes.selected(selection, current.sort),
+                        stalledRelocation = result.stalledRelocation,
                         isLoading = false,
                         isRefreshing = false,
                         error = if (result.unreadableCount > 0) {
@@ -96,6 +100,21 @@ class HomeViewModel(
         return refreshJob!!
     }
 
+    fun startAbandonStalledRelocation() {
+        val stalled = _uiState.value.stalledRelocation ?: return
+        _uiState.update {
+            it.copy(dialog = HomeFileDialog.AbandonStalledRelocation(stalled), dialogError = null)
+        }
+    }
+
+    fun confirmAbandonStalledRelocation() {
+        val dialog = _uiState.value.dialog as? HomeFileDialog.AbandonStalledRelocation ?: return
+        runDialogAction {
+            noteRepository.abandonStalledRelocation(dialog.stalled.journalId)
+            HomeMessage(HomeNotice.StalledRelocationAbandoned)
+        }
+    }
+
     fun refreshFromUser() {
         if (_uiState.value.isCreating || _uiState.value.isActionRunning) return
         _uiState.update { it.copy(isRefreshing = true) }
@@ -120,31 +139,39 @@ class HomeViewModel(
     }
 
     fun setQuery(value: String) {
-        _uiState.update {
-            it.copy(query = value, searchResults = it.notes.matching(value).orderedBy(it.sort))
+        _uiState.update { it.copy(query = value) }
+        searchJob?.cancel()
+        if (value.isBlank()) {
+            _uiState.update { it.copy(searchResults = emptyList()) }
+            return
         }
-        if (value.isBlank() || isTextHydrated) return
-        isTextHydrated = true
-        hydrateJob = viewModelScope.launch {
-            val notes = _uiState.value.notes
-            if (notes.isEmpty()) return@launch
-            val texts = try {
-                noteRepository.readTexts(notes.map { it.id })
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                return@launch
-            }
-            if (texts.isEmpty()) return@launch
+        searchJob = viewModelScope.launch {
+            delay(SEARCH_DEBOUNCE_MS)
+            val notes = hydrateFullText(_uiState.value.notes)
+            val sort = _uiState.value.sort
+            val results = withContext(Dispatchers.Default) { notes.matching(value).orderedBy(sort) }
             _uiState.update { current ->
-                val hydrated = current.notes.map { note ->
-                    texts[note.id]?.let { text -> note.copy(searchableText = text) } ?: note
+                if (current.query != value) {
+                    current
+                } else {
+                    current.copy(notes = notes, searchResults = results)
                 }
-                current.copy(
-                    notes = hydrated,
-                    searchResults = hydrated.matching(current.query).orderedBy(current.sort),
-                )
             }
+        }
+    }
+
+    private suspend fun hydrateFullText(notes: List<HomeNoteItem>): List<HomeNoteItem> {
+        if (notes.isEmpty()) return notes
+        val texts = try {
+            noteRepository.readTexts(notes.map { it.id })
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            return notes
+        }
+        if (texts.isEmpty()) return notes
+        return notes.map { note ->
+            texts[note.id]?.let { text -> note.copy(searchableText = text) } ?: note
         }
     }
 
@@ -372,6 +399,8 @@ class HomeViewModel(
                 )
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: RelocationStalledException) {
+                reportStalledRelocation(e.stalled)
             } catch (e: VaultFileException) {
                 _uiState.update { it.copy(isActionRunning = false, message = e.toMessage()) }
                 refresh()
@@ -397,6 +426,8 @@ class HomeViewModel(
                 )
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: RelocationStalledException) {
+                reportStalledRelocation(e.stalled)
             } catch (e: VaultFileException) {
                 _uiState.update { it.copy(isActionRunning = false, message = e.toMessage()) }
                 refresh()
@@ -504,6 +535,8 @@ class HomeViewModel(
                 finishAction(message())
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: RelocationStalledException) {
+                reportStalledRelocation(e.stalled)
             } catch (e: VaultFileException) {
                 _uiState.update {
                     it.copy(isActionRunning = false, dialogError = e.failure.toHomeFileError())
@@ -513,6 +546,21 @@ class HomeViewModel(
                     it.copy(isActionRunning = false, dialogError = HomeFileError.GENERIC)
                 }
             }
+        }
+    }
+
+    private suspend fun reportStalledRelocation(stalled: StalledRelocation) {
+        _uiState.update {
+            it.copy(dialog = null, dialogError = null, stalledRelocation = stalled)
+        }
+        refresh().join()
+        _uiState.update {
+            val notice = if (it.stalledRelocation == null) {
+                HomeNotice.StalledRelocationCompleted
+            } else {
+                HomeNotice.StalledRelocationUnfinished
+            }
+            it.copy(isActionRunning = false, message = HomeMessage(notice))
         }
     }
 
@@ -539,6 +587,8 @@ class HomeViewModel(
     private fun HomeUiState.singleNote(): HomeNoteItem? = selectedNotes.singleOrNull()
 
     companion object {
+        private const val SEARCH_DEBOUNCE_MS = 180L
+
         fun factory(
             vaultRepository: VaultRepository,
             noteRepository: NoteRepository,

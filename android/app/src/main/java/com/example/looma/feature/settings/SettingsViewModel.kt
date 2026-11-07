@@ -41,6 +41,10 @@ class SettingsViewModel(
         viewModelScope.launch { repository.setKeepEmptyNotes(keep) }
     }
 
+    fun setShowInlineTitle(show: Boolean) {
+        viewModelScope.launch { repository.setShowInlineTitle(show) }
+    }
+
     fun setToolbarOrder(order: List<ToolbarItem>) {
         viewModelScope.launch { repository.setToolbarOrder(order) }
     }

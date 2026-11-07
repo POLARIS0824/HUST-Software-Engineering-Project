@@ -74,6 +74,8 @@ import com.example.looma.R
 import com.example.looma.data.vault.VaultStorageAccess
 import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.NoteId
+import com.example.looma.domain.model.StalledRelocation
+import com.example.looma.feature.home.components.HomeAbandonStalledRelocationDialog
 import com.example.looma.feature.home.components.HomeBreadcrumb
 import com.example.looma.feature.home.components.HomeDeleteFolderDialog
 import com.example.looma.feature.home.components.HomeFilesGrid
@@ -119,6 +121,8 @@ data class HomeActions(
     val onMenuClick: () -> Unit = {},
     val onSettingsClick: () -> Unit = {},
     val onRetryClick: () -> Unit = {},
+    val onAbandonStalledRelocationClick: () -> Unit = {},
+    val onConfirmAbandonStalledRelocation: () -> Unit = {},
 )
 
 @Composable
@@ -197,6 +201,8 @@ fun HomeRoute(
             onMenuClick = onMenuClick,
             onSettingsClick = onSettingsClick,
             onRetryClick = viewModel::refresh,
+            onAbandonStalledRelocationClick = viewModel::startAbandonStalledRelocation,
+            onConfirmAbandonStalledRelocation = viewModel::confirmAbandonStalledRelocation,
         ),
         modifier = modifier,
     )
@@ -412,6 +418,14 @@ private fun HomeFileDialogs(state: HomeUiState, actions: HomeActions) {
             onConfirm = actions.onConfirmDeleteFolder,
             onDismiss = actions.onDialogDismiss,
         )
+
+        is HomeFileDialog.AbandonStalledRelocation -> HomeAbandonStalledRelocationDialog(
+            stalled = dialog.stalled,
+            error = state.dialogError,
+            busy = state.isActionRunning,
+            onConfirm = actions.onConfirmAbandonStalledRelocation,
+            onDismiss = actions.onDialogDismiss,
+        )
     }
 }
 
@@ -438,6 +452,9 @@ private fun homeNoticeText(notice: HomeNotice): String = when (notice) {
     HomeNotice.InvalidMoveTarget -> stringResource(R.string.home_move_invalid_target)
     HomeNotice.Undone -> stringResource(R.string.action_undone)
     HomeNotice.UndoFailed -> stringResource(R.string.action_undo_failed)
+    HomeNotice.StalledRelocationUnfinished -> stringResource(R.string.home_stalled_relocation_unfinished)
+    HomeNotice.StalledRelocationCompleted -> stringResource(R.string.home_stalled_relocation_completed)
+    HomeNotice.StalledRelocationAbandoned -> stringResource(R.string.home_stalled_relocation_abandoned)
 }
 
 @Composable
@@ -508,6 +525,13 @@ private fun HomeContent(
 ) {
     val motion = MaterialTheme.motionScheme
     Column(Modifier.fillMaxSize().padding(contentPadding)) {
+        state.stalledRelocation?.let { stalled ->
+            StalledRelocationBanner(
+                stalled = stalled,
+                isActionRunning = state.isActionRunning,
+                onAbandonClick = actions.onAbandonStalledRelocationClick,
+            )
+        }
         state.error?.let { error ->
             HomeErrorBanner(error = error, onRetryClick = actions.onRetryClick)
         }
@@ -574,6 +598,33 @@ private fun HomeContent(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun StalledRelocationBanner(
+    stalled: StalledRelocation,
+    isActionRunning: Boolean,
+    onAbandonClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            text = stringResource(
+                R.string.home_stalled_relocation_banner,
+                stalled.sourcePath,
+                stalled.destinationPath,
+            ),
+            style = LoomaTokens.type.cardBody,
+            color = LoomaTokens.colors.error,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onAbandonClick, enabled = !isActionRunning) {
+            Text(stringResource(R.string.home_stalled_relocation_abandon))
         }
     }
 }

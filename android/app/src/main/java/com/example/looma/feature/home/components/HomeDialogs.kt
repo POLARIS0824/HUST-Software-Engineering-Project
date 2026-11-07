@@ -40,6 +40,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.example.looma.R
 import com.example.looma.domain.model.NoteProperties
+import com.example.looma.domain.model.StalledRelocation
 import com.example.looma.feature.home.HomeFileError
 import com.example.looma.ui.format.formatDateTime
 import com.example.looma.ui.format.formatFileSize
@@ -235,6 +236,57 @@ internal fun HomeDeleteFolderDialog(
             TextButton(onClick = onConfirm, enabled = !busy) {
                 Text(
                     text = stringResource(R.string.home_folder_delete_confirm),
+                    color = LoomaTokens.colors.error,
+                )
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.dialog_cancel)) }
+        },
+    )
+}
+
+@Composable
+internal fun HomeAbandonStalledRelocationDialog(
+    stalled: StalledRelocation,
+    error: HomeFileError?,
+    busy: Boolean,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = stringResource(R.string.home_stalled_relocation_abandon_title),
+                style = MaterialTheme.typography.headlineSmall,
+            )
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    text = stringResource(
+                        R.string.home_stalled_relocation_abandon_message,
+                        stalled.sourcePath,
+                        stalled.destinationPath,
+                        stalled.journalId,
+                    ),
+                    style = LoomaTokens.type.cardBody,
+                    color = LoomaTokens.colors.title,
+                )
+                if (error != null) {
+                    Text(
+                        text = fileErrorText(error),
+                        style = LoomaTokens.type.cardBody,
+                        color = LoomaTokens.colors.error,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onConfirm, enabled = !busy) {
+                Text(
+                    text = stringResource(R.string.home_stalled_relocation_abandon),
                     color = LoomaTokens.colors.error,
                 )
             }

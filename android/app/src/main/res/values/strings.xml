@@ -34,6 +34,13 @@
     <string name="home_create_note_description">New note</string>
     <string name="home_new_folder_description">New folder</string>
     <string name="home_retry">Retry</string>
+    <string name="home_stalled_relocation_banner">A move or rename did not finish: %1$s → %2$s</string>
+    <string name="home_stalled_relocation_abandon">Abandon</string>
+    <string name="home_stalled_relocation_abandon_title">Abandon this move?</string>
+    <string name="home_stalled_relocation_abandon_message">Looma will stop trying to finish moving %1$s to %2$s. Files that already moved stay where they are, and links that were not updated stay unchanged. Copies of the notes as they were before this move are kept in .looma/abandoned-operations/%3$s.</string>
+    <string name="home_stalled_relocation_unfinished">A move or rename is unfinished</string>
+    <string name="home_stalled_relocation_completed">The move or rename finished</string>
+    <string name="home_stalled_relocation_abandoned">Move abandoned</string>
     <string name="home_open_note_label">Open note</string>
     <string name="home_select_note_label">Select note</string>
     <string name="home_error_unreadable">%1$d note files could not be read</string>
@@ -139,6 +146,8 @@
     <string name="settings_section_notes">Notes</string>
     <string name="settings_keep_empty_notes">Keep empty notes</string>
     <string name="settings_keep_empty_notes_desc">Save a new note even when you write nothing</string>
+    <string name="settings_show_inline_title">Show inline title</string>
+    <string name="settings_show_inline_title_desc">Show the file name above a note when it differs from the first heading</string>
     <string name="settings_section_about">About</string>
     <string name="settings_version">Version %1$s</string>
     <string name="settings_vault_unavailable">The vault folder is not available</string>

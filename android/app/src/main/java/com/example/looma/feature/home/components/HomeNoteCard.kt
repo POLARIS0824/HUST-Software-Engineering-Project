@@ -1,6 +1,7 @@
 package com.example.looma.feature.home.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,6 +18,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
@@ -89,6 +92,14 @@ internal fun HomeNoteCard(
                             markdown = note.markdownSnippet,
                             typography = LoomaTokens.type.homeNotePreview,
                             textColor = LoomaTokens.colors.body,
+                        )
+                        Box(
+                            Modifier.matchParentSize().background(
+                                Brush.verticalGradient(
+                                    0.72f to Color.Transparent,
+                                    1f to LoomaTokens.colors.card,
+                                ),
+                            ),
                         )
                     }
                 }

@@ -112,6 +112,7 @@ fun SettingsRoute(
         onThemePresetSelect = settingsViewModel::setThemePreset,
         onLanguageSelect = AppLocale::apply,
         onKeepEmptyNotesChange = settingsViewModel::setKeepEmptyNotes,
+        onShowInlineTitleChange = settingsViewModel::setShowInlineTitle,
         onToolbarOrderChange = settingsViewModel::setToolbarOrder,
         onImageUploadTargetChange = settingsViewModel::setImageUploadTarget,
         onImageBedChange = settingsViewModel::setS3ImageBed,
@@ -136,6 +137,7 @@ fun SettingsScreen(
     onThemePresetSelect: (ThemePreset) -> Unit,
     onLanguageSelect: (AppLanguage) -> Unit,
     onKeepEmptyNotesChange: (Boolean) -> Unit,
+    onShowInlineTitleChange: (Boolean) -> Unit,
     onToolbarOrderChange: (List<ToolbarItem>) -> Unit,
     onImageUploadTargetChange: (ImageUploadTarget) -> Unit,
     onImageBedChange: (S3ImageBedConfig) -> Unit,
@@ -276,6 +278,13 @@ fun SettingsScreen(
                     checked = settings.keepEmptyNotes,
                     enabled = true,
                     onCheckedChange = onKeepEmptyNotesChange,
+                )
+                SettingsSwitchRow(
+                    title = stringResource(R.string.settings_show_inline_title),
+                    description = stringResource(R.string.settings_show_inline_title_desc),
+                    checked = settings.showInlineTitle,
+                    enabled = true,
+                    onCheckedChange = onShowInlineTitleChange,
                 )
             }
 
