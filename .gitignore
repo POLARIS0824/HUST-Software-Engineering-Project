@@ -8,3 +8,5 @@ android/.idea/
 .agents/skills/m3-skill/
 
 .windows/
+
+.agents/tasks/*
