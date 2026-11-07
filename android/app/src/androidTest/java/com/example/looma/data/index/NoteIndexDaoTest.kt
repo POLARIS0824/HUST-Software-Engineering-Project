@@ -89,6 +89,18 @@ class NoteIndexDaoTest {
     }
 
     @Test
+    fun removingMoreNotesThanOneSqlStatementHoldsClearsTheIndex() = runBlocking {
+        val notes = List(1200) { note("n$it.md", tags = listOf("t"), links = listOf(MarkdownLink("L", false))) }
+        index.apply(IndexDelta(vaultId = vaultId, upserts = notes))
+        index.apply(IndexDelta(vaultId = vaultId, upserts = notes))
+
+        index.apply(IndexDelta(vaultId = vaultId, removed = notes.map { it.id.path }))
+
+        assertTrue(index.load(vaultId).isEmpty())
+        assertTrue(database.noteIndexDao().tags(vaultId.value).isEmpty())
+    }
+
+    @Test
     fun searchHistoryKeepsRecentEntriesPerVault() = runBlocking {
         val dao = database.searchHistoryDao()
         repeat(5) { index ->

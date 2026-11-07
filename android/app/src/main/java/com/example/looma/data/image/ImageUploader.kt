@@ -6,6 +6,8 @@ import com.example.looma.data.settings.AppSettings
 import com.example.looma.data.settings.ImageUploadTarget
 import com.example.looma.data.settings.S3ImageBedConfig
 import com.example.looma.data.vault.VaultRepository
+import com.example.looma.data.vault.VaultWriteCoordinator
+import com.example.looma.data.note.writeBytesAtomically
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
@@ -56,12 +58,18 @@ class ImageUploader(
 
     private suspend fun saveAttachment(fileName: String, bytes: ByteArray): ImageUpload {
         val vault = vaultRepository.requireCurrentVault()
-        val file = File(vault.rootPath, fileName)
-        if (!file.isFile) {
-            runCatching { file.writeBytes(bytes) }
-                .onFailure { throw ImageUploadException(ImageUploadFailure.StorageFailed, it.message, it) }
+        return VaultWriteCoordinator.write(vault) {
+            val root = File(vault.rootPath).canonicalFile
+            val file = File(root, fileName).canonicalFile
+            if (!file.toPath().startsWith(root.toPath())) {
+                throw ImageUploadException(ImageUploadFailure.StorageFailed)
+            }
+            if (!file.isFile) {
+                runCatching { writeBytesAtomically(file, bytes) }
+                    .onFailure { throw ImageUploadException(ImageUploadFailure.StorageFailed, it.message, it) }
+            }
+            ImageUpload.Attachment(fileName)
         }
-        return ImageUpload.Attachment(fileName)
     }
 
     private fun uploadToImageBed(

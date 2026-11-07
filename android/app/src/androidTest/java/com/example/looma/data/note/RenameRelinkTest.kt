@@ -86,13 +86,13 @@ class RenameRelinkTest {
     }
 
     @Test
-    fun aReferrerThatVanishedIsCountedAndTheRenameStillStands() = runBlocking {
+    fun aReferrerThatVanishedIsNotTakenFromTheStaleIndex() = runBlocking {
         File(root, "From.md").delete()
 
         val outcome = repository.renameNote(id("Target.md"), "Renamed")
 
         assertEquals(0, outcome.linksUpdated)
-        assertEquals(1, outcome.linksFailed)
+        assertEquals(0, outcome.linksFailed)
         assertTrue(File(root, "Renamed.md").isFile)
     }
 
@@ -111,6 +111,37 @@ class RenameRelinkTest {
             "# From\n\n见 [[Target]] 与 [[Archive/Target]]。\n",
             read("From.md"),
         )
+    }
+
+    @Test
+    fun aReferrerCreatedAfterTheLastScanIsRewritten() = runBlocking {
+        write("Late.md", "[[Target|late]]\n")
+
+        repository.renameNote(id("Target.md"), "Renamed")
+
+        assertEquals("[[Renamed|late]]\n", read("Late.md"))
+        assertTrue(repository.wikiContext(id("Renamed.md")).backlinks.any { it.id.path.relativePath == "Late.md" })
+    }
+
+    @Test
+    fun folderRenameMovesDraftAndUpdatesBacklinks() = runBlocking {
+        File(root, "Inbox").mkdirs()
+        write("Inbox/Nested.md", "# Nested\noriginal\n")
+        write("Ref.md", "[[Inbox/Nested]]\n")
+        val original = repository.readNote(id("Inbox/Nested.md"))
+        repository.writeDraft(original.id, "# Nested\nunsaved\n", original.revision)
+
+        repository.renameFolder(FolderPath("Inbox"), "Archive")
+
+        assertEquals("[[Archive/Nested]]\n", read("Ref.md"))
+        val opened = repository.openNote(id("Archive/Nested.md"))
+        assertTrue(opened.restoredDraft)
+        assertEquals("# Nested\nunsaved\n", opened.note.content)
+        assertEquals("# Nested\noriginal\n", opened.diskContent)
+        assertEquals(original.revision, opened.note.revision)
+        val notes = repository.listNotes().items.map { it.summary.id.path.relativePath }
+        assertTrue("Archive/Nested.md" in notes)
+        assertTrue("Inbox/Nested.md" !in notes)
     }
 
     private fun id(path: String): NoteId {

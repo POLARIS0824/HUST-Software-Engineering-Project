@@ -19,6 +19,7 @@ data class SettingsPreferencesData(
     val dynamicColor: Boolean?,
     val themePreset: String?,
     val keepEmptyNotes: Boolean?,
+    val showInlineTitle: Boolean?,
     val toolbarOrderString: String?,
     val imageUploadTarget: String?,
     val s3Endpoint: String?,
@@ -50,6 +51,7 @@ class SettingsPreferences(context: Context) {
                     dynamicColor = preferences[KEY_DYNAMIC_COLOR],
                     themePreset = preferences[KEY_THEME_PRESET],
                     keepEmptyNotes = preferences[KEY_KEEP_EMPTY_NOTES],
+                    showInlineTitle = preferences[KEY_SHOW_INLINE_TITLE],
                     toolbarOrderString = preferences[KEY_TOOLBAR_ORDER],
                     imageUploadTarget = preferences[KEY_IMAGE_UPLOAD_TARGET],
                     s3Endpoint = preferences[KEY_S3_ENDPOINT],
@@ -77,6 +79,10 @@ class SettingsPreferences(context: Context) {
         dataStore.edit { it[KEY_KEEP_EMPTY_NOTES] = keep }
     }
 
+    suspend fun saveShowInlineTitle(show: Boolean) {
+        dataStore.edit { it[KEY_SHOW_INLINE_TITLE] = show }
+    }
+
     suspend fun saveImageUploadTarget(target: String) {
         dataStore.edit { it[KEY_IMAGE_UPLOAD_TARGET] = target }
     }
@@ -99,6 +105,7 @@ class SettingsPreferences(context: Context) {
         val KEY_DYNAMIC_COLOR = booleanPreferencesKey("key_dynamic_color")
         val KEY_THEME_PRESET = stringPreferencesKey("key_theme_preset")
         val KEY_KEEP_EMPTY_NOTES = booleanPreferencesKey("key_keep_empty_notes")
+        val KEY_SHOW_INLINE_TITLE = booleanPreferencesKey("key_show_inline_title")
         val KEY_TOOLBAR_ORDER = stringPreferencesKey("key_toolbar_order")
         val KEY_IMAGE_UPLOAD_TARGET = stringPreferencesKey("key_image_upload_target")
         val KEY_S3_ENDPOINT = stringPreferencesKey("key_s3_endpoint")

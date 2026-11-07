@@ -39,8 +39,10 @@ internal class RoomNoteIndex(private val database: NoteIndexDatabase) : NoteInde
             val vaultId = delta.vaultId.value
             val upsertPaths = delta.upserts.map { it.id.path.relativePath }
             if (upsertPaths.isNotEmpty()) {
-                dao.deleteTags(vaultId, upsertPaths)
-                dao.deleteLinks(vaultId, upsertPaths)
+                upsertPaths.chunked(MAX_SQL_PATHS).forEach { paths ->
+                    dao.deleteTags(vaultId, paths)
+                    dao.deleteLinks(vaultId, paths)
+                }
                 val indexedAt = System.currentTimeMillis()
                 dao.upsertNotes(delta.upserts.map { it.toEntity(vaultId, indexedAt) })
                 val tags = delta.upserts.flatMap { note -> note.tagEntities(vaultId) }
@@ -49,7 +51,9 @@ internal class RoomNoteIndex(private val database: NoteIndexDatabase) : NoteInde
                 if (links.isNotEmpty()) dao.insertLinks(links)
             }
             if (delta.removed.isNotEmpty()) {
-                dao.deleteNotes(vaultId, delta.removed.map { it.relativePath })
+                delta.removed.map { it.relativePath }.chunked(MAX_SQL_PATHS).forEach { paths ->
+                    dao.deleteNotes(vaultId, paths)
+                }
             }
         }
     }
@@ -76,5 +80,9 @@ internal class RoomNoteIndex(private val database: NoteIndexDatabase) : NoteInde
         return links.mapIndexed { index, link ->
             NoteLinkEntity(vaultId, path, index, link.target, link.embedded)
         }
+    }
+
+    private companion object {
+        const val MAX_SQL_PATHS = 500
     }
 }

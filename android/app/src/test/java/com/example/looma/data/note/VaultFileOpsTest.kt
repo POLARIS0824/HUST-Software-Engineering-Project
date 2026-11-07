@@ -4,6 +4,7 @@ import com.example.looma.domain.model.FolderPath
 import com.example.looma.domain.model.NotePath
 import java.io.File
 import java.time.Instant
+import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
@@ -378,5 +379,86 @@ class VaultFileOpsTest {
 
         assertEquals(VaultFileFailure.INVALID_PATH, error.failure)
         assertTrue(File(root, "笔记.md").isFile)
+    }
+
+    @Test
+    fun `trash moves drafts aside and restore brings back identical bytes`() {
+        setUp()
+        val original = note("项目/周报.md")
+        val path = NotePath("项目/周报.md")
+        val draftBytes = draft(draftFile(root, path), "version=1\ncontent=未保存\n")
+        val legacyBytes = draft(legacyDraftFile(root, path), "旧草稿")
+
+        val record = ops.trash(original)
+
+        assertFalse(draftFile(root, path).exists())
+        assertFalse(legacyDraftFile(root, path).exists())
+        assertTrue(File(root, ".looma/trash/drafts/${record.trashId}.properties").isFile)
+        assertTrue(File(root, ".looma/trash/drafts/${record.trashId}.md").isFile)
+        assertEquals(listOf(record.trashId), ops.trashed().map { it.trashId })
+
+        ops.restore(record.trashId)
+
+        assertArrayEquals(draftBytes, draftFile(root, path).readBytes())
+        assertArrayEquals(legacyBytes, legacyDraftFile(root, path).readBytes())
+        assertFalse(File(root, ".looma/trash/drafts/${record.trashId}.properties").exists())
+        assertFalse(File(root, ".looma/trash/drafts/${record.trashId}.md").exists())
+    }
+
+    @Test
+    fun `restore keeps a draft that already exists at the original path`() {
+        setUp()
+        val original = note("周报.md")
+        val path = NotePath("周报.md")
+        draft(draftFile(root, path), "trashed")
+        val record = ops.trash(original)
+        val newerBytes = draft(draftFile(root, path), "newer")
+
+        ops.restore(record.trashId)
+
+        assertArrayEquals(newerBytes, draftFile(root, path).readBytes())
+    }
+
+    @Test
+    fun `permanent delete removes the trashed drafts`() {
+        setUp()
+        val original = note("周报.md")
+        val path = NotePath("周报.md")
+        draft(draftFile(root, path), "version=1\ncontent=未保存\n")
+        draft(legacyDraftFile(root, path), "旧草稿")
+        val record = ops.trash(original)
+
+        ops.deletePermanently(record.trashId)
+
+        assertFalse(File(root, ".looma/trash/drafts/${record.trashId}.properties").exists())
+        assertFalse(File(root, ".looma/trash/drafts/${record.trashId}.md").exists())
+        assertFalse(draftFile(root, path).exists())
+        assertTrue(ops.trashed().isEmpty())
+    }
+
+    @Test
+    fun `deleteFolder trashes the drafts of the notes inside`() {
+        setUp()
+        note("项目/计划.md")
+        note("项目/周报/第 1 周.md")
+        val planned = NotePath("项目/计划.md")
+        val weekly = NotePath("项目/周报/第 1 周.md")
+        draft(draftFile(root, planned), "plan draft")
+        draft(draftFile(root, weekly), "weekly draft")
+
+        val records = ops.deleteFolder(FolderPath("项目"))
+
+        assertEquals(setOf(planned, weekly), records.map { it.originalPath }.toSet())
+        assertFalse(draftFile(root, planned).exists())
+        assertFalse(draftFile(root, weekly).exists())
+        records.forEach { record ->
+            assertTrue(File(root, ".looma/trash/drafts/${record.trashId}.properties").isFile)
+        }
+    }
+
+    private fun draft(file: File, content: String): ByteArray {
+        file.parentFile?.mkdirs()
+        file.writeText(content)
+        return file.readBytes()
     }
 }

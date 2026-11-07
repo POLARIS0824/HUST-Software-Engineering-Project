@@ -23,6 +23,7 @@ class SettingsRepository(
                     ?.let { stored -> ThemePreset.entries.firstOrNull { it.name == stored } }
                     ?: ThemePreset.Default,
                 keepEmptyNotes = data.keepEmptyNotes ?: false,
+                showInlineTitle = data.showInlineTitle ?: true,
                 toolbarOrder = ToolbarOrder.restore(data.toolbarOrderString),
                 imageUploadTarget = data.imageUploadTarget
                     ?.let { stored -> ImageUploadTarget.entries.firstOrNull { it.name == stored } }
@@ -56,6 +57,10 @@ class SettingsRepository(
 
     suspend fun setKeepEmptyNotes(keep: Boolean) {
         preferences.saveKeepEmptyNotes(keep)
+    }
+
+    suspend fun setShowInlineTitle(show: Boolean) {
+        preferences.saveShowInlineTitle(show)
     }
 
     suspend fun setImageUploadTarget(target: ImageUploadTarget) {

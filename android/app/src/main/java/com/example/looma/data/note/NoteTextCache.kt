@@ -21,6 +21,10 @@ internal class NoteTextCache {
         entries.remove(from)?.let { entries[to] = it }
     }
 
+    fun clear() {
+        entries.clear()
+    }
+
     fun remove(id: NoteId) {
         entries.remove(id)
     }

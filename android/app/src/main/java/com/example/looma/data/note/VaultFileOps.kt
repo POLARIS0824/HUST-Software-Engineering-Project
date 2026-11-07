@@ -89,6 +89,15 @@ internal class VaultFileOps(root: File) {
 
     fun renameFolder(path: FolderPath, newName: String): FolderPath {
         val directory = folderDirectory(path)
+        val destination = renameFolderDestination(path, newName)
+        if (destination != directory && !directory.renameTo(destination)) {
+            throw VaultFileException(VaultFileFailure.IO)
+        }
+        return FolderPath(destination.relativeTo(root).invariantSeparatorsPath)
+    }
+
+    fun renameFolderDestination(path: FolderPath, newName: String): File {
+        val directory = folderDirectory(path)
         if (directory == root) throw VaultFileException(VaultFileFailure.INVALID_PATH)
         if (!directory.isDirectory) throw VaultFileException(VaultFileFailure.NOT_FOUND)
         val parent = directory.parentFile ?: throw VaultFileException(VaultFileFailure.INVALID_PATH)
@@ -96,19 +105,24 @@ internal class VaultFileOps(root: File) {
         if (!isInside(destination) || destination == root) {
             throw VaultFileException(VaultFileFailure.INVALID_PATH)
         }
-        if (destination == directory) return path
-        if (destination.exists()) throw VaultFileException(VaultFileFailure.NAME_TAKEN)
-        if (!directory.renameTo(destination)) throw VaultFileException(VaultFileFailure.IO)
-        return FolderPath(destination.relativeTo(root).invariantSeparatorsPath)
+        if (destination != directory && destination.exists()) throw VaultFileException(VaultFileFailure.NAME_TAKEN)
+        return destination
     }
 
     fun moveFolder(path: FolderPath, destination: FolderPath): FolderPath {
+        val source = folderDirectory(path)
+        val moved = moveFolderDestination(path, destination)
+        if (source != moved && !source.renameTo(moved)) throw VaultFileException(VaultFileFailure.IO)
+        return FolderPath(moved.relativeTo(root).invariantSeparatorsPath)
+    }
+
+    fun moveFolderDestination(path: FolderPath, destination: FolderPath): File {
         val source = folderDirectory(path)
         if (source == root) throw VaultFileException(VaultFileFailure.INVALID_PATH)
         if (!source.isDirectory) throw VaultFileException(VaultFileFailure.NOT_FOUND)
         val target = folderDirectory(destination)
         if (!target.isDirectory) throw VaultFileException(VaultFileFailure.NOT_FOUND)
-        if (target == source.parentFile) return path
+        if (target == source.parentFile) return source
         val sourcePath = source.toPath()
         if (target.toPath().startsWith(sourcePath)) {
             throw VaultFileException(VaultFileFailure.INVALID_PATH)
@@ -118,27 +132,30 @@ internal class VaultFileOps(root: File) {
             throw VaultFileException(VaultFileFailure.INVALID_PATH)
         }
         if (moved.exists()) throw VaultFileException(VaultFileFailure.NAME_TAKEN)
-        if (!source.renameTo(moved)) throw VaultFileException(VaultFileFailure.IO)
-        return FolderPath(moved.relativeTo(root).invariantSeparatorsPath)
+        return moved
     }
 
-    fun deleteFolder(path: FolderPath): List<String> {
+    fun deleteFolder(path: FolderPath): List<TrashRecord> {
         val directory = folderDirectory(path)
         if (directory == root) throw VaultFileException(VaultFileFailure.INVALID_PATH)
         if (!directory.isDirectory) throw VaultFileException(VaultFileFailure.NOT_FOUND)
         val notes = mutableListOf<File>()
         collectNotes(directory, notes)
-        val trashIds = notes.map { note -> trash(note).trashId }
+        val records = notes.map { note -> trash(note) }
         deleteEmptyDirectories(directory)
-        return trashIds
+        return records
     }
 
     fun rename(note: File, newName: String): File {
+        val destination = renameDestination(note, newName)
+        if (destination != note && !note.renameTo(destination)) throw VaultFileException(VaultFileFailure.IO)
+        return destination
+    }
+
+    fun renameDestination(note: File, newName: String): File {
         val destination = File(note.parentFile, "${validateName(newName, folder = false)}$MARKDOWN_SUFFIX").canonicalFile
         if (!isInside(destination)) throw VaultFileException(VaultFileFailure.INVALID_PATH)
-        if (destination == note) return note
-        if (destination.exists()) throw VaultFileException(VaultFileFailure.NAME_TAKEN)
-        if (!note.renameTo(destination)) throw VaultFileException(VaultFileFailure.IO)
+        if (destination != note && destination.exists()) throw VaultFileException(VaultFileFailure.NAME_TAKEN)
         return destination
     }
 
@@ -163,14 +180,18 @@ internal class VaultFileOps(root: File) {
     }
 
     fun move(note: File, target: FolderPath): File {
-        val directory = folderDirectory(target)
-        if (!directory.isDirectory && !directory.mkdirs()) {
-            throw VaultFileException(VaultFileFailure.IO)
-        }
-        if (directory == note.parentFile) return note
-        val destination = uniqueIn(directory, note.name)
-        if (!note.renameTo(destination)) throw VaultFileException(VaultFileFailure.IO)
+        val destination = moveDestination(note, target)
+        val directory = destination.parentFile ?: throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        if (!directory.isDirectory && !directory.mkdirs()) throw VaultFileException(VaultFileFailure.IO)
+        if (destination != note && !note.renameTo(destination)) throw VaultFileException(VaultFileFailure.IO)
         return destination
+    }
+
+    fun moveDestination(note: File, target: FolderPath): File {
+        val directory = folderDirectory(target)
+        if (directory.exists() && !directory.isDirectory) throw VaultFileException(VaultFileFailure.INVALID_PATH)
+        if (directory == note.parentFile) return note
+        return uniqueIn(directory, note.name)
     }
 
     fun trash(note: File, deletedAt: Instant = Instant.now()): TrashRecord {
@@ -190,6 +211,9 @@ internal class VaultFileOps(root: File) {
             metaFile.delete()
             throw VaultFileException(VaultFileFailure.IO)
         }
+        trashedDrafts(trashId, originalPath)
+            .filter { it.live.exists() }
+            .forEach { draft -> moveBestEffort(draft.live, draft.trashed) }
         return TrashRecord(trashId, originalPath, deletedAt, trashFile, metaFile)
     }
 
@@ -208,6 +232,7 @@ internal class VaultFileOps(root: File) {
     internal fun deletePermanently(record: TrashRecord) {
         if (!record.file.delete()) throw VaultFileException(VaultFileFailure.IO)
         record.metaFile.delete()
+        trashedDrafts(record.trashId, record.originalPath).forEach { it.trashed.delete() }
     }
 
     fun restore(trashId: String): File = restore(recordOf(trashId))
@@ -223,8 +248,26 @@ internal class VaultFileOps(root: File) {
         }
         if (!record.file.renameTo(destination)) throw VaultFileException(VaultFileFailure.IO)
         record.metaFile.delete()
+        trashedDrafts(record.trashId, record.originalPath)
+            .filter { it.trashed.exists() && !it.live.exists() }
+            .forEach { draft -> moveBestEffort(draft.trashed, draft.live) }
         return destination
     }
+
+    private fun moveBestEffort(source: File, target: File) {
+        val directory = checkNotNull(target.parentFile)
+        if (directory.isDirectory || directory.mkdirs()) source.renameTo(target)
+    }
+
+    private fun trashedDrafts(trashId: String, originalPath: NotePath): List<TrashedDraft> {
+        val directory = File(root, TRASHED_DRAFTS_DIRECTORY)
+        return listOf(
+            TrashedDraft(draftFile(root, originalPath), File(directory, "$trashId$META_SUFFIX")),
+            TrashedDraft(legacyDraftFile(root, originalPath), File(directory, "$trashId$MARKDOWN_SUFFIX")),
+        )
+    }
+
+    private data class TrashedDraft(val live: File, val trashed: File)
 
     private fun recordOf(trashId: String): TrashRecord {
         if (!UUID_PATTERN.matches(trashId)) throw VaultFileException(VaultFileFailure.INVALID_PATH)
@@ -317,6 +360,7 @@ internal class VaultFileOps(root: File) {
 
     companion object {
         const val TRASH_DIRECTORY = ".looma/trash"
+        private const val TRASHED_DRAFTS_DIRECTORY = "$TRASH_DIRECTORY/drafts"
         const val MARKDOWN_SUFFIX = ".md"
         private const val META_SUFFIX = ".properties"
         private const val MAX_NAME_LENGTH = 72
