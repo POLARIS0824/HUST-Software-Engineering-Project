@@ -10,6 +10,7 @@ data class MarkdownDocument(
     val body: String,
     val bodyStart: Int,
     val title: String,
+    val heading: String?,
     val checkboxes: List<MarkdownCheckbox>,
     val links: List<MarkdownLinkSpan> = emptyList(),
 )

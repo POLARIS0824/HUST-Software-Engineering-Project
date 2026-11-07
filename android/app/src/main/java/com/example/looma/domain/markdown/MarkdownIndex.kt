@@ -15,11 +15,13 @@ object MarkdownIndex {
         val facts = Facts()
         walk(parse(body.text), body.text, body.start, facts)
 
+        val heading = facts.title?.takeIf { it.isNotBlank() }
         return MarkdownDocument(
             source = source,
             body = body.text,
             bodyStart = body.start,
-            title = facts.title?.takeIf { it.isNotBlank() } ?: fallbackTitle,
+            title = heading ?: fallbackTitle,
+            heading = heading,
             checkboxes = facts.checkboxes,
             links = WikiLinks.occurrences(body.text, body.start, facts.code),
         )

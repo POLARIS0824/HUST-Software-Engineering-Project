@@ -18,6 +18,7 @@ data class Note(
     val content: String,
     val modifiedAt: Instant,
     val tags: Set<String> = emptySet(),
+    val revision: NoteRevision = NoteRevision.of(content.toByteArray(Charsets.UTF_8)),
 )
 
 data class NoteSummary(
